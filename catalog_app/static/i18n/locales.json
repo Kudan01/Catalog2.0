@@ -1,0 +1,14 @@
+{
+  "default": "en",
+  "fallback": "en",
+  "locales": [
+    {
+      "code": "en",
+      "name": "English"
+    },
+    {
+      "code": "cs",
+      "name": "Čeština"
+    }
+  ]
+}

@@ -1,0 +1,4664 @@
+:root {
+  color-scheme: dark;
+  --app-topbar-height: 72px;
+  --bg: #0f1117;
+  --panel: #171b24;
+  --panel-2: #202637;
+  --line: #35405a;
+  --text: #f1f4fa;
+  --muted: #aab2c4;
+  --accent: #f06d32;
+  --danger: #ff8a8a;
+  --media-card-min-width: 260px;
+  --media-card-min-width-narrow: 240px;
+}
+
+:root[data-gallery-density="compact"] {
+  --media-card-min-width: 218px;
+  --media-card-min-width-narrow: 210px;
+}
+
+:root[data-gallery-density="comfortable"] {
+  --media-card-min-width: 260px;
+  --media-card-min-width-narrow: 240px;
+}
+
+:root[data-gallery-density="large"] {
+  --media-card-min-width: 320px;
+  --media-card-min-width-narrow: 300px;
+}
+
+:root[data-gallery-density="extra-large"] {
+  --media-card-min-width: 390px;
+  --media-card-min-width-narrow: 340px;
+}
+
+:root[data-theme="serious-light"] {
+  color-scheme: light;
+  --bg:
+    radial-gradient(circle at 0 0, rgba(210, 111, 48, .14), transparent 32rem),
+    linear-gradient(180deg, #fbf6ee 0%, #f2eadf 100%);
+  --panel: #fffaf2;
+  --panel-2: #f5ebdc;
+  --line: #d8c8b6;
+  --text: #29231d;
+  --muted: #75695f;
+  --accent: #c8652f;
+  --danger: #b42318;
+}
+
+:root[data-theme="serious-dark"] {
+  color-scheme: dark;
+  --bg:
+    radial-gradient(circle at 82% 0, rgba(93, 211, 214, .15), transparent 34rem),
+    radial-gradient(circle at 0 100%, rgba(96, 79, 191, .16), transparent 42rem),
+    linear-gradient(180deg, #070b14 0%, #0a1220 48%, #080d17 100%);
+  --panel: #101827;
+  --panel-2: #17243a;
+  --line: #2b405b;
+  --text: #e8f0fa;
+  --muted: #95a8bd;
+  --accent: #5dd3d6;
+  --danger: #ff8d9a;
+}
+
+
+
+:root[data-theme="dark-cinema"] {
+  color-scheme: dark;
+  --bg:
+    radial-gradient(circle at 12% 0, rgba(115, 30, 58, .16), transparent 34rem),
+    radial-gradient(circle at 92% 15%, rgba(96, 65, 105, .12), transparent 32rem),
+    radial-gradient(circle at 50% 100%, rgba(72, 16, 30, .15), transparent 44rem),
+    linear-gradient(180deg, #030305 0%, #08070b 48%, #020203 100%);
+  --panel: #0d0b10;
+  --panel-2: #17121a;
+  --line: #5a3042;
+  --text: #f2eee6;
+  --muted: #aaa0a5;
+  --accent: #a62a46;
+  --danger: #d94b5f;
+}
+
+:root[data-theme="vivid-content"] {
+  color-scheme: dark;
+  --bg:
+    radial-gradient(circle at 6% 0, rgba(255, 65, 52, .23), transparent 34rem),
+    radial-gradient(circle at 90% 10%, rgba(255, 151, 73, .13), transparent 32rem),
+    radial-gradient(circle at 48% 100%, rgba(171, 26, 41, .18), transparent 44rem),
+    linear-gradient(180deg, #0d0405 0%, #180608 48%, #090304 100%);
+  --panel: #17080a;
+  --panel-2: #2a0f12;
+  --line: #74262a;
+  --text: #fff1ee;
+  --muted: #d6a49c;
+  --accent: #ff493d;
+  --danger: #ff7979;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+
+select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-columns: auto minmax(280px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #11151f;
+  border-bottom: 1px solid var(--line);
+}
+
+.top-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand-stack {
+  display: grid;
+  gap: 7px;
+  min-width: max-content;
+  align-content: center;
+}
+
+.catalog-home {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  font-size: clamp(21px, 1.45vw, 24px);
+  line-height: 1.14;
+  font-weight: 850;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+
+.catalog-home:hover {
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.brand-link {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brand-link:hover {
+  color: var(--accent);
+}
+
+.topbar strong { font-size: 18px; white-space: nowrap; }
+.topbar span { color: var(--muted); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.sidebar, .content {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 92px);
+  overflow: auto;
+}
+
+h1, h2 { margin: 0 0 12px; }
+h1 { font-size: 26px; }
+h2 { font-size: 17px; }
+
+#folderTitle {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(27px, 1.8vw, 34px);
+  line-height: 1.16;
+  padding-bottom: 3px;
+  letter-spacing: .005em;
+}
+
+.folder-list, .cards, .media-list { display: grid; gap: 9px; }
+
+.folder-row, .card, .media-row {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px;
+}
+
+.folder-row, .card { cursor: pointer; }
+.folder-row:hover, .card:hover, .media-row:hover { border-color: var(--accent); }
+.folder-row.active { outline: 2px solid var(--accent); }
+
+.row-title {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.row-meta, .muted, #folderCounts {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 14px;
+  color: var(--muted);
+}
+
+.breadcrumb button {
+  border-radius: 999px;
+  padding: 5px 9px;
+}
+
+.content-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.content-head-main {
+  min-width: 0;
+}
+
+.folder-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.folder-title-row h1 {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.content-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.current-folder-open,
+.current-folder-update {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .content-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .content-head-actions {
+    justify-content: flex-start;
+  }
+
+  .current-folder-open,
+  .current-folder-update {
+    width: 100%;
+  }
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 16px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 16px;
+}
+
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.media-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.media-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.media-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.media-actions a {
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+.media-actions a:hover { border-color: var(--accent); }
+
+.pager {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.media-pager {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.folder-section-head {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+
+.folder-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.section-collapse-toggle {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.section-collapse-toggle:hover {
+  border-color: var(--accent);
+}
+
+.section-collapse-toggle[hidden] {
+  display: none;
+}
+
+#childFolders[hidden] {
+  display: none !important;
+}
+
+.section-collapse-toggle.is-collapsed {
+  color: var(--muted);
+}
+
+.folder-section-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.folder-pager {
+  margin-top: 0;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.folder-pager .page-jump input {
+  width: 76px;
+  padding: 6px 9px;
+}
+
+.folder-pager .page-jump button {
+  padding: 6px 9px;
+  font-size: 13px;
+}
+
+@media (max-width: 850px) {
+  .folder-section-controls {
+    justify-content: flex-start;
+  }
+}
+
+.page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-jump label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.page-jump input {
+  width: 86px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.page-jump input:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.message {
+  min-height: 22px;
+  color: var(--muted);
+}
+.message.error { color: var(--danger); }
+
+@media (max-width: 850px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; }
+  .media-row { grid-template-columns: 1fr; }
+  .media-actions { justify-content: flex-start; }
+}
+
+
+/* Phase 9.20b: desktop app shell with independent sidebar/content scrolling.
+   Applies only to the wide, non-compact layout. Compact/mobile keeps document scroll. */
+@media (min-width: 851px) {
+  body:not(.layout-compact) {
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  body:not(.layout-compact) .layout {
+    height: calc(100vh - var(--app-topbar-height));
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch;
+  }
+
+  body:not(.layout-compact) .sidebar,
+  body:not(.layout-compact) .content {
+    min-height: 0;
+    height: 100%;
+    max-height: none;
+    overflow: auto;
+  }
+
+  body:not(.layout-compact) .sidebar {
+    position: static;
+  }
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+#folderCounts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.card .row-meta + .row-meta {
+  margin-top: 4px;
+}
+
+.pager.compact {
+  margin-top: 10px;
+}
+
+.pager.compact button {
+  padding: 6px 9px;
+  font-size: 13px;
+}
+
+/* Step 7.2-media-cards-r4b-mixed-alignment: safe UI polish on top of r4a.
+   Mixed media cards align their description blocks close to the action footer,
+   the tree root uses a clearer home icon, and folder titles are more dominant
+   while long names are constrained with ellipsis. No backend/cache logic changes. */
+.media-list {
+  grid-template-columns: repeat(auto-fill, minmax(var(--media-card-min-width), 1fr));
+  align-items: stretch;
+}
+
+.media-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+  height: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  min-width: 0;
+}
+
+.media-card:hover { border-color: var(--accent); }
+
+.media-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 118px;
+  border: 1px dashed rgba(255,255,255,.22);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(0,0,0,.16);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Step 6.5d: photo thumbnails in gallery media cards.
+   This version is based on the last accepted functional state 6.5.
+
+   Diagnosis:
+   - generated photo_tile files are complete;
+   - the problem was the card preview box, not thumbnail generation;
+   - the photo <img> must have an explicit frame size and object-fit target.
+
+   Step 7.1a-r display-only correction:
+   - photo/GIF previews are centered around the actual image instead of a full-width empty frame;
+   - video previews stay framed, but are reduced from the too-large 7.1a size;
+   - image_thumb_size, gif_thumb_size and video_preview_width are not changed.
+*/
+.media-preview {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 12px;
+  background: rgba(0,0,0,.24);
+}
+
+.media-preview--photo-tile {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 2 / 3;
+  height: auto;
+  min-height: 0;
+  margin-inline: auto;
+  overflow: hidden;
+  background: rgba(0,0,0,.24);
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.media-preview--gif-preview {
+  width: 100%;
+  max-width: 100%;
+  height: 220px;
+  min-height: 220px;
+  margin-inline: auto;
+  overflow: hidden;
+  background: rgba(0,0,0,.24);
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.media-preview--video-poster {
+  width: 100%;
+  height: 220px;
+  min-height: 220px;
+}
+
+.video-hover-frame-image {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center center;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(0,0,0,.24);
+  transition: opacity .12s ease;
+}
+
+.media-preview--video-poster.video-hover-active .video-hover-frame-image {
+  opacity: 1;
+}
+
+
+.media-thumbnail {
+  display: block;
+}
+
+.media-thumbnail--photo-tile {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0,0,0,.24);
+}
+
+.media-thumbnail--gif-preview {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0,0,0,.24);
+}
+
+.media-preview--gif-preview.gif-hover-active {
+  border-color: rgba(240, 109, 50, .72);
+}
+
+.media-thumbnail--video-poster {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+
+
+.media-preview--video-poster.is-playable .video-play-indicator {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .58);
+  border: 1px solid rgba(255, 255, 255, .42);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  z-index: 2;
+}
+
+.media-preview--video-poster:not(.is-playable) .video-play-indicator,
+.media-preview--video-poster.thumbnail-failed .video-play-indicator {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.media-thumbnail-fallback {
+  display: none;
+  width: 100%;
+  height: 100%;
+  min-width: 240px;
+  min-height: 220px;
+  border: 0;
+  border-radius: 0;
+}
+
+.media-preview--photo-tile .media-thumbnail-fallback,
+.media-preview--gif-preview .media-thumbnail-fallback {
+  border: 1px dashed rgba(255,255,255,.22);
+  border-radius: 12px;
+  background: rgba(0,0,0,.16);
+}
+
+.media-preview.thumbnail-failed .media-thumbnail,
+.media-preview.thumbnail-retrying .media-thumbnail {
+  display: none;
+}
+
+.media-preview.thumbnail-failed .media-thumbnail-fallback,
+.media-preview.thumbnail-retrying .media-thumbnail-fallback {
+  display: grid;
+}
+
+.media-card-body {
+  display: grid;
+  align-content: end;
+  align-self: stretch;
+  gap: 5px;
+  min-width: 0;
+}
+
+.media-card-title {
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 780;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.media-card-meta {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.media-type-line {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.row-path {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.media-card .media-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  justify-content: stretch;
+  align-self: end;
+}
+
+.media-card .media-actions a,
+.media-card .media-actions button,
+.media-card .media-actions .disabled-action {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.15;
+  padding: 5px 7px;
+  border-radius: 8px;
+}
+
+.media-card .media-actions [data-action="show-folder"] {
+  order: 99;
+  grid-column: 1 / -1;
+}
+
+/* Step 3.4: structural favorites UI. */
+.top-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.top-job-status {
+  max-width: min(34vw, 460px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+#favoritesView.active,
+.favorite-action.is-favorite {
+  border-color: var(--accent);
+}
+
+#favoritesView.active {
+  background: var(--accent);
+}
+
+
+
+/* Step 7.5e: zřetelnější aktivní stav Oblíbené v červených tmavých tématech. */
+:root[data-theme="vivid-content"] .favorite-action.is-favorite,
+:root[data-theme="vivid-content"] #mediaModalFavorite.is-favorite {
+  color: #fff7ed;
+  background: linear-gradient(180deg, rgba(255, 92, 74, .30), rgba(183, 31, 47, .34));
+  border-color: rgba(255, 128, 92, .92);
+  box-shadow: 0 0 0 1px rgba(255, 128, 92, .18), 0 0 18px rgba(183, 31, 47, .24);
+}
+
+:root[data-theme="dark-cinema"] .favorite-action.is-favorite,
+:root[data-theme="dark-cinema"] #mediaModalFavorite.is-favorite {
+  color: #fff6ec;
+  background: linear-gradient(180deg, rgba(166, 42, 70, .34), rgba(90, 20, 41, .42));
+  border-color: rgba(214, 76, 105, .92);
+  box-shadow: 0 0 0 1px rgba(214, 76, 105, .18), 0 0 18px rgba(115, 30, 58, .26);
+}
+
+.media-card.unavailable {
+  opacity: .72;
+}
+
+.disabled-action {
+  color: var(--muted);
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+
+/* Step 4.3b: search moved to the top bar. */
+.search-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.top-search {
+  width: 100%;
+}
+
+.search-panel input[type="search"] {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+
+.search-panel input[type="search"]:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.search-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 850px) {
+  .topbar { grid-template-columns: 1fr; }
+  .top-brand, .top-actions { justify-content: flex-start; }
+  .search-panel { grid-template-columns: 1fr; }
+}
+
+
+/* Step 5.2: minimal catalog-management block for read-only scan-preview. */
+.job-panel {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  background: rgba(0,0,0,.12);
+}
+
+.job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.job-result {
+  overflow-wrap: anywhere;
+}
+
+/* Step 5.3: scan-stage writes only to staging scan tables. */
+.write-action {
+  border-color: rgba(240, 109, 50, .55);
+}
+
+.write-action:hover {
+  border-color: var(--accent);
+}
+
+.decision-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.decision-warning {
+  color: #f8b26a;
+  margin: 0;
+}
+
+.decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.decision-sample {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.decision-sample summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.decision-sample ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+
+/* Step 6.26a: catalog management moved out of the content flow into a modal. */
+body.catalog-management-open {
+  overflow: hidden;
+}
+
+.catalog-management-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  color: var(--text);
+}
+
+.catalog-management-modal.show {
+  display: grid;
+}
+
+.catalog-management-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, .72);
+  cursor: default;
+}
+
+.catalog-management-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(92vw, 980px);
+  max-height: min(88dvh, 780px);
+  margin: auto;
+  background: #11151f;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 22px 70px rgba(0,0,0,.55);
+}
+
+.catalog-management-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  background: rgba(17, 21, 31, .96);
+}
+
+.catalog-management-bar h2 {
+  margin-bottom: 4px;
+}
+
+.catalog-management-bar p {
+  margin: 0;
+}
+
+.catalog-management-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.management-section {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  background: rgba(0,0,0,.12);
+}
+
+.management-section h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.management-section p {
+  margin: 0;
+}
+
+.theme-settings-section {
+  gap: 12px;
+}
+
+.theme-select-row {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) minmax(220px, 320px);
+  gap: 10px;
+  align-items: center;
+}
+
+.theme-select-row span {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.theme-select-row select {
+  width: 100%;
+}
+
+.theme-status {
+  font-size: 13px;
+}
+
+.management-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.management-result-head button {
+  flex: 0 0 auto;
+}
+
+.management-action-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.management-action-group {
+  display: grid;
+  gap: 8px;
+}
+
+.management-action-group h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.catalog-management-modal .job-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.job-action-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+
+.job-action-card button {
+  width: 100%;
+  text-align: left;
+}
+
+.management-section .job-action-description {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.catalog-management-modal .job-result {
+  min-height: 32px;
+  max-height: 320px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.job-result-message {
+  margin: 0;
+}
+
+.job-result-message.error {
+  color: #ff8a8a;
+}
+
+.job-result-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.job-result-panel h4,
+.job-result-section h5 {
+  margin: 0;
+}
+
+.job-result-panel h4 {
+  font-size: 15px;
+}
+
+.job-result-section {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+
+.job-result-section h5 {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.job-result-grid {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.85fr) minmax(0, 1.15fr);
+  gap: 5px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.job-result-grid dt {
+  color: var(--muted);
+}
+
+.job-result-grid dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.job-result-notice {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.job-result-notice.warning {
+  color: #f8b26a;
+}
+
+.job-result-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.job-result-errors {
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.job-result-errors summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.job-result-errors ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+@media (max-width: 850px) {
+  .catalog-management-panel {
+    width: 100vw;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .catalog-management-bar {
+    align-items: flex-start;
+  }
+}
+
+/* Step 8.1c2: dedicated read-only folder repair modal. */
+body.folder-repair-modal-open {
+  overflow: hidden;
+}
+
+.folder-repair-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 105;
+  display: none;
+  color: var(--text);
+}
+
+.folder-repair-modal.show {
+  display: grid;
+}
+
+.folder-repair-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, .74);
+  cursor: default;
+}
+
+.folder-repair-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(92vw, 820px);
+  max-height: min(86dvh, 720px);
+  margin: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 22px 70px rgba(0,0,0,.55);
+}
+
+.folder-repair-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.folder-repair-bar h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.folder-repair-bar p {
+  margin: 0;
+}
+
+.folder-repair-body {
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.folder-repair-loading {
+  margin: 0;
+}
+
+.folder-repair-body .job-result-panel {
+  gap: 12px;
+}
+
+.folder-repair-body .job-result-section {
+  background: rgba(255,255,255,.035);
+}
+
+@media (max-width: 850px) {
+  .folder-repair-panel {
+    width: 100vw;
+    max-height: 100dvh;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .folder-repair-bar {
+    align-items: flex-start;
+  }
+}
+
+/* Step 6.11–6.18: modal for photos, GIFs, videos, video posters, video frame previews, photo/GIF favorites, and modal open-original actions. */
+body.modal-open {
+  overflow: hidden;
+}
+
+.modal-trigger {
+  cursor: zoom-in;
+}
+
+.media-preview--video-poster.modal-trigger {
+  cursor: pointer;
+}
+
+.media-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: none;
+  color: var(--text);
+}
+
+.media-modal.show {
+  display: grid;
+}
+
+.media-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .88);
+}
+
+.media-modal-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(90vw, 1500px);
+  height: min(84dvh, 980px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  background: #080a0e;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 22px 70px rgba(0,0,0,.55);
+}
+
+/* Step 7.2-photo-modal-height-r1: photo modal keeps the accepted width,
+   but uses more of the current viewport height. Video modal remains unchanged. */
+.media-modal.image-mode .media-modal-panel {
+  width: min(88vw, 1450px);
+  height: 92dvh;
+  max-height: calc(100dvh - 24px);
+}
+
+.media-modal.video-mode .media-modal-panel {
+  width: min(92vw, 1600px);
+  height: min(86dvh, 980px);
+}
+
+.media-modal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  background: rgba(17, 21, 31, .96);
+}
+
+.media-modal-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.media-modal-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(68vw, 760px);
+}
+
+.media-modal-controls[hidden] {
+  display: none;
+}
+
+.media-modal-controls button,
+#mediaModalClose {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.media-modal-controls button:hover,
+#mediaModalClose:hover {
+  border-color: rgba(240, 109, 50, .8);
+}
+
+.media-modal-stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: safe center;
+  justify-content: safe center;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.media-modal.image-mode .media-modal-stage {
+  overflow: auto;
+}
+
+.media-modal.video-mode .media-modal-stage {
+  overflow: hidden;
+}
+
+.media-modal-image,
+.media-modal-video {
+  display: block;
+  object-fit: contain;
+}
+
+.media-modal-image {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.media-modal-video {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  background: #000;
+}
+
+.media-modal-footer {
+  min-height: 38px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255,255,255,.12);
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 850px) {
+  .media-modal-panel {
+    width: 100vw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .media-modal-bar {
+    align-items: flex-start;
+  }
+
+  .media-modal-controls {
+    max-width: 100%;
+  }
+}
+
+/* Step 7.1-folder-strip-r1: folder previews are portrait-oriented and no longer clipped by a narrow right column. */
+.folder-preview-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 0;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.folder-preview-thumb {
+  flex: 0 0 116px;
+  width: 116px;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 9px;
+  background: rgba(0,0,0,.24);
+}
+
+.folder-preview-thumb.thumbnail-failed {
+  display: none;
+}
+
+.folder-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.folder-preview-plan {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.folder-preview-plan .plan-title {
+  font-weight: 700;
+  margin: 0;
+}
+
+
+/* Step 7.1-folder-strip-r1d: one-column folder cards with right-anchored preview/statistics grid and bottom-left actions. */
+.folder-card {
+  cursor: pointer;
+}
+
+.folder-card-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) max-content minmax(230px, 270px);
+  gap: 16px 18px;
+  align-items: stretch;
+}
+
+.folder-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.folder-card:not(.has-folder-preview) .folder-card-main {
+  max-width: 460px;
+}
+
+.folder-card-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  width: fit-content;
+}
+
+.folder-card-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(22px, 1.35vw, 28px);
+  line-height: 1.16;
+  padding-bottom: 2px;
+  font-weight: 920;
+  letter-spacing: .01em;
+}
+
+.folder-card-primary-meta {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.folder-card-detail-meta {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.folder-card-preview {
+  grid-column: 3;
+  min-width: 0;
+  max-width: 100%;
+  align-self: center;
+  justify-self: end;
+}
+
+.folder-card-preview:empty {
+  display: none;
+}
+
+
+.folder-card-insights {
+  grid-column: 4;
+  align-self: stretch;
+  justify-self: end;
+  width: 100%;
+  min-width: 230px;
+  max-width: 270px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+}
+
+.folder-insight-total {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.folder-insight-total strong {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.folder-insight-total span,
+.folder-insight-foot {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.folder-insight-bars {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+}
+
+.folder-insight-labelrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.folder-insight-labelrow strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.folder-insight-track {
+  height: 5px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+}
+
+.folder-insight-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(240,109,50,.9), rgba(255,154,92,.55));
+}
+
+/* Step 6.23v: visible folder action for the confirmed update-branch workflow. */
+.folder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+}
+
+.folder-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.folder-row-main {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-row-main:hover {
+  border-color: transparent;
+}
+
+.folder-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.folder-open-action,
+.folder-update-action {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.folder-more-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.folder-more-menu summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  list-style: none;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font: inherit;
+  line-height: normal;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.folder-card-actions .folder-more-menu summary,
+.folder-row-actions .folder-more-menu summary {
+  font-size: 12px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+
+.folder-more-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.folder-more-menu summary:hover {
+  border-color: var(--accent);
+}
+
+.folder-more-menu[open] summary {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+
+.folder-more-menu-panel {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 170px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .34);
+}
+
+.folder-more-menu-panel button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.folder-more-menu-panel button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .06);
+}
+
+.folder-more-menu-panel button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.current-folder-more {
+  align-self: flex-start;
+}
+
+.current-folder-more .folder-more-menu-panel {
+  right: 0;
+  left: auto;
+}
+
+/* Step 8.1a: runtime state for folders missing on disk. */
+.folder-runtime-status {
+  margin-top: 3px;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.folder-card.folder-missing {
+  border-color: var(--danger);
+}
+
+.folder-card.folder-missing:hover {
+  border-color: var(--danger);
+}
+
+.folder-card.folder-missing .folder-card-title,
+.tree-row.folder-missing .tree-node-name,
+.tree-row.folder-missing .tree-node-meta {
+  color: var(--danger);
+}
+
+.folder-unavailable-action {
+  border-color: var(--danger);
+}
+
+.folder-unavailable-action:hover,
+.folder-unavailable-action:focus-visible {
+  border-color: var(--danger);
+}
+
+/* Step 6.23w: top-level disk candidates are visible before first update-branch. */
+.folder-row.disk-candidate {
+  border-style: dashed;
+}
+
+.folder-row.disk-candidate .row-meta {
+  color: var(--muted);
+}
+
+/* Step 6.25b: left folder tree as compact path-oriented navigation. */
+.sidebar .tree-root-pager {
+  display: none;
+}
+
+.folder-tree {
+  display: grid;
+  gap: 4px;
+}
+
+.tree-node {
+  min-width: 0;
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: 22px 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 31px;
+  padding: 6px 8px 6px calc(8px + var(--tree-depth, 0) * 16px);
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.tree-row:hover {
+  background: rgba(255,255,255,.045);
+  border-color: rgba(255,255,255,.08);
+}
+
+.tree-row.active {
+  background: rgba(240, 109, 50, .16);
+  border-color: rgba(240, 109, 50, .72);
+}
+
+.tree-row.disk-candidate {
+  border-style: dashed;
+  opacity: .82;
+}
+
+.tree-root-row {
+  margin-bottom: 8px;
+}
+
+.tree-toggle,
+.tree-toggle-spacer {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+}
+
+.tree-toggle {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.tree-toggle:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.06);
+  border-color: transparent;
+}
+
+.tree-node-icon {
+  width: 24px;
+  min-width: 24px;
+  display: grid;
+  place-items: center;
+  opacity: .80;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tree-kind-folder,
+.tree-kind-empty,
+.tree-kind-disk {
+  opacity: .72;
+}
+
+.tree-kind-root {
+  opacity: .9;
+  font-size: 15px;
+}
+
+.tree-node-main {
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.tree-node-main:hover {
+  border-color: transparent;
+}
+
+.tree-node-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.tree-row.branch .tree-node-name,
+.tree-row.tree-root-row .tree-node-name {
+  font-weight: 650;
+}
+
+.tree-row.leaf .tree-node-name {
+  font-weight: 460;
+}
+
+.tree-row.active .tree-node-name {
+  font-weight: 700;
+}
+
+.tree-node-meta {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10.5px;
+  opacity: .78;
+}
+
+.tree-row.active .tree-node-meta {
+  color: var(--text);
+  opacity: .68;
+}
+
+.tree-children {
+  display: grid;
+  gap: 2px;
+}
+
+.tree-children[hidden] {
+  display: none;
+}
+
+.tree-more {
+  padding: 4px 8px 4px 32px;
+  font-size: 12px;
+}
+
+
+/* Step 7.5f: jemný vizuální polish stromu bez změny navigační logiky. */
+.tree-row.active .tree-node-icon {
+  opacity: .95;
+}
+
+.tree-row.active .tree-toggle {
+  color: var(--text);
+}
+
+
+@media (max-width: 1200px) {
+  .media-list {
+    grid-template-columns: repeat(auto-fill, minmax(var(--media-card-min-width-narrow), 1fr));
+  }
+
+  .folder-card-layout {
+    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr) minmax(220px, 270px);
+  }
+
+  .folder-card-preview {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .folder-card-insights {
+    grid-column: 3;
+    min-width: 220px;
+    max-width: 270px;
+  }
+
+  .folder-preview-thumb {
+    flex-basis: 100px;
+    width: 100px;
+  }
+}
+
+
+
+/* Step 7.1-folder-strip-r1h: content-width driven compact layout.
+   Compact mode is toggled by JS when the content column is too narrow or folder cards do not fit.
+   It is not tied to a fixed monitor width. */
+body.layout-compact .layout {
+  grid-template-columns: 1fr;
+  padding: 12px;
+}
+
+body.layout-compact .sidebar {
+  display: none;
+}
+
+body.layout-compact .content {
+  min-width: 0;
+}
+
+body.layout-compact .top-job-status {
+  display: none;
+}
+
+body.layout-compact .folder-card-layout,
+body.layout-compact .folder-card.has-folder-preview .folder-card-layout {
+  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
+  gap: 14px 16px;
+}
+
+body.layout-compact .folder-card-insights {
+  display: none;
+}
+
+body.layout-compact .folder-card-preview {
+  grid-column: 2;
+  justify-self: end;
+}
+
+body.layout-compact .folder-preview-strip {
+  justify-content: flex-end;
+}
+
+body.layout-compact .folder-preview-thumb {
+  flex-basis: 96px;
+  width: 96px;
+}
+
+@media (max-width: 850px) {
+  .media-list {
+    grid-template-columns: 1fr;
+  }
+
+  .media-card .media-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .media-card .media-actions [data-action="show-folder"] {
+    order: 0;
+    grid-column: auto;
+  }
+
+  .media-preview--photo-tile {
+    aspect-ratio: 2 / 3;
+    height: auto;
+    min-height: 0;
+  }
+
+  .media-preview--gif-preview {
+    height: 200px;
+    min-height: 200px;
+  }
+
+  .media-preview--video-poster {
+    height: 200px;
+    min-height: 200px;
+  }
+
+  .folder-card-layout,
+  .folder-card.has-folder-preview .folder-card-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .folder-card-main,
+  .folder-card:not(.has-folder-preview) .folder-card-main {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .folder-card-preview,
+  .folder-card-insights {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    justify-self: stretch;
+  }
+
+  .folder-card-insights {
+    grid-column: 1;
+  }
+
+  .folder-preview-strip {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .folder-preview-thumb {
+    flex-basis: 88px;
+    width: 88px;
+  }
+
+  .media-thumbnail-fallback {
+    min-height: 200px;
+  }
+}
+
+@media (max-width: 700px) {
+  .theme-select-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 7.4b-theme-light-mode-r1: první reálné barevné schéma nad hotovou theme infrastrukturou.
+   Light mode používá teplé světlé panely, grafitový text a měděný akcent.
+   Jde pouze o CSS paletu; layout, funkce a API se nemění. */
+:root[data-theme="serious-light"] body {
+  background: var(--bg);
+}
+
+:root[data-theme="serious-light"] .topbar {
+  background: rgba(255, 250, 242, .94);
+  border-bottom-color: rgba(139, 105, 74, .28);
+  box-shadow: 0 10px 28px rgba(80, 55, 30, .10);
+  backdrop-filter: blur(12px);
+}
+
+:root[data-theme="serious-light"] .sidebar,
+:root[data-theme="serious-light"] .content,
+:root[data-theme="serious-light"] .folder-row,
+:root[data-theme="serious-light"] .card,
+:root[data-theme="serious-light"] .media-row,
+:root[data-theme="serious-light"] .media-card {
+  box-shadow: 0 10px 26px rgba(80, 55, 30, .08);
+}
+
+:root[data-theme="serious-light"] .tabs {
+  border-top-color: rgba(139, 105, 74, .16);
+  border-bottom-color: rgba(139, 105, 74, .16);
+}
+
+:root[data-theme="serious-light"] .tab.active,
+:root[data-theme="serious-light"] .pagination-button.active,
+:root[data-theme="serious-light"] #favoritesView.active {
+  color: #fffaf2;
+}
+
+:root[data-theme="serious-light"] .media-placeholder,
+:root[data-theme="serious-light"] .media-preview,
+:root[data-theme="serious-light"] .media-preview--photo-tile,
+:root[data-theme="serious-light"] .media-preview--gif-preview,
+:root[data-theme="serious-light"] .media-thumbnail--photo-tile,
+:root[data-theme="serious-light"] .media-thumbnail--gif-preview {
+  background: #eadfce;
+  border-color: rgba(139, 105, 74, .24);
+}
+
+:root[data-theme="serious-light"] .media-preview--gif-preview.gif-hover-active {
+  border-color: rgba(200, 101, 47, .78);
+}
+
+:root[data-theme="serious-light"] .disabled-action,
+:root[data-theme="serious-light"] .job-panel,
+:root[data-theme="serious-light"] .management-section,
+:root[data-theme="serious-light"] .job-action-card,
+:root[data-theme="serious-light"] .folder-card-insights,
+:root[data-theme="serious-light"] .decision-sample {
+  background: rgba(255, 255, 255, .54);
+  border-color: rgba(139, 105, 74, .20);
+}
+
+:root[data-theme="serious-light"] .catalog-management-panel {
+  background: #fffaf2;
+  border-color: rgba(139, 105, 74, .26);
+  box-shadow: 0 22px 70px rgba(80, 55, 30, .24);
+}
+
+:root[data-theme="serious-light"] .catalog-management-bar {
+  background: rgba(255, 250, 242, .96);
+  border-bottom-color: rgba(139, 105, 74, .20);
+}
+
+:root[data-theme="serious-light"] .catalog-management-backdrop {
+  background: rgba(33, 26, 19, .42);
+}
+
+:root[data-theme="serious-light"] .tree-row:hover,
+:root[data-theme="serious-light"] .tree-toggle:hover {
+  background: rgba(200, 101, 47, .10);
+  border-color: rgba(200, 101, 47, .18);
+}
+
+:root[data-theme="serious-light"] .tree-row.active {
+  background: rgba(200, 101, 47, .16);
+  border-color: rgba(200, 101, 47, .56);
+}
+
+:root[data-theme="serious-light"] .folder-insight-track,
+:root[data-theme="serious-light"] .subfolder-toggle-button:hover {
+  background: rgba(139, 105, 74, .12);
+}
+
+:root[data-theme="serious-light"] .folder-insight-fill {
+  background: linear-gradient(90deg, rgba(200, 101, 47, .95), rgba(234, 154, 91, .68));
+}
+
+:root[data-theme="serious-light"] .media-modal {
+  color: #f8f2eb;
+}
+
+:root[data-theme="serious-light"] .media-modal-backdrop {
+  background: rgba(20, 15, 12, .88);
+}
+
+:root[data-theme="serious-light"] .media-modal-panel {
+  background: #110f0d;
+  border-color: rgba(139, 105, 74, .30);
+  box-shadow: 0 22px 70px rgba(20, 15, 12, .62);
+}
+
+/* Step 7.4b-light-mode-modal-bars-r1:
+   Light mode sladí lišty media modalu se světlým katalogem,
+   ale samotný viewer/stage zůstává tmavý kvůli nerušenému prohlížení obsahu. */
+:root[data-theme="serious-light"] .media-modal-bar {
+  color: #29231d;
+  background: rgba(255, 250, 242, .97);
+  border-bottom-color: rgba(139, 105, 74, .24);
+  box-shadow: 0 10px 24px rgba(20, 15, 12, .18);
+}
+
+:root[data-theme="serious-light"] .media-modal-footer {
+  color: #75695f;
+  background: rgba(255, 250, 242, .97);
+  border-top-color: rgba(139, 105, 74, .24);
+}
+
+:root[data-theme="serious-light"] .media-modal-controls button,
+:root[data-theme="serious-light"] #mediaModalClose {
+  color: #29231d;
+  background: #f5ebdc;
+  border-color: rgba(139, 105, 74, .32);
+}
+
+:root[data-theme="serious-light"] .media-modal-controls button:hover,
+:root[data-theme="serious-light"] #mediaModalClose:hover {
+  background: #fff3e0;
+  border-color: rgba(200, 101, 47, .82);
+}
+
+
+
+/* Step 7.4c-dark-mode-r2:
+   Dark mode má vlastní identitu oddělenou od Original.
+   Cíl: luxusnější noční režim, hluboký midnight/navy základ, chladný cyan akcent a minimální oranžová stopa. */
+:root[data-theme="serious-dark"] body {
+  background: var(--bg);
+}
+
+:root[data-theme="serious-dark"] .topbar {
+  background: rgba(7, 11, 20, .94);
+  border-bottom-color: rgba(93, 211, 214, .24);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(12px);
+}
+
+:root[data-theme="serious-dark"] .sidebar,
+:root[data-theme="serious-dark"] .content,
+:root[data-theme="serious-dark"] .folder-row,
+:root[data-theme="serious-dark"] .card,
+:root[data-theme="serious-dark"] .media-row,
+:root[data-theme="serious-dark"] .media-card {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .34);
+}
+
+:root[data-theme="serious-dark"] .content {
+  background:
+    linear-gradient(180deg, rgba(16, 24, 39, .96), rgba(12, 18, 31, .96));
+}
+
+:root[data-theme="serious-dark"] .sidebar {
+  background:
+    linear-gradient(180deg, rgba(16, 24, 39, .96), rgba(11, 17, 29, .96));
+}
+
+:root[data-theme="serious-dark"] .folder-row,
+:root[data-theme="serious-dark"] .card,
+:root[data-theme="serious-dark"] .media-row,
+:root[data-theme="serious-dark"] .media-card {
+  background: linear-gradient(180deg, rgba(23, 36, 58, .96), rgba(15, 25, 42, .96));
+  border-color: rgba(93, 211, 214, .18);
+}
+
+:root[data-theme="serious-dark"] .folder-row:hover,
+:root[data-theme="serious-dark"] .card:hover,
+:root[data-theme="serious-dark"] .media-card:hover {
+  border-color: rgba(93, 211, 214, .50);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .42), 0 0 0 1px rgba(93, 211, 214, .08);
+}
+
+:root[data-theme="serious-dark"] .tabs {
+  border-top-color: rgba(149, 168, 189, .12);
+  border-bottom-color: rgba(149, 168, 189, .12);
+}
+
+:root[data-theme="serious-dark"] .tab.active,
+:root[data-theme="serious-dark"] .pagination-button.active,
+:root[data-theme="serious-dark"] #favoritesView.active {
+  color: #041018;
+  background: linear-gradient(180deg, #78edf0, #45bdc3);
+  border-color: rgba(93, 211, 214, .88);
+  box-shadow: 0 10px 24px rgba(69, 189, 195, .20);
+}
+
+:root[data-theme="serious-dark"] button:hover,
+:root[data-theme="serious-dark"] select:focus,
+:root[data-theme="serious-dark"] input:focus {
+  border-color: rgba(93, 211, 214, .78);
+}
+
+:root[data-theme="serious-dark"] .media-placeholder,
+:root[data-theme="serious-dark"] .media-preview,
+:root[data-theme="serious-dark"] .media-preview--photo-tile,
+:root[data-theme="serious-dark"] .media-preview--gif-preview,
+:root[data-theme="serious-dark"] .media-thumbnail--photo-tile,
+:root[data-theme="serious-dark"] .media-thumbnail--gif-preview {
+  background:
+    radial-gradient(circle at 30% 22%, rgba(93, 211, 214, .16), transparent 34%),
+    linear-gradient(135deg, #0b1424, #050912);
+  border-color: rgba(93, 211, 214, .20);
+}
+
+:root[data-theme="serious-dark"] .media-preview--gif-preview.gif-hover-active {
+  border-color: rgba(93, 211, 214, .88);
+  box-shadow: 0 0 0 1px rgba(93, 211, 214, .18);
+}
+
+:root[data-theme="serious-dark"] .disabled-action,
+:root[data-theme="serious-dark"] .job-panel,
+:root[data-theme="serious-dark"] .management-section,
+:root[data-theme="serious-dark"] .job-action-card,
+:root[data-theme="serious-dark"] .folder-card-insights,
+:root[data-theme="serious-dark"] .decision-sample {
+  background: rgba(93, 211, 214, .045);
+  border-color: rgba(93, 211, 214, .13);
+}
+
+:root[data-theme="serious-dark"] .catalog-management-panel {
+  background: #101827;
+  border-color: rgba(93, 211, 214, .28);
+  box-shadow: 0 24px 76px rgba(0, 0, 0, .62);
+}
+
+:root[data-theme="serious-dark"] .catalog-management-bar {
+  background: rgba(10, 18, 32, .97);
+  border-bottom-color: rgba(93, 211, 214, .14);
+}
+
+:root[data-theme="serious-dark"] .catalog-management-backdrop {
+  background: rgba(2, 5, 10, .72);
+}
+
+:root[data-theme="serious-dark"] .tree-row:hover,
+:root[data-theme="serious-dark"] .tree-toggle:hover {
+  background: rgba(93, 211, 214, .08);
+  border-color: rgba(93, 211, 214, .24);
+}
+
+:root[data-theme="serious-dark"] .tree-row.active {
+  background: linear-gradient(90deg, rgba(93, 211, 214, .18), rgba(96, 79, 191, .12));
+  border-color: rgba(93, 211, 214, .68);
+}
+
+:root[data-theme="serious-dark"] .folder-insight-track,
+:root[data-theme="serious-dark"] .subfolder-toggle-button:hover {
+  background: rgba(149, 168, 189, .11);
+}
+
+:root[data-theme="serious-dark"] .folder-insight-fill {
+  background: linear-gradient(90deg, rgba(93, 211, 214, .98), rgba(96, 79, 191, .62));
+}
+
+:root[data-theme="serious-dark"] .media-modal {
+  color: #e8f0fa;
+}
+
+:root[data-theme="serious-dark"] .media-modal-backdrop {
+  background: rgba(2, 5, 10, .91);
+}
+
+:root[data-theme="serious-dark"] .media-modal-panel {
+  background: #03060c;
+  border-color: rgba(93, 211, 214, .26);
+  box-shadow: 0 24px 76px rgba(0, 0, 0, .72);
+}
+
+:root[data-theme="serious-dark"] .media-modal-bar {
+  color: #e8f0fa;
+  background: linear-gradient(180deg, rgba(13, 22, 38, .98), rgba(8, 15, 27, .98));
+  border-bottom-color: rgba(93, 211, 214, .14);
+}
+
+:root[data-theme="serious-dark"] .media-modal-footer {
+  color: #95a8bd;
+  background: linear-gradient(180deg, rgba(8, 15, 27, .98), rgba(6, 11, 20, .98));
+  border-top-color: rgba(93, 211, 214, .14);
+}
+
+:root[data-theme="serious-dark"] .media-modal-controls button,
+:root[data-theme="serious-dark"] #mediaModalClose {
+  color: #e8f0fa;
+  background: #16233a;
+  border-color: rgba(93, 211, 214, .20);
+}
+
+:root[data-theme="serious-dark"] .media-modal-controls button:hover,
+:root[data-theme="serious-dark"] #mediaModalClose:hover {
+  color: #041018;
+  background: linear-gradient(180deg, #78edf0, #45bdc3);
+  border-color: rgba(93, 211, 214, .88);
+}
+
+/* Step 7.4d-vivid-mode-r3:
+   Vivid mode zůstává ambientní content-first režim, ale R3 ho posouvá výrazněji do red/black směru.
+   Současně opravuje strom složek: názvy a šipky nesmí být v samostatných vnitřních obdélnících. */
+:root[data-theme="vivid-content"] body {
+  background: var(--bg);
+}
+
+:root[data-theme="vivid-content"] .topbar {
+  background: rgba(17, 5, 6, .94);
+  border-bottom-color: rgba(255, 73, 61, .30);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .48), 0 0 36px rgba(255, 73, 61, .09);
+  backdrop-filter: blur(12px);
+}
+
+:root[data-theme="vivid-content"] .sidebar,
+:root[data-theme="vivid-content"] .content,
+:root[data-theme="vivid-content"] .folder-row,
+:root[data-theme="vivid-content"] .card,
+:root[data-theme="vivid-content"] .media-row,
+:root[data-theme="vivid-content"] .media-card {
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .40), 0 0 0 1px rgba(255, 73, 61, .04);
+}
+
+:root[data-theme="vivid-content"] .content {
+  background:
+    linear-gradient(180deg, rgba(27, 8, 11, .97), rgba(13, 4, 6, .97));
+}
+
+:root[data-theme="vivid-content"] .sidebar {
+  background:
+    linear-gradient(180deg, rgba(22, 7, 9, .97), rgba(10, 3, 5, .97));
+}
+
+:root[data-theme="vivid-content"] .folder-row,
+:root[data-theme="vivid-content"] .card,
+:root[data-theme="vivid-content"] .media-row,
+:root[data-theme="vivid-content"] .media-card {
+  background: linear-gradient(180deg, rgba(39, 13, 17, .98), rgba(18, 6, 9, .98));
+  border-color: rgba(255, 73, 61, .22);
+}
+
+:root[data-theme="vivid-content"] .folder-row:hover,
+:root[data-theme="vivid-content"] .card:hover,
+:root[data-theme="vivid-content"] .media-card:hover {
+  border-color: rgba(255, 73, 61, .68);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .48), 0 0 0 1px rgba(255, 73, 61, .14), 0 0 34px rgba(255, 73, 61, .12);
+}
+
+:root[data-theme="vivid-content"] .tabs {
+  border-top-color: rgba(255, 151, 73, .13);
+  border-bottom-color: rgba(255, 151, 73, .13);
+}
+
+:root[data-theme="vivid-content"] .tab.active,
+:root[data-theme="vivid-content"] .pagination-button.active,
+:root[data-theme="vivid-content"] #favoritesView.active {
+  color: #260807;
+  background: linear-gradient(180deg, #ff9a55, #ff493d 58%, #b71f2f);
+  border-color: rgba(255, 92, 74, .92);
+  box-shadow: 0 12px 30px rgba(255, 73, 61, .28);
+}
+
+:root[data-theme="vivid-content"] button:hover,
+:root[data-theme="vivid-content"] select:focus,
+:root[data-theme="vivid-content"] input:focus {
+  border-color: rgba(255, 92, 74, .84);
+}
+
+:root[data-theme="vivid-content"] input,
+:root[data-theme="vivid-content"] select,
+:root[data-theme="vivid-content"] button {
+  background: #261013;
+  border-color: rgba(255, 92, 74, .24);
+}
+
+:root[data-theme="vivid-content"] .media-placeholder,
+:root[data-theme="vivid-content"] .media-preview,
+:root[data-theme="vivid-content"] .media-preview--photo-tile,
+:root[data-theme="vivid-content"] .media-preview--gif-preview,
+:root[data-theme="vivid-content"] .media-thumbnail--photo-tile,
+:root[data-theme="vivid-content"] .media-thumbnail--gif-preview {
+  background:
+    radial-gradient(circle at 28% 20%, rgba(255, 151, 73, .18), transparent 34%),
+    radial-gradient(circle at 80% 70%, rgba(183, 31, 47, .22), transparent 34%),
+    linear-gradient(135deg, #260d11, #0b0305);
+  border-color: rgba(255, 92, 74, .22);
+}
+
+:root[data-theme="vivid-content"] .media-preview--gif-preview.gif-hover-active {
+  border-color: rgba(255, 73, 61, .94);
+  box-shadow: 0 0 0 1px rgba(255, 73, 61, .22), 0 0 30px rgba(255, 73, 61, .18);
+}
+
+:root[data-theme="vivid-content"] .disabled-action,
+:root[data-theme="vivid-content"] .job-panel,
+:root[data-theme="vivid-content"] .management-section,
+:root[data-theme="vivid-content"] .job-action-card,
+:root[data-theme="vivid-content"] .folder-card-insights,
+:root[data-theme="vivid-content"] .decision-sample {
+  background: rgba(255, 92, 74, .060);
+  border-color: rgba(255, 92, 74, .16);
+}
+
+:root[data-theme="vivid-content"] .catalog-management-panel {
+  background: #17080a;
+  border-color: rgba(255, 92, 74, .32);
+  box-shadow: 0 26px 82px rgba(0, 0, 0, .68), 0 0 44px rgba(255, 73, 61, .12);
+}
+
+:root[data-theme="vivid-content"] .catalog-management-bar {
+  background: rgba(17, 5, 7, .98);
+  border-bottom-color: rgba(255, 92, 74, .18);
+}
+
+:root[data-theme="vivid-content"] .catalog-management-backdrop {
+  background: rgba(8, 2, 3, .76);
+}
+
+:root[data-theme="vivid-content"] .tree-row:hover,
+:root[data-theme="vivid-content"] .tree-toggle:hover {
+  background: rgba(255, 73, 61, .12);
+  border-color: rgba(255, 92, 74, .30);
+}
+
+:root[data-theme="vivid-content"] .tree-row.active {
+  background: linear-gradient(90deg, rgba(255, 73, 61, .24), rgba(255, 151, 73, .11));
+  border-color: rgba(255, 92, 74, .76);
+  box-shadow: inset 0 0 0 1px rgba(255, 151, 73, .09);
+}
+
+:root[data-theme="vivid-content"] .tree-node-main {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+:root[data-theme="vivid-content"] .tree-node-main:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-theme="vivid-content"] .tree-toggle {
+  background: transparent;
+  color: #d9a09a;
+}
+
+:root[data-theme="vivid-content"] .tree-toggle:hover {
+  background: rgba(255, 73, 61, .14);
+  color: #fff1ee;
+}
+
+
+:root[data-theme="vivid-content"] .tree-name,
+:root[data-theme="vivid-content"] .folder-title,
+:root[data-theme="vivid-content"] .media-card-title {
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .20);
+}
+
+:root[data-theme="vivid-content"] .folder-insight-track,
+:root[data-theme="vivid-content"] .subfolder-toggle-button:hover {
+  background: rgba(255, 151, 73, .10);
+}
+
+:root[data-theme="vivid-content"] .folder-insight-fill {
+  background: linear-gradient(90deg, rgba(255, 73, 61, .98), rgba(255, 151, 73, .78));
+}
+
+:root[data-theme="vivid-content"] .media-modal {
+  color: #fff1ee;
+}
+
+:root[data-theme="vivid-content"] .media-modal-backdrop {
+  background: rgba(6, 1, 2, .93);
+}
+
+:root[data-theme="vivid-content"] .media-modal-panel {
+  background: #060203;
+  border-color: rgba(255, 92, 74, .30);
+  box-shadow: 0 26px 82px rgba(0, 0, 0, .76), 0 0 42px rgba(255, 73, 61, .12);
+}
+
+:root[data-theme="vivid-content"] .media-modal-bar {
+  color: #fff1ee;
+  background: linear-gradient(180deg, rgba(27, 8, 11, .98), rgba(14, 4, 6, .98));
+  border-bottom-color: rgba(255, 92, 74, .20);
+}
+
+:root[data-theme="vivid-content"] .media-modal-footer {
+  color: #d6a49c;
+  background: linear-gradient(180deg, rgba(14, 4, 6, .98), rgba(8, 2, 3, .98));
+  border-top-color: rgba(255, 92, 74, .20);
+}
+
+:root[data-theme="vivid-content"] .media-modal-controls button,
+:root[data-theme="vivid-content"] #mediaModalClose {
+  color: #fff1ee;
+  background: #261013;
+  border-color: rgba(255, 92, 74, .25);
+}
+
+:root[data-theme="vivid-content"] .media-modal-controls button:hover,
+:root[data-theme="vivid-content"] #mediaModalClose:hover {
+  color: #260807;
+  background: linear-gradient(180deg, #ff9a55, #ff493d 62%, #b71f2f);
+  border-color: rgba(255, 92, 74, .92);
+}
+
+/* Step 7.4e-cinema-noir-r2:
+   Cinema Noir je nejtemnější filmový režim: uhlová černá, tlumená rubínová,
+   kouřově fialový podtón a teplá slonová kost pro čitelnost. */
+:root[data-theme="dark-cinema"] body {
+  background: var(--bg);
+}
+
+:root[data-theme="dark-cinema"] .topbar {
+  background: rgba(6, 5, 8, .96);
+  border-bottom-color: rgba(166, 42, 70, .38);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .64), 0 0 42px rgba(115, 30, 58, .12);
+  backdrop-filter: blur(14px);
+}
+
+:root[data-theme="dark-cinema"] .sidebar,
+:root[data-theme="dark-cinema"] .content,
+:root[data-theme="dark-cinema"] .folder-row,
+:root[data-theme="dark-cinema"] .card,
+:root[data-theme="dark-cinema"] .media-row,
+:root[data-theme="dark-cinema"] .media-card {
+  box-shadow: 0 18px 54px rgba(0, 0, 0, .52), 0 0 0 1px rgba(166, 42, 70, .08);
+}
+
+:root[data-theme="dark-cinema"] .content {
+  background:
+    linear-gradient(180deg, rgba(13, 11, 16, .985), rgba(5, 4, 7, .985));
+}
+
+:root[data-theme="dark-cinema"] .sidebar {
+  background:
+    linear-gradient(180deg, rgba(12, 10, 15, .985), rgba(4, 3, 5, .985));
+}
+
+:root[data-theme="dark-cinema"] .folder-row,
+:root[data-theme="dark-cinema"] .card,
+:root[data-theme="dark-cinema"] .media-row,
+:root[data-theme="dark-cinema"] .media-card {
+  background: linear-gradient(180deg, rgba(21, 17, 24, .99), rgba(9, 7, 11, .99));
+  border-color: rgba(166, 42, 70, .42);
+}
+
+:root[data-theme="dark-cinema"] .folder-row:hover,
+:root[data-theme="dark-cinema"] .card:hover,
+:root[data-theme="dark-cinema"] .media-card:hover {
+  border-color: rgba(166, 42, 70, .76);
+  box-shadow: 0 20px 58px rgba(0, 0, 0, .62), 0 0 0 1px rgba(166, 42, 70, .16), 0 0 36px rgba(80, 38, 62, .16);
+}
+
+:root[data-theme="dark-cinema"] .tabs {
+  border-top-color: rgba(166, 42, 70, .20);
+  border-bottom-color: rgba(166, 42, 70, .20);
+}
+
+:root[data-theme="dark-cinema"] .tab.active,
+:root[data-theme="dark-cinema"] .pagination-button.active,
+:root[data-theme="dark-cinema"] #favoritesView.active {
+  color: #fff6ec;
+  background: linear-gradient(180deg, #5c2032, #a62a46 62%, #5a1429);
+  border-color: rgba(187, 58, 86, .90);
+  box-shadow: 0 12px 34px rgba(166, 42, 70, .30);
+}
+
+:root[data-theme="dark-cinema"] button:hover,
+:root[data-theme="dark-cinema"] select:focus,
+:root[data-theme="dark-cinema"] input:focus {
+  border-color: rgba(187, 58, 86, .82);
+}
+
+:root[data-theme="dark-cinema"] input,
+:root[data-theme="dark-cinema"] select,
+:root[data-theme="dark-cinema"] button {
+  background: #17121a;
+  border-color: rgba(166, 42, 70, .46);
+}
+
+:root[data-theme="dark-cinema"] .media-placeholder,
+:root[data-theme="dark-cinema"] .media-preview,
+:root[data-theme="dark-cinema"] .media-preview--photo-tile,
+:root[data-theme="dark-cinema"] .media-preview--gif-preview,
+:root[data-theme="dark-cinema"] .media-thumbnail--photo-tile,
+:root[data-theme="dark-cinema"] .media-thumbnail--gif-preview {
+  background:
+    radial-gradient(circle at 28% 20%, rgba(166, 42, 70, .12), transparent 34%),
+    radial-gradient(circle at 80% 70%, rgba(96, 65, 105, .18), transparent 34%),
+    linear-gradient(135deg, #17121a, #040305);
+  border-color: rgba(166, 42, 70, .42);
+}
+
+:root[data-theme="dark-cinema"] .media-preview--gif-preview.gif-hover-active {
+  border-color: rgba(187, 58, 86, .90);
+  box-shadow: 0 0 0 1px rgba(187, 58, 86, .16), 0 0 30px rgba(115, 30, 58, .18);
+}
+
+:root[data-theme="dark-cinema"] .disabled-action,
+:root[data-theme="dark-cinema"] .job-panel,
+:root[data-theme="dark-cinema"] .management-section,
+:root[data-theme="dark-cinema"] .job-action-card,
+:root[data-theme="dark-cinema"] .folder-card-insights,
+:root[data-theme="dark-cinema"] .decision-sample {
+  background: rgba(166, 42, 70, .045);
+  border-color: rgba(166, 42, 70, .30);
+}
+
+:root[data-theme="dark-cinema"] .catalog-management-panel {
+  background: #0d0b10;
+  border-color: rgba(166, 42, 70, .54);
+  box-shadow: 0 28px 88px rgba(0, 0, 0, .78), 0 0 44px rgba(115, 30, 58, .10);
+}
+
+:root[data-theme="dark-cinema"] .catalog-management-bar {
+  background: rgba(8, 6, 10, .98);
+  border-bottom-color: rgba(166, 42, 70, .34);
+}
+
+:root[data-theme="dark-cinema"] .catalog-management-backdrop {
+  background: rgba(2, 2, 3, .82);
+}
+
+:root[data-theme="dark-cinema"] .tree-row:hover,
+:root[data-theme="dark-cinema"] .tree-toggle:hover {
+  background: rgba(166, 42, 70, .10);
+  border-color: rgba(187, 58, 86, .34);
+}
+
+:root[data-theme="dark-cinema"] .tree-row.active {
+  background: linear-gradient(90deg, rgba(166, 42, 70, .19), rgba(96, 65, 105, .10));
+  border-color: rgba(187, 58, 86, .64);
+  box-shadow: inset 0 0 0 1px rgba(242, 238, 230, .035);
+}
+
+:root[data-theme="dark-cinema"] .tree-node-main {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+:root[data-theme="dark-cinema"] .tree-node-main:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-theme="dark-cinema"] .tree-toggle {
+  background: transparent;
+  color: #aaa0a5;
+}
+
+:root[data-theme="dark-cinema"] .tree-toggle:hover {
+  background: rgba(166, 42, 70, .12);
+  color: #f2eee6;
+}
+
+:root[data-theme="dark-cinema"] .tree-name,
+:root[data-theme="dark-cinema"] .folder-title,
+:root[data-theme="dark-cinema"] .media-card-title {
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .34);
+}
+
+:root[data-theme="dark-cinema"] .folder-insight-track,
+:root[data-theme="dark-cinema"] .subfolder-toggle-button:hover {
+  background: rgba(166, 42, 70, .14);
+}
+
+:root[data-theme="dark-cinema"] .folder-insight-fill {
+  background: linear-gradient(90deg, rgba(166, 42, 70, .92), rgba(96, 65, 105, .72));
+}
+
+:root[data-theme="dark-cinema"] .media-modal {
+  color: #f2eee6;
+}
+
+:root[data-theme="dark-cinema"] .media-modal-backdrop {
+  background: rgba(1, 1, 2, .95);
+}
+
+:root[data-theme="dark-cinema"] .media-modal-panel {
+  background: #020203;
+  border-color: rgba(166, 42, 70, .42);
+  box-shadow: 0 30px 92px rgba(0, 0, 0, .82), 0 0 42px rgba(115, 30, 58, .11);
+}
+
+:root[data-theme="dark-cinema"] .media-modal-bar {
+  color: #f2eee6;
+  background: linear-gradient(180deg, rgba(13, 11, 16, .99), rgba(6, 5, 8, .99));
+  border-bottom-color: rgba(166, 42, 70, .34);
+}
+
+:root[data-theme="dark-cinema"] .media-modal-footer {
+  color: #aaa0a5;
+  background: linear-gradient(180deg, rgba(6, 5, 8, .99), rgba(2, 2, 3, .99));
+  border-top-color: rgba(166, 42, 70, .34);
+}
+
+:root[data-theme="dark-cinema"] .media-modal-controls button,
+:root[data-theme="dark-cinema"] #mediaModalClose {
+  color: #f2eee6;
+  background: #17121a;
+  border-color: rgba(166, 42, 70, .46);
+}
+
+:root[data-theme="dark-cinema"] .media-modal-controls button:hover,
+:root[data-theme="dark-cinema"] #mediaModalClose:hover {
+  color: #fff6ec;
+  background: linear-gradient(180deg, #5c2032, #a62a46 62%, #5a1429);
+  border-color: rgba(187, 58, 86, .90);
+}
+
+
+/* Step 7.5g: sjednocení vzhledu media action odkazů a tlačítek v červených tmavých tématech. */
+:root[data-theme="vivid-content"] .media-card .media-actions a,
+:root[data-theme="vivid-content"] .media-card .media-actions button:not(.favorite-action.is-favorite) {
+  background: #261013;
+  border-color: rgba(255, 92, 74, .24);
+}
+
+:root[data-theme="vivid-content"] .media-card .media-actions a:hover,
+:root[data-theme="vivid-content"] .media-card .media-actions button:not(.favorite-action.is-favorite):hover,
+:root[data-theme="vivid-content"] .media-card .media-actions a:focus-visible,
+:root[data-theme="vivid-content"] .media-card .media-actions button:not(.favorite-action.is-favorite):focus-visible {
+  border-color: rgba(255, 92, 74, .84);
+}
+
+:root[data-theme="dark-cinema"] .media-card .media-actions a,
+:root[data-theme="dark-cinema"] .media-card .media-actions button:not(.favorite-action.is-favorite) {
+  background: #17121a;
+  border-color: rgba(166, 42, 70, .46);
+}
+
+:root[data-theme="dark-cinema"] .media-card .media-actions a:hover,
+:root[data-theme="dark-cinema"] .media-card .media-actions button:not(.favorite-action.is-favorite):hover,
+:root[data-theme="dark-cinema"] .media-card .media-actions a:focus-visible,
+:root[data-theme="dark-cinema"] .media-card .media-actions button:not(.favorite-action.is-favorite):focus-visible {
+  border-color: rgba(187, 58, 86, .82);
+}
+
+/* Step 7.7a: compact responsive fix for folder cards and header search wrapping. */
+body.layout-compact .folder-card-detail-meta {
+  display: none;
+}
+
+@media (max-width: 1120px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand actions"
+      "search search";
+    gap: 12px 16px;
+  }
+
+  .top-brand {
+    grid-area: brand;
+    min-width: 0;
+  }
+
+  .top-brand #statusText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-panel {
+    grid-area: search;
+    grid-template-columns: minmax(180px, 1fr) auto auto;
+    width: 100%;
+  }
+
+  .top-actions {
+    grid-area: actions;
+    justify-self: end;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+  }
+
+  .top-job-status {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "brand"
+      "actions"
+      "search";
+  }
+
+  .top-brand,
+  .top-actions {
+    justify-content: flex-start;
+  }
+
+  .top-actions {
+    justify-self: start;
+    flex-wrap: wrap;
+  }
+
+  .search-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 8.3b: settings progressive disclosure and clearer primary workflow. */
+.primary-management-section {
+  border-color: rgba(240, 109, 50, .28);
+  background: linear-gradient(180deg, rgba(240, 109, 50, .10), rgba(0, 0, 0, .12));
+}
+
+.primary-job-actions {
+  grid-template-columns: minmax(260px, 1fr) !important;
+}
+
+.primary-action-card {
+  padding: 12px;
+}
+
+.primary-write-action {
+  font-weight: 750;
+}
+
+.primary-management-actions {
+  grid-column: 2;
+  justify-self: end;
+  align-self: center;
+}
+
+
+.settings-workflow-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 9px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(0,0,0,.10);
+}
+
+.management-disclosure {
+  padding: 0;
+  overflow: hidden;
+}
+
+.management-disclosure > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.management-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.management-disclosure > summary::after {
+  content: attr(data-closed-label);
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+.management-disclosure[open] > summary::after {
+  content: attr(data-open-label);
+}
+
+.disclosure-summary-main {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.disclosure-summary-note {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.management-disclosure-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 13px 13px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.diagnostic-tools-section {
+  opacity: .94;
+}
+
+.diagnostic-risk-card {
+  border-color: rgba(248, 178, 106, .30);
+  background: rgba(120, 70, 20, .10);
+}
+
+/* Step 8.3b2: corrective settings UX fix – one-scroll modal and primary decision block. */
+.catalog-management-panel {
+  width: min(96vw, 980px);
+  max-height: min(94dvh, 900px);
+}
+
+.catalog-management-body {
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.catalog-management-modal .job-result {
+  max-height: none;
+  overflow: visible;
+}
+
+.management-section-heading {
+  display: grid;
+  gap: 5px;
+}
+
+.primary-management-section {
+  border-color: rgba(240, 109, 50, .20);
+  background: rgba(0, 0, 0, .12);
+}
+
+.primary-job-actions {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.primary-action-card {
+  padding: 10px;
+}
+
+.primary-action-card .job-action-description {
+  max-width: 72rem;
+}
+
+.catalog-update-decision:not([hidden]) {
+  display: block;
+  margin-top: 2px;
+  padding: 12px;
+  border: 1px solid rgba(240, 109, 50, .32);
+  border-radius: 12px;
+  background: rgba(240, 109, 50, .09);
+}
+
+.catalog-update-decision .job-result-panel {
+  gap: 9px;
+}
+
+.catalog-update-decision .job-result-panel > h4 {
+  font-size: 16px;
+}
+
+.catalog-update-decision .job-result-section {
+  background: rgba(0, 0, 0, .12);
+}
+
+.catalog-update-decision .decision-actions {
+  position: static;
+  z-index: auto;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(255,255,255,.10);
+  background: transparent;
+}
+
+.settings-workflow-note {
+  padding: 8px 10px;
+}
+
+.management-disclosure {
+  padding: 0;
+  overflow: visible;
+}
+
+.management-disclosure > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 13px;
+}
+
+.disclosure-summary-main,
+.disclosure-summary-note {
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+}
+
+.disclosure-summary-note {
+  grid-column: 1 / 2;
+  line-height: 1.35;
+}
+
+.management-disclosure > summary::after {
+  align-self: center;
+}
+
+.management-disclosure-body {
+  padding: 13px;
+}
+
+.management-result-section {
+  border-color: rgba(255, 255, 255, .08);
+}
+
+@media (max-width: 700px) {
+  .catalog-management-panel {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .theme-select-row {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-management-modal .job-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 8.3b3: collapsed diagnostic result block. */
+.management-result-disclosure {
+  padding: 0;
+  overflow: visible;
+}
+
+.management-result-disclosure > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 13px;
+  cursor: pointer;
+}
+
+.management-result-disclosure > summary::after {
+  content: attr(data-closed-label);
+  justify-self: end;
+  align-self: center;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.management-result-disclosure[open] > summary::after {
+  content: attr(data-open-label);
+}
+
+.management-result-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 13px 13px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.management-result-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding-top: 13px;
+}
+
+.management-result-toolbar p {
+  margin: 0;
+}
+
+.management-result-toolbar button {
+  justify-self: end;
+}
+
+.management-result-disclosure .job-result:empty::before {
+  content: attr(data-empty-text);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .management-result-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .management-result-toolbar button {
+    justify-self: start;
+  }
+}
+
+
+/* Step 8.3g: settings decision actions stay in normal flow, so they do not overlay decision text. */
+.catalog-update-decision .decision-actions button {
+  flex: 0 0 auto;
+}
+
+
+/* Step 8.3i3: make the More menu button inherit the same neutral theme border as normal folder action buttons. */
+:root[data-theme="vivid-content"] .folder-more-menu summary {
+  background: #261013;
+  border-color: rgba(255, 92, 74, .24);
+}
+
+:root[data-theme="vivid-content"] .folder-more-menu summary:hover,
+:root[data-theme="vivid-content"] .folder-more-menu summary:focus-visible {
+  border-color: rgba(255, 92, 74, .84);
+}
+
+:root[data-theme="vivid-content"] .folder-more-menu[open] summary {
+  border-color: rgba(255, 92, 74, .24);
+}
+
+:root[data-theme="dark-cinema"] .folder-more-menu summary {
+  background: #17121a;
+  border-color: rgba(166, 42, 70, .46);
+}
+
+:root[data-theme="dark-cinema"] .folder-more-menu summary:hover,
+:root[data-theme="dark-cinema"] .folder-more-menu summary:focus-visible {
+  border-color: rgba(187, 58, 86, .82);
+}
+
+:root[data-theme="dark-cinema"] .folder-more-menu[open] summary {
+  border-color: rgba(166, 42, 70, .46);
+}
+
+/* Step 8.5b: read-only cache/settings status in Settings. */
+.cache-status-section {
+  border-color: rgba(255, 255, 255, .09);
+}
+
+.cache-status-summary {
+  min-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+.cache-status-summary.error {
+  color: var(--danger);
+}
+
+.cache-status-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.cache-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.cache-status-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+
+.cache-status-card h4,
+.cache-status-card p {
+  margin: 0;
+}
+
+.cache-status-card h4 {
+  font-size: 14px;
+}
+
+.cache-status-main {
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.cache-status-badge {
+  justify-self: start;
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(0,0,0,.12);
+  font-size: 12px;
+}
+
+.cache-status-lines {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 17px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cache-status-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(0,0,0,.10);
+}
+
+.cache-status-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.cache-status-note.warning {
+  color: var(--warning, #f3c26b);
+  border-color: rgba(243, 194, 107, .28);
+  background: rgba(120, 80, 20, .16);
+}
+
+
+
+/* Step 8.5e: read-only dynamic cache cleanup plan with folder-preview protection. */
+.cache-cleanup-plan {
+  display: grid;
+  gap: 9px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 12px;
+  background: rgba(0,0,0,.08);
+}
+
+.cache-cleanup-plan h4,
+.cache-cleanup-sample-title {
+  margin: 0;
+}
+
+.cache-cleanup-sample-title {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.cache-cleanup-sample {
+  max-height: 150px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.cache-limit-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(130px, 180px) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(0,0,0,.10);
+}
+
+.cache-limit-editor-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cache-limit-editor-heading strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.cache-limit-editor-heading span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cache-limit-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cache-limit-field input {
+  width: 100%;
+}
+
+.cache-limit-message {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+}
+
+.cache-limit-message.error {
+  color: var(--danger);
+}
+
+@media (max-width: 760px) {
+  .cache-limit-editor {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+/* Step 8.5f: safe dynamic cache cleanup execute action. */
+.cache-cleanup-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Step 8.5g: clearer cache status overview and dynamic/protected limit copy. */
+.cache-status-overview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(0,0,0,.10));
+}
+
+.cache-overview-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.cache-overview-heading h4,
+.cache-overview-heading p {
+  margin: 0;
+}
+
+.cache-overview-heading h4 {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.cache-overview-heading p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cache-overview-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.cache-overview-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(0,0,0,.12);
+}
+
+.cache-overview-label,
+.cache-overview-detail {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cache-overview-value {
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1.1;
+}
+
+
+
+/* Step 8.6d: source root runtime setting. */
+.source-root-summary {
+  margin-top: 10px;
+}
+
+.source-root-status-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(0,0,0,.10);
+}
+
+.source-root-path {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.source-root-meta,
+.source-root-message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.source-root-meta.warning,
+.source-root-message.warning {
+  color: var(--danger);
+}
+
+.source-root-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.source-root-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Step 8.5h–8.5i2: runtime settings forms. */
+.runtime-settings-editor + .runtime-settings-editor {
+  margin-top: 10px;
+}
+
+.cache-limit-editor,
+.page-size-editor,
+.thumbnail-param-editor,
+.source-root-editor {
+  display: grid;
+  grid-template-columns: minmax(190px, .78fr) minmax(0, 2fr);
+  gap: 10px 14px;
+  align-items: start;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(0,0,0,.10);
+}
+
+.runtime-settings-editor .cache-limit-editor-heading {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+}
+
+.cache-limit-editor > .cache-limit-field,
+.source-root-field,
+.page-size-fields,
+.thumbnail-param-fields,
+.runtime-settings-editor > .write-action,
+.runtime-settings-actions {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.runtime-settings-editor > .write-action,
+.runtime-settings-actions {
+  justify-self: start;
+}
+
+.runtime-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.page-size-fields,
+.thumbnail-param-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.thumbnail-param-fields {
+  grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+}
+
+.runtime-settings-message,
+.cache-limit-message {
+  grid-column: 1 / -1;
+}
+
+.runtime-settings-message.error {
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  .cache-limit-editor,
+  .page-size-editor,
+  .thumbnail-param-editor,
+  .source-root-editor {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .runtime-settings-editor .cache-limit-editor-heading,
+  .cache-limit-editor > .cache-limit-field,
+  .source-root-field,
+  .page-size-fields,
+  .thumbnail-param-fields,
+  .runtime-settings-editor > .write-action,
+  .runtime-settings-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* Step 8.7d: safe media rename UI workflow. */
+.media-card-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.media-rename-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 4px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.media-rename-icon[hidden] {
+  display: none !important;
+}
+
+.media-rename-icon:hover,
+.media-rename-icon:focus-visible {
+  color: var(--text);
+  border-color: var(--line);
+  background: rgba(255,255,255,.06);
+}
+
+.media-rename-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.folder-rename-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+body.media-rename-modal-open {
+  overflow: hidden;
+}
+
+.media-rename-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 108;
+  display: none;
+  color: var(--text);
+}
+
+.media-rename-modal.show {
+  display: grid;
+}
+
+.media-rename-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, .74);
+  cursor: default;
+}
+
+/* Step 6B.4: Dark Red and Cinema Noir apply an opaque background to every
+   button. The rename backdrop is itself a button, so these theme rules must
+   be overridden explicitly to keep the catalog visible below the modal. */
+:root[data-theme="vivid-content"] .media-rename-backdrop,
+:root[data-theme="dark-cinema"] .media-rename-backdrop {
+  background: rgba(0, 0, 0, .74);
+}
+
+.media-rename-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(92vw, 860px);
+  max-height: min(88dvh, 760px);
+  margin: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 22px 70px rgba(0,0,0,.55);
+}
+
+.media-rename-bar,
+.media-rename-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.media-rename-footer {
+  justify-content: flex-end;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.media-rename-bar h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.media-rename-bar p,
+.media-rename-explain p {
+  margin: 0;
+}
+
+.media-rename-body {
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.media-rename-explain,
+.media-rename-current,
+.media-rename-form,
+.media-rename-plan-result .job-result-section {
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.media-rename-explain h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.media-rename-current {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.media-rename-current dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.media-rename-current dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.media-rename-form {
+  display: grid;
+  gap: 8px;
+}
+
+.media-rename-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.media-rename-input-row input {
+  min-width: 0;
+}
+
+.media-rename-plan-result .job-result-panel {
+  gap: 12px;
+}
+
+.media-rename-check-details {
+  background: rgba(255,255,255,.035);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.media-rename-check-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.media-rename-check-details ul {
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.media-rename-check-details li.passed {
+  color: var(--muted);
+}
+
+.media-rename-check-details li.failed {
+  color: var(--danger, #ff8c8c);
+}
+
+@media (max-width: 760px) {
+  .media-rename-panel {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .media-rename-input-row {
+    grid-template-columns: 1fr;
+  }
+
+  .media-rename-current {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 8.9i2: locale-neutral icon-only disclosure controls in Settings. */
+.management-disclosure > summary::after,
+.management-result-disclosure > summary::after {
+  content: "▸";
+  display: inline-grid;
+  place-items: center;
+  justify-self: end;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.management-disclosure[open] > summary::after,
+.management-result-disclosure[open] > summary::after {
+  content: "▾";
+}
+
+/* Step 8.12a: settings/cache UX simplification. */
+.browsing-settings-section {
+  border-color: rgba(255, 255, 255, .09);
+}
+
+.cache-status-actions-top {
+  justify-content: flex-start;
+  margin: 2px 0 4px;
+}
+
+.cache-maintenance-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(0,0,0,.10));
+}
+
+.cache-maintenance-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.cache-maintenance-heading h4,
+.cache-maintenance-heading p,
+.cache-technical-block h5 {
+  margin: 0;
+}
+
+.cache-maintenance-heading p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cache-maintenance-grid {
+  margin-top: 2px;
+}
+
+.cache-technical-details {
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(0,0,0,.10);
+  overflow: hidden;
+}
+
+.cache-technical-details > summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  list-style: none;
+}
+
+.cache-technical-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cache-technical-details > summary::after {
+  content: "⌄";
+  float: right;
+  color: var(--muted);
+}
+
+.cache-technical-details[open] > summary::after {
+  content: "⌃";
+}
+
+.cache-technical-details-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 10px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.cache-technical-block {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.cache-technical-block h5 {
+  font-size: 13px;
+  color: var(--text);
+}
+
+
+/* Phase 9.16g: Settings clean DOM implementation.
+   The Settings modal now uses one explicit layout system. Old runtime/editor
+   wrappers are not used for layout in the static Settings markup. */
+.catalog-management-bar p,
+.catalog-management-bar p:empty,
+.settings-message:empty {
+  display: none;
+}
+
+.catalog-management-panel {
+  width: min(92vw, 920px);
+}
+
+.catalog-management-body.settings-clean-body {
+  --settings-section-width: min(100%, 820px);
+  --settings-inner-width: min(100%, 700px);
+  --settings-label-width: 190px;
+  --settings-row-gap: 14px;
+  --settings-number-width: 112px;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 16px 18px 20px;
+}
+
+.catalog-management-body.settings-clean-body > .settings-section,
+.catalog-management-body.settings-clean-body > .settings-disclosure-section {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--settings-section-width);
+  margin: 0 auto;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,.024);
+}
+
+.catalog-management-body.settings-clean-body > .settings-section {
+  padding: 18px 20px;
+}
+
+.catalog-management-body.settings-clean-body > .settings-disclosure-section {
+  padding: 0 20px;
+}
+
+.catalog-management-body.settings-clean-body .settings-section-inner,
+.catalog-management-body.settings-clean-body .settings-service-summary,
+.catalog-management-body.settings-clean-body .settings-service-body {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--settings-inner-width);
+  margin-inline: auto;
+}
+
+.catalog-management-body.settings-clean-body .settings-section-inner {
+  display: grid;
+  gap: 14px;
+}
+
+.catalog-management-body.settings-clean-body h3,
+.catalog-management-body.settings-clean-body h4,
+.catalog-management-body.settings-clean-body p {
+  margin: 0;
+}
+
+.catalog-management-body.settings-clean-body .settings-section-title {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.catalog-management-body.settings-clean-body .settings-subsection-title {
+  margin-top: 4px;
+}
+
+.catalog-management-body.settings-clean-body h4 {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.catalog-management-body.settings-clean-body .muted,
+.catalog-management-body.settings-clean-body .settings-message,
+.catalog-management-body.settings-clean-body .settings-summary-detail,
+.catalog-management-body.settings-clean-body .disclosure-summary-note {
+  color: var(--muted);
+}
+
+.catalog-management-body.settings-clean-body .settings-message {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.catalog-management-body.settings-clean-body .settings-message.error,
+.catalog-management-body.settings-clean-body .cache-status-note.warning,
+.catalog-management-body.settings-clean-body .settings-summary-row.warning .settings-summary-value {
+  color: #ff5b4f;
+}
+
+/* One form system: label column, control column, one right edge. */
+.catalog-management-body.settings-clean-body .settings-form {
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-management-body.settings-clean-body .settings-form-row {
+  display: grid;
+  grid-template-columns: var(--settings-label-width) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--settings-row-gap);
+  min-width: 0;
+}
+
+.catalog-management-body.settings-clean-body .settings-form-row--with-actions,
+.catalog-management-body.settings-clean-body .settings-form-row--limit {
+  grid-template-columns: var(--settings-label-width) minmax(0, 1fr) auto;
+}
+
+.catalog-management-body.settings-clean-body .settings-row-label,
+.catalog-management-body.settings-clean-body .settings-summary-label,
+.catalog-management-body.settings-clean-body .source-root-field > span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.catalog-management-body.settings-clean-body input,
+.catalog-management-body.settings-clean-body select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgba(240,109,50,.32);
+  border-radius: 10px;
+  background: rgba(255,255,255,.045);
+  color: var(--text);
+  font: inherit;
+}
+
+.catalog-management-body.settings-clean-body input:focus,
+.catalog-management-body.settings-clean-body select:focus {
+  outline: none;
+  border-color: rgba(240,109,50,.86);
+  box-shadow: 0 0 0 2px rgba(240,109,50,.18);
+}
+
+.catalog-management-body.settings-clean-body input:disabled,
+.catalog-management-body.settings-clean-body select:disabled,
+.catalog-management-body.settings-clean-body button:disabled {
+  cursor: not-allowed;
+  opacity: .52;
+}
+
+
+/* Phase 9.16h: Settings typography polish.
+   Section titles stay dominant; field labels, values and routine buttons use
+   medium/regular weights so the modal hierarchy is easier to scan. */
+.catalog-management-body.settings-clean-body input,
+.catalog-management-body.settings-clean-body select {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.catalog-management-body.settings-clean-body button {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.catalog-management-body.settings-clean-body .primary-write-action {
+  font-weight: 600;
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-value,
+.catalog-management-body.settings-clean-body .settings-summary-value strong {
+  font-weight: 500;
+}
+
+.catalog-management-body.settings-clean-body .settings-number-control {
+  width: var(--settings-number-width);
+  justify-self: start;
+}
+
+.catalog-management-body.settings-clean-body .settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.catalog-management-body.settings-clean-body .settings-actions--stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: stretch;
+  width: 240px;
+  max-width: 100%;
+}
+
+.catalog-management-body.settings-clean-body .settings-actions--inline {
+  width: auto;
+  white-space: nowrap;
+}
+
+.catalog-management-body.settings-clean-body .settings-section-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
+.catalog-management-body.settings-clean-body .settings-section-split--compact {
+  align-items: center;
+}
+
+.catalog-management-body.settings-clean-body .settings-copy-block,
+.catalog-management-body.settings-clean-body .settings-service-summary-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Source folder. */
+.catalog-management-body.settings-clean-body .settings-status-block:empty {
+  display: none;
+}
+
+.catalog-management-body.settings-clean-body .source-root-status-card,
+.catalog-management-body.settings-clean-body .settings-flat-status {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.catalog-management-body.settings-clean-body .source-root-path {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.catalog-management-body.settings-clean-body .source-root-meta,
+.catalog-management-body.settings-clean-body .source-root-message {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.catalog-management-body.settings-clean-body .source-root-meta.warning,
+.catalog-management-body.settings-clean-body .source-root-message.warning {
+  color: #ff5b4f;
+}
+
+/* Preview cache. Dynamic render output is normalized, not boxed again. */
+.catalog-management-body.settings-clean-body .settings-cache-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.catalog-management-body.settings-clean-body .cache-status-panel,
+.catalog-management-body.settings-clean-body .cache-status-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.catalog-management-body.settings-clean-body .cache-status-overview,
+.catalog-management-body.settings-clean-body .settings-stat-overview,
+.catalog-management-body.settings-clean-body .regular-preview-cleanup,
+.catalog-management-body.settings-clean-body .stable-preview-maintenance,
+.catalog-management-body.settings-clean-body .cache-maintenance-card,
+.catalog-management-body.settings-clean-body .cache-cleanup-plan,
+.catalog-management-body.settings-clean-body .protected-cache-cleanup-execute {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.catalog-management-body.settings-clean-body .cache-status-panel > section + section,
+.catalog-management-body.settings-clean-body .settings-form--limit {
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.10);
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-list {
+  display: grid;
+  gap: 0;
+  width: 100%;
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, max-content);
+  gap: 16px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255,255,255,.075);
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-row:last-child {
+  border-bottom: 0;
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-value-block {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-value {
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.catalog-management-body.settings-clean-body .settings-summary-detail,
+.catalog-management-body.settings-clean-body .cache-status-note,
+.catalog-management-body.settings-clean-body .settings-brief-note {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.catalog-management-body.settings-clean-body .cache-status-note,
+.catalog-management-body.settings-clean-body .settings-brief-note {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.catalog-management-body.settings-clean-body .cache-status-note.warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, .35);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, .12);
+}
+
+.catalog-management-body.settings-clean-body .settings-action-panel .settings-section-head-row,
+.catalog-management-body.settings-clean-body .stable-maintenance-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+}
+
+.catalog-management-body.settings-clean-body .cache-cleanup-actions,
+.catalog-management-body.settings-clean-body .stable-maintenance-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.catalog-management-body.settings-clean-body .settings-form--limit .settings-number-control {
+  justify-self: start;
+}
+
+/* Generated technical details in cache: transparent, not another card. */
+.catalog-management-body.settings-clean-body .settings-subdetails,
+.catalog-management-body.settings-clean-body .cache-technical-details {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.catalog-management-body.settings-clean-body .settings-subdetails > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.catalog-management-body.settings-clean-body .cache-technical-details-body {
+  padding: 10px 0 0;
+}
+
+/* Top-level service/disclosure sections, including Thumbnail and video parameters. */
+.catalog-management-body.settings-clean-body .settings-service-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 14px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-management-body.settings-clean-body .settings-service-summary:hover,
+.catalog-management-body.settings-clean-body .settings-service-summary:focus-visible {
+  background: rgba(255,255,255,.025);
+}
+
+.catalog-management-body.settings-clean-body .disclosure-summary-main {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.catalog-management-body.settings-clean-body .disclosure-summary-note {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.catalog-management-body.settings-clean-body .settings-service-chevron {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(240,109,50,.55);
+  border-radius: 999px;
+  color: var(--text);
+}
+
+.catalog-management-body.settings-clean-body .settings-service-chevron::before {
+  content: "▸";
+  line-height: 1;
+}
+
+.catalog-management-body.settings-clean-body .settings-service-card.open .settings-service-chevron::before {
+  content: "▾";
+}
+
+.catalog-management-body.settings-clean-body .settings-service-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 0 16px;
+}
+
+.catalog-management-body.settings-clean-body .settings-service-body[hidden] {
+  display: none;
+}
+
+.catalog-management-body.settings-clean-body .settings-form--service-numbers {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.catalog-management-body.settings-clean-body .settings-form--service-numbers .settings-form-row {
+  grid-template-columns: minmax(120px, 1fr) var(--settings-number-width);
+}
+
+.catalog-management-body.settings-clean-body .settings-tool-group {
+  display: grid;
+  gap: 10px;
+}
+
+.catalog-management-body.settings-clean-body .settings-job-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.catalog-management-body.settings-clean-body .job-action-card {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.catalog-management-body.settings-clean-body .job-action-card button,
+.catalog-management-body.settings-clean-body .settings-job-actions button {
+  width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+
+.catalog-management-body.settings-clean-body .settings-result-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 820px) {
+  .catalog-management-panel {
+    width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .catalog-management-body.settings-clean-body {
+    --settings-section-width: 100%;
+    --settings-inner-width: 100%;
+    --settings-label-width: 1fr;
+    justify-items: stretch;
+    padding: 14px;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-form-row,
+  .catalog-management-body.settings-clean-body .settings-form-row--with-actions,
+  .catalog-management-body.settings-clean-body .settings-form-row--limit,
+  .catalog-management-body.settings-clean-body .settings-section-split,
+  .catalog-management-body.settings-clean-body .settings-section-split--compact,
+  .catalog-management-body.settings-clean-body .settings-summary-row,
+  .catalog-management-body.settings-clean-body .settings-form--service-numbers,
+  .catalog-management-body.settings-clean-body .settings-form--service-numbers .settings-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-actions,
+  .catalog-management-body.settings-clean-body .settings-actions--stack,
+  .catalog-management-body.settings-clean-body .settings-actions--inline,
+  .catalog-management-body.settings-clean-body .cache-cleanup-actions,
+  .catalog-management-body.settings-clean-body .stable-maintenance-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .catalog-management-body.settings-clean-body button,
+  .catalog-management-body.settings-clean-body .settings-number-control,
+  .catalog-management-body.settings-clean-body .settings-job-actions button {
+    width: 100%;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-summary-value-block {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-job-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phase 9.15: video modal error fallback and cleanup state. */
+.media-modal-error {
+  max-width: min(560px, 100%);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  text-align: center;
+}
+
+.media-modal-error-message {
+  margin: 0 0 16px;
+  font-weight: 700;
+}
+
+.media-modal-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.media-modal-error-actions button {
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.media-modal-error-actions button:hover:not(:disabled) {
+  border-color: rgba(240, 109, 50, .8);
+}
+
+/* Phase 9.16e guard: old runtime editor grid must not split rebuilt Settings rows. */
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .cache-limit-editor-heading,
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .page-size-fields,
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .runtime-settings-actions,
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .runtime-settings-message {
+  grid-column: 1 / -1;
+}
+
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .cache-limit-editor-heading {
+  grid-row: auto;
+}
+
+.catalog-management-body.settings-redesign-body .page-size-editor.settings-compact-editor > .page-size-fields {
+  min-width: 0;
+}

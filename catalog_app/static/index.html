@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="__CATALOG2_UI_LOCALE__" data-theme="__CATALOG2_UI_THEME__" data-gallery-density="__CATALOG2_GALLERY_DENSITY__">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__CATALOG2_CATALOG_TITLE__</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-brand">
+      <div class="brand-stack">
+        <button id="catalogHome" class="catalog-home" type="button">__CATALOG2_CATALOG_TITLE__</button>
+        <a class="brand-link" href="https://github.com/Kudan01" target="_blank" rel="noopener noreferrer">GitHub: Kudan01</a>
+      </div>
+      <span id="statusText" data-text="status.loading"></span>
+    </div>
+
+    <form id="searchForm" class="search-panel top-search">
+      <input id="searchInput" type="search" autocomplete="off" data-placeholder="search.inputPlaceholder">
+      <label class="search-scope">
+        <input id="searchInCurrentFolder" type="checkbox">
+        <span data-text="search.scopeCurrentFolder"></span>
+      </label>
+      <button type="submit" data-text="search.submit"></button>
+    </form>
+
+    <div class="top-actions">
+      <span id="jobStatusText" class="top-job-status muted"></span>
+      <button id="catalogManagementOpen" type="button" data-text="settings.open"></button>
+      <button id="favoritesView" type="button" data-text="actions.favorites"></button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="section-head">
+        <h2 data-text="sections.folderTree"></h2>
+        <div id="rootPageInfo" class="muted"></div>
+      </div>
+      <div id="folderList" class="folder-list"></div>
+      <div class="pager compact tree-root-pager" aria-hidden="true">
+        <button id="prevRootPage" type="button" data-text="actions.previous"></button>
+        <button id="nextRootPage" type="button" data-text="actions.next"></button>
+      </div>
+    </aside>
+
+    <section class="content">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <div class="content-head">
+        <div class="content-head-main">
+          <div class="folder-title-row">
+            <h1 id="folderTitle" data-text="app.root"></h1>
+            <button id="currentFolderRename" class="media-rename-icon folder-rename-icon" type="button" hidden data-title="folderRename.editAction" data-aria-label="folderRename.editAction">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M5 19h14v-6h-2v4H7V7h4V5H5v14z"></path>
+                <path d="M14.2 5.8l4 4-7.9 7.9H6.3v-4l7.9-7.9zm1.4-1.4l1.1-1.1a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-1.1 1.1-4-4z"></path>
+              </svg>
+            </button>
+          </div>
+          <p id="folderCounts"></p>
+        </div>
+        <div class="content-head-actions">
+          <button id="currentFolderOpen" class="current-folder-open" type="button" data-action="open-folder" data-text="actions.openCurrentFolder" hidden></button>
+          <details id="currentFolderMore" class="folder-more-menu current-folder-more" hidden>
+            <summary data-text="actions.more"></summary>
+            <div class="folder-more-menu-panel">
+              <button id="currentFolderUpdate" type="button" data-action="update-folder" data-long-job-action data-text="actions.updateCurrentFolder"></button>
+              <button id="currentFolderGeneratePreviews" type="button" data-long-job-action data-text="actions.generatePreviews"></button>
+            </div>
+          </details>
+        </div>
+      </div>
+
+
+      <div class="tabs" data-aria-label="aria.mediaType">
+        <button class="tab active" data-type="all" type="button" data-text="filter.all"></button>
+        <button class="tab" data-type="image" type="button" data-text="filter.image"></button>
+        <button class="tab" data-type="gif" type="button" data-text="filter.gif"></button>
+        <button class="tab" data-type="video" type="button" data-text="filter.video"></button>
+        <button class="tab" data-type="other" type="button" data-text="filter.other"></button>
+      </div>
+
+      <section>
+        <div class="section-head folder-section-head">
+          <h2 class="folder-section-title">
+            <button id="childFoldersToggle" class="section-collapse-toggle" type="button" aria-expanded="true" data-title="actions.collapseSubfolders" data-aria-label="actions.collapseSubfolders" hidden>▾</button>
+            <span data-text="sections.childFolders"></span>
+          </h2>
+          <div class="folder-section-controls">
+            <div id="childPageInfo" class="muted"></div>
+            <div id="childPager" class="pager compact folder-pager">
+              <button id="firstChildPage" type="button" data-text="actions.first"></button>
+              <button id="prevChildPage" type="button" data-text="actions.previous"></button>
+              <form id="childPageJumpForm" class="page-jump" novalidate>
+                <label for="childPageJumpInput" data-text="pagination.jumpLabel"></label>
+                <input id="childPageJumpInput" type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
+                <button id="childPageJumpButton" type="submit" data-text="actions.go"></button>
+              </form>
+              <button id="nextChildPage" type="button" data-text="actions.next"></button>
+              <button id="lastChildPage" type="button" data-text="actions.last"></button>
+            </div>
+          </div>
+        </div>
+        <div id="childFolders" class="cards"></div>
+      </section>
+
+      <section>
+        <div class="media-head">
+          <h2 id="mediaTitle" data-text="sections.media"></h2>
+          <div id="pageInfo" class="muted"></div>
+        </div>
+        <div id="mediaList" class="media-list"></div>
+        <div class="pager media-pager">
+          <button id="firstPage" type="button" data-text="actions.first"></button>
+          <button id="prevPage" type="button" data-text="actions.previous"></button>
+          <form id="pageJumpForm" class="page-jump" novalidate>
+            <label for="pageJumpInput" data-text="pagination.jumpLabel"></label>
+            <input id="pageJumpInput" type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
+            <button id="pageJumpButton" type="submit" data-text="actions.go"></button>
+          </form>
+          <button id="nextPage" type="button" data-text="actions.next"></button>
+          <button id="lastPage" type="button" data-text="actions.last"></button>
+        </div>
+      </section>
+
+      <p id="message" class="message" role="status"></p>
+    </section>
+  </main>
+
+  <div id="catalogManagementModal" class="catalog-management-modal" aria-hidden="true">
+    <button class="catalog-management-backdrop" type="button" data-management-close data-aria-label="settings.closeManagement"></button>
+    <section class="catalog-management-panel" role="dialog" aria-modal="true" aria-labelledby="catalogManagementTitle">
+      <header class="catalog-management-bar">
+        <div>
+          <h2 id="catalogManagementTitle" data-text="settings.title"></h2>
+          <p class="muted" data-text="settings.subtitle"></p>
+        </div>
+        <button id="catalogManagementClose" type="button" data-management-close data-text="settings.close"></button>
+      </header>
+
+      <div class="catalog-management-body settings-clean-body">
+        <section class="settings-section settings-section--general">
+          <div class="settings-section-inner">
+            <h3 class="settings-section-title" data-text="settings.generalTitle"></h3>
+
+            <div class="settings-form settings-form--wide">
+              <label class="settings-form-row" for="catalogTitleInput">
+                <span class="settings-row-label" data-text="settings.catalogTitleLabel"></span>
+                <input id="catalogTitleInput" class="settings-control" type="text" maxlength="80" autocomplete="off">
+              </label>
+              <p id="catalogTitleStatus" class="settings-message" aria-live="polite"></p>
+
+              <label class="settings-form-row" for="themeSelect">
+                <span class="settings-row-label" data-text="settings.themeTitle"></span>
+                <select id="themeSelect" class="settings-control" name="theme">
+                  <option value="original" data-text="theme.original"></option>
+                  <option value="serious-light" data-text="theme.seriousLight"></option>
+                  <option value="serious-dark" data-text="theme.seriousDark"></option>
+                  <option value="vivid-content" data-text="theme.vividContent"></option>
+                  <option value="dark-cinema" data-text="theme.darkCinema"></option>
+                </select>
+              </label>
+              <p id="themeStatus" class="settings-message" aria-live="polite"></p>
+
+              <label class="settings-form-row" for="localeSelect">
+                <span class="settings-row-label" data-text="settings.languageTitle"></span>
+                <select id="localeSelect" class="settings-control" name="ui_locale"></select>
+              </label>
+              <p id="localeStatus" class="settings-message" aria-live="polite"></p>
+
+              <label class="settings-form-row" for="galleryDensitySelect">
+                <span class="settings-row-label" data-text="settings.galleryDensityLabel"></span>
+                <select id="galleryDensitySelect" class="settings-control" name="gallery_density">
+                  <option value="compact" data-text="settings.galleryDensityCompact"></option>
+                  <option value="comfortable" data-text="settings.galleryDensityComfortable"></option>
+                  <option value="large" data-text="settings.galleryDensityLarge"></option>
+                  <option value="extra-large" data-text="settings.galleryDensityExtraLarge"></option>
+                </select>
+              </label>
+            </div>
+
+            <h3 class="settings-section-title settings-subsection-title" data-text="settings.pageSizeEditorTitle"></h3>
+            <div class="settings-form settings-form--numbers">
+              <label class="settings-form-row settings-form-row--number" for="photoPageSizeInput">
+                <span class="settings-row-label" data-text="settings.pageSizePhoto"></span>
+                <input id="photoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="videoPageSizeInput">
+                <span class="settings-row-label" data-text="settings.pageSizeVideo"></span>
+                <input id="videoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="gifPageSizeInput">
+                <span class="settings-row-label" data-text="settings.pageSizeGif"></span>
+                <input id="gifPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="otherPageSizeInput">
+                <span class="settings-row-label" data-text="settings.pageSizeOther"></span>
+                <input id="otherPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="folderPageSizeInput">
+                <span class="settings-row-label" data-text="settings.pageSizeFolder"></span>
+                <input id="folderPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button id="pageSizeSave" type="button" class="write-action" data-text="settings.pageSizeSave"></button>
+            </div>
+            <p id="pageSizeMessage" class="settings-message" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="settings-section settings-section--catalog-update">
+          <div class="settings-section-inner">
+            <div class="settings-section-split">
+              <div class="settings-copy-block">
+                <h3 class="settings-section-title" data-text="settings.primaryTitle"></h3>
+                <p class="muted" data-text="settings.primaryNote"></p>
+              </div>
+              <div class="settings-actions settings-actions--stack">
+                <button id="catalogUpdateAll" type="button" class="write-action primary-write-action" data-text="jobs.catalogUpdate"></button>
+                <button id="catalogPrepareAllPreviews" type="button" class="write-action secondary-action" disabled data-text="jobs.prepareAllPreviews"></button>
+              </div>
+            </div>
+            <div id="catalogUpdateDecision" class="catalog-update-decision muted" hidden></div>
+          </div>
+        </section>
+
+        <section class="settings-section settings-section--source-root">
+          <div class="settings-section-inner">
+            <h3 class="settings-section-title" data-text="settings.sourceRootTitle"></h3>
+            <div id="sourceRootSummary" class="settings-status-block muted"></div>
+            <div class="settings-form settings-form--path">
+              <div class="settings-form-row settings-form-row--with-actions">
+                <label class="settings-row-label" for="sourceRootInput" data-text="settings.sourceRootInputLabel"></label>
+                <input id="sourceRootInput" class="settings-control" type="text" autocomplete="off">
+                <div class="settings-actions settings-actions--inline">
+                  <button id="sourceRootVerify" type="button" data-text="settings.sourceRootVerify"></button>
+                  <button id="sourceRootSave" type="button" class="write-action" data-text="settings.sourceRootSave"></button>
+                </div>
+              </div>
+            </div>
+            <p id="sourceRootMessage" class="settings-message" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="settings-section settings-section--cache">
+          <div class="settings-section-inner">
+            <div class="settings-section-split settings-section-split--compact">
+              <h3 class="settings-section-title" data-text="settings.cacheStatusTitle"></h3>
+              <div class="settings-actions">
+                <button id="cacheStatusRefresh" type="button" data-text="settings.cacheStatusRefresh"></button>
+              </div>
+            </div>
+            <div id="cacheStatusSummary" class="settings-cache-summary muted" data-text="settings.cacheStatusLoading"></div>
+            <div class="settings-form settings-form--limit">
+              <div class="settings-form-row settings-form-row--limit">
+                <label class="settings-row-label" for="cacheLimitInput" data-text="settings.cacheLimitEditorTitle"></label>
+                <input id="cacheLimitInput" class="settings-number-control" type="number" min="0.1" step="0.1" inputmode="decimal">
+                <div class="settings-actions settings-actions--inline">
+                  <button id="cacheLimitSave" type="button" class="write-action" data-text="settings.cacheLimitSave"></button>
+                </div>
+              </div>
+            </div>
+            <p id="cacheLimitMessage" class="settings-message" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="settings-disclosure-section settings-service-card thumbnail-param-section" data-settings-service-card>
+          <button class="settings-service-summary" type="button" aria-expanded="false" aria-controls="thumbnailParamsBody">
+            <span class="settings-service-summary-text">
+              <span class="disclosure-summary-main" data-text="settings.thumbnailParamsEditorTitle"></span>
+              <span class="disclosure-summary-note" data-text="settings.thumbnailParamsEditorNote"></span>
+            </span>
+            <span class="settings-service-chevron" aria-hidden="true"></span>
+          </button>
+          <div id="thumbnailParamsBody" class="settings-service-body" hidden>
+            <div class="settings-form settings-form--service-numbers">
+              <label class="settings-form-row settings-form-row--number" for="imageThumbWidthInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamImageWidth"></span>
+                <input id="imageThumbWidthInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="imageThumbHeightInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamImageHeight"></span>
+                <input id="imageThumbHeightInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="gifThumbWidthInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamGifWidth"></span>
+                <input id="gifThumbWidthInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="gifThumbHeightInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamGifHeight"></span>
+                <input id="gifThumbHeightInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="videoPreviewWidthInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamVideoWidth"></span>
+                <input id="videoPreviewWidthInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="ffmpegTimeoutInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamFfmpegTimeout"></span>
+                <input id="ffmpegTimeoutInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+              <label class="settings-form-row settings-form-row--number" for="ffmpegThreadsInput">
+                <span class="settings-row-label" data-text="settings.thumbnailParamFfmpegThreads"></span>
+                <input id="ffmpegThreadsInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button id="thumbnailParamsReset" type="button" data-text="settings.thumbnailParamsReset"></button>
+              <button id="thumbnailParamsSave" type="button" class="write-action" data-text="settings.thumbnailParamsSave"></button>
+            </div>
+            <p id="thumbnailParamsMessage" class="settings-message" aria-live="polite"></p>
+          </div>
+        </section>
+
+        <section class="settings-disclosure-section settings-service-card advanced-tools-section" data-settings-service-card>
+          <button class="settings-service-summary" type="button" aria-expanded="false" aria-controls="previewToolsBody">
+            <span class="settings-service-summary-text">
+              <span class="disclosure-summary-main" data-text="settings.previewToolsTitle"></span>
+              <span class="disclosure-summary-note" data-text="settings.previewToolsSummary"></span>
+            </span>
+            <span class="settings-service-chevron" aria-hidden="true"></span>
+          </button>
+          <div id="previewToolsBody" class="settings-service-body" hidden>
+            <section class="settings-tool-group" data-aria-label="settings.mediaPreviewGroupTitle">
+              <h4 data-text="settings.mediaPreviewGroupTitle"></h4>
+              <div class="settings-job-actions">
+                <div class="job-action-card"><button id="gifPreviewAll" type="button" class="write-action" data-text="jobs.gifPreviewAll"></button></div>
+                <div class="job-action-card" data-current-folder-action><button id="gifPreviewCurrent" type="button" class="write-action" data-text="jobs.gifPreviewCurrent"></button></div>
+                <div class="job-action-card"><button id="videoPosterAll" type="button" class="write-action" data-text="jobs.videoPosterAll"></button></div>
+                <div class="job-action-card" data-current-folder-action><button id="videoPosterCurrent" type="button" class="write-action" data-text="jobs.videoPosterCurrent"></button></div>
+                <div class="job-action-card"><button id="videoFramesAll" type="button" class="write-action" data-text="jobs.videoFramesAll"></button></div>
+                <div class="job-action-card" data-current-folder-action><button id="videoFramesCurrent" type="button" class="write-action" data-text="jobs.videoFramesCurrent"></button></div>
+              </div>
+            </section>
+            <section class="settings-tool-group" data-aria-label="settings.folderPreviewGroupTitle">
+              <h4 data-text="settings.folderPreviewGroupTitle"></h4>
+              <div class="settings-job-actions">
+                <div class="job-action-card" data-current-folder-action><button id="folderPreviewPlanCurrent" type="button" data-text="jobs.folderPreviewPlanCurrent"></button></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="settings-disclosure-section settings-service-card diagnostic-tools-section" data-settings-service-card>
+          <button class="settings-service-summary" type="button" aria-expanded="false" aria-controls="diagnosticsToolsBody">
+            <span class="settings-service-summary-text">
+              <span class="disclosure-summary-main" data-text="settings.diagnosticsTitle"></span>
+              <span class="disclosure-summary-note" data-text="settings.diagnosticsSummary"></span>
+            </span>
+            <span class="settings-service-chevron" aria-hidden="true"></span>
+          </button>
+          <div id="diagnosticsToolsBody" class="settings-service-body" hidden>
+            <section class="settings-tool-group" data-aria-label="settings.diagnosticsTitle">
+              <h4 data-text="settings.scanGroupTitle"></h4>
+              <div class="settings-job-actions">
+                <div class="job-action-card"><button id="scanPreviewAll" type="button" data-text="jobs.scanPreviewAll"></button></div>
+                <div class="job-action-card" data-current-folder-action><button id="scanPreviewCurrent" type="button" data-text="jobs.scanPreviewCurrent"></button></div>
+                <div class="job-action-card"><button id="scanStageAll" type="button" class="write-action" data-text="jobs.scanStageAll"></button></div>
+                <div class="job-action-card" data-current-folder-action><button id="scanStageCurrent" type="button" class="write-action" data-text="jobs.scanStageCurrent"></button></div>
+                <div class="job-action-card diagnostic-risk-card"><button id="scanActivate" type="button" class="write-action activate-action" data-text="jobs.scanActivate"></button></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="jobResultDetails" class="settings-disclosure-section settings-service-card settings-result-section" data-settings-service-card>
+          <button class="settings-service-summary" type="button" aria-expanded="false" aria-controls="jobResultBody">
+            <span class="settings-service-summary-text">
+              <span class="disclosure-summary-main" data-text="settings.resultTitle"></span>
+              <span class="disclosure-summary-note" data-text="settings.resultSummary"></span>
+            </span>
+            <span class="settings-service-chevron" aria-hidden="true"></span>
+          </button>
+          <div id="jobResultBody" class="settings-service-body" hidden>
+            <div class="settings-result-toolbar">
+              <p class="muted" data-text="settings.resultNote"></p>
+              <button id="jobResultClear" type="button" data-text="settings.clearResult"></button>
+            </div>
+            <div id="jobResult" class="job-result muted"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script id="catalogRuntimeBootstrap" type="application/json">__CATALOG2_RUNTIME_BOOTSTRAP__</script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
