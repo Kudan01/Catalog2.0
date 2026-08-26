@@ -1,5 +1,7 @@
 # Catalog 2.0
 
+**Development status:** Catalog 2.0 is currently under active development. It is not yet considered a stable release, and some functionality or installation procedures may still change.
+
 Catalog 2.0 is a local media catalog for browsing photos, GIFs, videos, and folders stored on your own disk.
 
 The application runs locally, keeps its catalog data separate from the source media, and does not require a cloud service.
