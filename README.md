@@ -82,8 +82,22 @@ A created instance contains its own runtime data and a generated launcher:
 ```text
 Catalog2_Photo_Archive\
   Catalog_Output\
+    .venv\
+    app\
   Start Catalog.bat
 ```
+
+## Command help
+
+Use the built-in CLI help to list all available options or inspect the setup and update commands:
+
+```powershell
+python catalog2.py --help
+python catalog2.py setup-instance --help
+python catalog2.py update-instance --help
+```
+
+The first command shows general Catalog 2.0 CLI help. The other two show options for creating a new instance and updating or migrating an existing instance.
 
 ## Starting the catalog
 
@@ -116,7 +130,7 @@ After downloading a newer project version, update an installed catalog from the 
 python catalog2.py update-instance --catalog-output "D:\Media\Catalog2_Photo_Archive\Catalog_Output"
 ```
 
-The update replaces the runtime application files while preserving the instance data, including configuration, database, cache, runtime state, and source media.
+The update replaces the runtime application files and updates the instance runtime environment while preserving configuration, database, cache, runtime state, and source media.
 
 ## Source media safety
 

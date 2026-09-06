@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ from .paths import is_path_within, same_path
 DEFAULT_INSTANCE_DIR_PREFIX = "Catalog2_"
 DEFAULT_OUTPUT_DIR_NAME = "Catalog_Output"
 DEFAULT_LAUNCHER_NAME = "Start Catalog.bat"
+INSTANCE_VENV_DIR_NAME = ".venv"
 RUNTIME_COPY_ITEMS = (
     "catalog2.py",
     "catalog_app",
@@ -63,6 +65,7 @@ class SetupWriteAction:
     source: Path | None = None
     content: str | None = None
     newline: str | None = None
+    command: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,7 @@ class SetupInstancePlan:
     catalog_root: Path
     output_root: Path
     app_root: Path
+    venv_root: Path
     state_root: Path
     cache_root: Path
     config_path: Path
@@ -91,6 +95,7 @@ class SetupInstanceResult:
     catalog_root: Path
     output_root: Path
     app_root: Path
+    venv_root: Path
     config_path: Path
     config_data_root: str
     launcher_path: Path
@@ -168,6 +173,7 @@ def build_setup_plan(
 
     output_root = catalog_root / output_dir_name
     app_root = output_root / "app"
+    venv_root = output_root / INSTANCE_VENV_DIR_NAME
     state_root = output_root / "_state"
     cache_root = output_root / "_cache"
     config_path = output_root / "config.json"
@@ -186,7 +192,6 @@ def build_setup_plan(
     settings_text = _default_runtime_settings_text()
     launcher_text = _windows_launcher_body(
         output_dir_name=output_dir_name,
-        python_executable=python_executable or sys.executable,
     )
 
     actions = _build_setup_actions(
@@ -194,6 +199,7 @@ def build_setup_plan(
         catalog_root=catalog_root,
         output_root=output_root,
         app_root=app_root,
+        venv_root=venv_root,
         state_root=state_root,
         cache_root=cache_root,
         config_path=config_path,
@@ -211,6 +217,7 @@ def build_setup_plan(
         catalog_root=catalog_root,
         output_root=output_root,
         app_root=app_root,
+        venv_root=venv_root,
         state_root=state_root,
         cache_root=cache_root,
         config_path=config_path,
@@ -245,6 +252,10 @@ def execute_setup_plan(plan: SetupInstancePlan) -> SetupInstanceResult:
                 if action.content is None:
                     raise SetupInstanceError(f"Missing content for write action: {action.target}")
                 _atomic_write_text(action.target, action.content, newline=action.newline)
+            elif action.kind in {"create_venv", "install_dependencies"}:
+                if action.command is None:
+                    raise SetupInstanceError(f"Missing command for process action: {action.target}")
+                subprocess.run(action.command, check=True)
             elif action.kind == "validate_config":
                 config = load_config(action.target)
                 if not same_path(config.db_path, plan.db_path):
@@ -257,7 +268,7 @@ def execute_setup_plan(plan: SetupInstancePlan) -> SetupInstanceResult:
                 raise SetupInstanceError(f"Unknown setup action: {action.kind}")
         except SetupInstanceError:
             raise
-        except (OSError, shutil.Error) as exc:
+        except (OSError, shutil.Error, subprocess.CalledProcessError) as exc:
             raise SetupInstanceError(
                 f"Setup failed during {action.kind} for {action.target}: {exc}"
             ) from exc
@@ -270,6 +281,7 @@ def execute_setup_plan(plan: SetupInstancePlan) -> SetupInstanceResult:
         catalog_root=plan.catalog_root,
         output_root=plan.output_root,
         app_root=plan.app_root,
+        venv_root=plan.venv_root,
         config_path=plan.config_path,
         config_data_root=plan.config_data_root,
         launcher_path=plan.launcher_path,
@@ -288,6 +300,7 @@ def setup_instance_result_lines(result: SetupInstanceResult) -> list[str]:
         f"catalog root:    {result.catalog_root}",
         f"output folder:   {result.output_root}",
         f"runtime app:     {result.app_root}",
+        f"virtual env:     {result.venv_root}",
         f"config:          {result.config_path}",
         f"config data_root: {result.config_data_root}",
         f"database:        {result.db_path} ({db_action})",
@@ -366,6 +379,7 @@ def _build_setup_actions(
     catalog_root: Path,
     output_root: Path,
     app_root: Path,
+    venv_root: Path,
     state_root: Path,
     cache_root: Path,
     config_path: Path,
@@ -382,6 +396,11 @@ def _build_setup_actions(
         SetupWriteAction("create_dir", state_root),
         SetupWriteAction("create_dir", cache_root),
         SetupWriteAction("create_dir", app_root),
+        SetupWriteAction(
+            "create_venv",
+            venv_root,
+            command=(sys.executable, "-m", "venv", str(venv_root)),
+        ),
     ]
 
     for name in RUNTIME_COPY_ITEMS:
@@ -389,6 +408,22 @@ def _build_setup_actions(
         target = app_root / name
         kind = "copy_tree" if source.is_dir() else "copy_file"
         actions.append(SetupWriteAction(kind, target, source=source))
+
+    actions.append(
+        SetupWriteAction(
+            "install_dependencies",
+            venv_root,
+            source=app_root / "requirements.txt",
+            command=(
+                str(_venv_python_path(venv_root)),
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(app_root / "requirements.txt"),
+            ),
+        )
+    )
 
     actions.append(SetupWriteAction("write_text", config_path, content=config_text))
     actions.append(SetupWriteAction("write_text", settings_path, content=settings_text))
@@ -466,19 +501,16 @@ def _config_data_root_value(*, data_root: Path, output_root: Path) -> str:
 def _windows_launcher_body(
     *,
     output_dir_name: str,
-    python_executable: str,
 ) -> str:
     return fr'''@echo off
 setlocal
 
 rem Catalog 2.0 launcher generated by setup-instance.
-rem This file is safe to edit manually if your Python path changes.
-
 set "INSTANCE_ROOT=%~dp0"
 set "CATALOG_OUTPUT=%INSTANCE_ROOT%{output_dir_name}"
 set "CATALOG_APP=%CATALOG_OUTPUT%\app"
 set "CATALOG_CONFIG=%CATALOG_OUTPUT%\config.json"
-set "PYTHON_EXE={python_executable}"
+set "PYTHON_EXE=%CATALOG_OUTPUT%\.venv\Scripts\python.exe"
 
 echo Catalog 2.0 - starting or opening this catalog instance...
 echo Catalog output: "%CATALOG_OUTPUT%"
@@ -501,14 +533,12 @@ def _write_windows_launcher(
     *,
     launcher_path: Path,
     output_dir_name: str,
-    python_executable: str,
 ) -> None:
     """Write a generated launcher; retained for update-instance compatibility."""
     _atomic_write_text(
         launcher_path,
         _windows_launcher_body(
             output_dir_name=output_dir_name,
-            python_executable=python_executable,
         ),
         newline="",
     )
@@ -519,3 +549,9 @@ def _atomic_write_text(path: Path, content: str, *, newline: str | None = None) 
     temp_path = path.with_name(path.name + ".tmp")
     temp_path.write_text(content, encoding="utf-8", newline=newline)
     os.replace(temp_path, path)
+
+
+def _venv_python_path(venv_root: Path) -> Path:
+    if os.name == "nt":
+        return venv_root / "Scripts" / "python.exe"
+    return venv_root / "bin" / "python"

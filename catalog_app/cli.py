@@ -169,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--python-executable",
         default=None,
-        help="Python executable written to the generated launcher. Defaults to the Python running setup-instance.",
+        help="Deprecated compatibility option; installed instances always use Catalog_Output\\.venv.",
     )
     parser.add_argument(
         "--branch",

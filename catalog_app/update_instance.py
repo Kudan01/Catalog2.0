@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,14 +11,27 @@ from typing import Literal
 
 from .config import ConfigError, load_config
 from .paths import is_path_within, same_path
-from .setup_instance import DEFAULT_LAUNCHER_NAME, RUNTIME_COPY_ITEMS, _write_windows_launcher
+from .setup_instance import (
+    DEFAULT_LAUNCHER_NAME,
+    INSTANCE_VENV_DIR_NAME,
+    RUNTIME_COPY_ITEMS,
+    _venv_python_path,
+    _write_windows_launcher,
+)
 
 
 class UpdateInstanceError(RuntimeError):
     """Raised when an installed catalog instance cannot be updated safely."""
 
 
-ActionKind = Literal["rename", "copy", "validate_config", "write_launcher"]
+ActionKind = Literal[
+    "rename",
+    "copy",
+    "validate_config",
+    "create_venv",
+    "install_dependencies",
+    "write_launcher",
+]
 
 
 @dataclass(frozen=True)
@@ -27,6 +40,7 @@ class UpdateInstanceAction:
     source: Path | None
     target: Path
     label: str
+    command: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -34,11 +48,11 @@ class UpdateInstancePlan:
     source_project_root: Path
     catalog_output: Path
     app_root: Path
+    venv_root: Path
     backup_root: Path
     config_path: Path
     launcher_path: Path
     launcher_backup_path: Path | None
-    launcher_python_executable: str
     actions: tuple[UpdateInstanceAction, ...]
     copied_items: tuple[str, ...]
 
@@ -48,6 +62,7 @@ class UpdateInstanceResult:
     source_project_root: Path
     catalog_output: Path
     app_root: Path
+    venv_root: Path
     backup_root: Path
     config_path: Path
     launcher_path: Path
@@ -66,6 +81,7 @@ def build_update_instance_plan(
     source_project_root = source_project_root.expanduser().resolve()
     catalog_output = catalog_output.expanduser().resolve()
     app_root = catalog_output / "app"
+    venv_root = catalog_output / INSTANCE_VENV_DIR_NAME
     config_path = catalog_output / "config.json"
 
     _ensure_runtime_source(source_project_root)
@@ -83,7 +99,8 @@ def build_update_instance_plan(
     launcher_backup_path = launcher_path.with_name(f"{launcher_path.name}.backup_{timestamp}") if launcher_path.exists() else None
     if launcher_backup_path is not None and launcher_backup_path.exists():
         raise UpdateInstanceError(f"Launcher backup path already exists: {launcher_backup_path}")
-    launcher_python_executable = _read_launcher_python_executable(launcher_path) or sys.executable
+    if venv_root.exists() and not venv_root.is_dir():
+        raise UpdateInstanceError(f"Instance virtual environment path is not a folder: {venv_root}")
 
     actions = [
         UpdateInstanceAction(
@@ -112,6 +129,32 @@ def build_update_instance_plan(
             label="Validate existing instance config with the updated runtime",
         )
     )
+    if not venv_root.exists():
+        actions.append(
+            UpdateInstanceAction(
+                kind="create_venv",
+                source=None,
+                target=venv_root,
+                label="Create instance virtual environment",
+                command=(sys.executable, "-m", "venv", str(venv_root)),
+            )
+        )
+    actions.append(
+        UpdateInstanceAction(
+            kind="install_dependencies",
+            source=app_root / "requirements.txt",
+            target=venv_root,
+            label="Install current runtime dependencies",
+            command=(
+                str(_venv_python_path(venv_root)),
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(app_root / "requirements.txt"),
+            ),
+        )
+    )
     if launcher_backup_path is not None:
         actions.append(
             UpdateInstanceAction(
@@ -134,11 +177,11 @@ def build_update_instance_plan(
         source_project_root=source_project_root,
         catalog_output=catalog_output,
         app_root=app_root,
+        venv_root=venv_root,
         backup_root=backup_root,
         config_path=config_path,
         launcher_path=launcher_path,
         launcher_backup_path=launcher_backup_path,
-        launcher_python_executable=launcher_python_executable,
         actions=tuple(actions),
         copied_items=tuple(RUNTIME_COPY_ITEMS),
     )
@@ -168,11 +211,15 @@ def execute_update_instance_plan(plan: UpdateInstancePlan) -> UpdateInstanceResu
             elif action.kind == "validate_config":
                 load_config(action.target)
 
+            elif action.kind in {"create_venv", "install_dependencies"}:
+                if action.command is None:
+                    raise UpdateInstanceError(f"Invalid process action without command: {action.kind}")
+                subprocess.run(action.command, check=True)
+
             elif action.kind == "write_launcher":
                 _write_windows_launcher(
                     launcher_path=action.target,
                     output_dir_name=plan.catalog_output.name,
-                    python_executable=plan.launcher_python_executable,
                 )
 
             else:
@@ -186,7 +233,7 @@ def execute_update_instance_plan(plan: UpdateInstancePlan) -> UpdateInstanceResu
             f"Technical detail: {exc}"
         ) from exc
 
-    except (OSError, ConfigError, UpdateInstanceError) as exc:
+    except (OSError, ConfigError, UpdateInstanceError, subprocess.CalledProcessError) as exc:
         _restore_previous_app_after_failure(plan, renamed_backup=renamed_backup)
         raise UpdateInstanceError(f"Runtime update failed. Previous app was restored if possible. Original error: {exc}") from exc
 
@@ -194,6 +241,7 @@ def execute_update_instance_plan(plan: UpdateInstancePlan) -> UpdateInstanceResu
         source_project_root=plan.source_project_root,
         catalog_output=plan.catalog_output,
         app_root=plan.app_root,
+        venv_root=plan.venv_root,
         backup_root=plan.backup_root,
         config_path=plan.config_path,
         launcher_path=plan.launcher_path,
@@ -211,6 +259,7 @@ def update_instance_result_lines(result: UpdateInstanceResult) -> list[str]:
         f"source project:  {result.source_project_root}",
         f"catalog output:  {result.catalog_output}",
         f"runtime app:     {result.app_root}",
+        f"virtual env:     {result.venv_root}",
         f"backup:          {result.backup_root}",
         f"config:          {result.config_path} (checked)",
         f"launcher:        {result.launcher_path}",
@@ -269,21 +318,6 @@ def _ensure_source_is_not_target(source_project_root: Path, catalog_output: Path
         )
     if same_path(source_project_root, catalog_output):
         raise UpdateInstanceError("Source project root is the same as Catalog_Output.")
-
-
-def _read_launcher_python_executable(launcher_path: Path) -> str | None:
-    """Preserve the Python executable stored in an existing generated launcher."""
-    if not launcher_path.exists() or not launcher_path.is_file():
-        return None
-    try:
-        body = launcher_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    match = re.search(r'^set\s+"PYTHON_EXE=(.*)"\s*$', body, flags=re.IGNORECASE | re.MULTILINE)
-    if match is None:
-        return None
-    value = match.group(1).strip()
-    return value or None
 
 
 def _runtime_ignore(directory: str, names: list[str]) -> set[str]:
