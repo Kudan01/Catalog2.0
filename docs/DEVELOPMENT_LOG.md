@@ -74,3 +74,54 @@ This technical log records completed and approved development steps: what change
 - Added exact-result assertions covering the existing folder preview selection and ordering contract without time-based thresholds.
 - Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.
 - Folder preview selection behavior and the `/api/folders` response contract were intentionally left unchanged.
+
+## 2026-09-14 — Folder preview metadata phase diagnostics
+
+### Changes
+
+- Split the existing folder browse `preview_metadata` timing into query, cache-file checks, count-map loading, composition, and an unallocated preview remainder.
+- Added aggregate row/check counts and readable nested output to the diagnostic summary.
+- Extended diagnostics tests with a real preview fixture and sub-phase assertions.
+
+### Reason
+
+- Identify the remaining non-SQL source of folder preview latency after correcting the query plan, without changing preview behavior.
+
+### Files
+
+- `catalog_app/api.py`
+- `tools/summarize_diagnostics.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Added assertions for unchanged preview results, non-negative timings, exact cache-check counts, non-negative remainder accounting, and summary formatting.
+- Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.
+- No preview selection, cache, pagination, frontend, or API response behavior was intentionally changed.
+
+## 2026-09-14 — Deferred folder preview cache-file validation
+
+### Changes
+
+- Removed per-preview thumbnail cache-file probes from folder browsing while retaining the existing zero-valued diagnostic timing and check-count fields.
+- Kept individual cache-file validation at the thumbnail endpoint, where a missing file produces the existing controlled missing-thumbnail response.
+- Added regression coverage for ready metadata with both present and missing cache files, invalid thumbnail states, preview source mixing and ordering, and the absence of bulk filesystem checks.
+
+### Reason
+
+- Avoid multi-second folder browse latency caused by repeated filesystem metadata reads when thumbnail directories are not present in the operating system filesystem cache.
+
+### Files
+
+- `catalog_app/api.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `tests/test_folder_preview_query.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Confirmed that healthy ready thumbnails retain the same preview metadata, source mixing, and ordering.
+- Confirmed that stale thumbnails and unavailable media remain excluded.
+- Confirmed that ready metadata with a missing cache file remains in the folder response and is rejected with the existing controlled response when that specific thumbnail is requested.
+- Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.

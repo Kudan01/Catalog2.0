@@ -5,9 +5,18 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from catalog_app.api import _folder_preview_items_by_folder
+from catalog_app.api import (
+    ApiError,
+    _folder_preview_items_by_folder,
+    child_folders,
+    thumbnail_media_resource,
+)
+from catalog_app.config import load_config
+from catalog_app.database import initialize_database
 from catalog_app.schema import SCHEMA_STATEMENTS
+from catalog_app.setup_instance import _instance_config_text
 
 
 class FolderPreviewQueryTests(unittest.TestCase):
@@ -54,17 +63,22 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 )
                 connection.commit()
 
-                result = _folder_preview_items_by_folder(
-                    SimpleNamespace(output_root=output_root),
-                    connection,
-                    [first_id, second_id],
-                )
+                with patch.object(Path, "exists", wraps=Path.exists) as exists_mock, patch.object(
+                    Path, "is_file", wraps=Path.is_file
+                ) as is_file_mock:
+                    result = _folder_preview_items_by_folder(
+                        SimpleNamespace(output_root=output_root),
+                        connection,
+                        [first_id, second_id],
+                    )
+                self.assertEqual(0, exists_mock.call_count)
+                self.assertEqual(0, is_file_mock.call_count)
             finally:
                 connection.close()
 
         self.assertEqual({first_id, second_id}, set(result))
         self.assertEqual(
-            ["auto-1.jpg", "auto-2.jpg", "parent-1.gif", "parent-2.mp4"],
+            ["auto-1.jpg", "auto-2.jpg", "missing-cache.jpg", "parent-1.gif", "parent-2.mp4"],
             [item["file_name"] for item in result[first_id]],
         )
         self.assertEqual(
@@ -75,10 +89,70 @@ class FolderPreviewQueryTests(unittest.TestCase):
             "unavailable.jpg",
             "stale.jpg",
             "wrong-kind.jpg",
-            "missing-cache.jpg",
             "manual.jpg",
         }
         self.assertTrue(rejected.isdisjoint(item["file_name"] for item in result[first_id]))
+
+    def test_missing_ready_cache_is_deferred_to_thumbnail_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            data_root = root / "data"
+            output_root = root / "Catalog_Output"
+            data_root.mkdir()
+            (data_root / "folder_a").mkdir()
+            output_root.mkdir()
+            config_path = output_root / "config.json"
+            config_path.write_text(
+                _instance_config_text(config_data_root=str(data_root)),
+                encoding="utf-8",
+            )
+            initialize_database(output_root / "catalog.db")
+            config = load_config(config_path)
+
+            connection = sqlite3.connect(config.db_path)
+            connection.row_factory = sqlite3.Row
+            try:
+                scan_id = self._insert_scan(connection)
+                root_id = self._insert_folder(connection, scan_id, "", None, 0, 0, 0)
+                folder_id = self._insert_folder(
+                    connection, scan_id, "folder_a", root_id, 1, 1, 1
+                )
+                self._add_preview(
+                    connection,
+                    output_root,
+                    scan_id,
+                    folder_id,
+                    "auto",
+                    1,
+                    "example.jpg",
+                    create_cache=False,
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            response = child_folders(
+                config,
+                "",
+                raw_page="1",
+                raw_page_size="20",
+                raw_include_previews="1",
+            )
+            folder = next(item for item in response["folders"] if item["rel_path"] == "folder_a")
+            self.assertEqual(
+                ["example.jpg"],
+                [item["file_name"] for item in folder["folder_previews"]],
+            )
+            with self.assertRaises(ApiError) as raised:
+                thumbnail_media_resource(
+                    config,
+                    "media/example.jpg",
+                    "photo_tile",
+                    existing_only=True,
+                )
+
+            self.assertEqual(404, raised.exception.status_code)
+            self.assertEqual("thumbnail.cache.missing", raised.exception.message_object["code"])
 
     @staticmethod
     def _insert_scan(connection: sqlite3.Connection) -> int:
@@ -168,7 +242,7 @@ class FolderPreviewQueryTests(unittest.TestCase):
             "video": "video_poster",
         }[media_type]
         thumbnail_type = thumbnail_type or expected_type
-        output_rel_path = f"_cache/{file_name}.thumb"
+        output_rel_path = f"_cache/thumbnails/v1/dynamic/photo_tiles/{file_name}.thumb"
         connection.execute(
             """
             INSERT INTO thumbnails (

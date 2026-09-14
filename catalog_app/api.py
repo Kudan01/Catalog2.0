@@ -2694,6 +2694,12 @@ class _FolderBrowseDiagnostics:
     root_enumeration_ms: float = 0.0
     preview_metadata_ms: float = 0.0
     preview_sql_duration_ms: float = 0.0
+    preview_query_ms: float = 0.0
+    preview_cache_file_checks_ms: float = 0.0
+    preview_count_maps_ms: float = 0.0
+    preview_composition_ms: float = 0.0
+    preview_query_row_count: int = 0
+    preview_cache_file_check_count: int = 0
     source_root_status_checks: int = 0
     folder_fs_checks: int = 0
 
@@ -2726,6 +2732,15 @@ class _FolderBrowseDiagnostics:
         include_previews: bool,
         result: dict[str, Any],
     ) -> None:
+        preview_tracked_ms = (
+            self.preview_query_ms
+            + self.preview_cache_file_checks_ms
+            + self.preview_count_maps_ms
+            + self.preview_composition_ms
+        )
+        # Sub-phase timers are disjoint; measurement overhead remains visible
+        # in preview_other instead of being silently attributed to useful work.
+        preview_other_ms = max(0.0, self.preview_metadata_ms - preview_tracked_ms)
         diagnostic_set_request_detail(
             "folder_browse",
             {
@@ -2742,6 +2757,13 @@ class _FolderBrowseDiagnostics:
                 "root_enumeration_ms": round(self.root_enumeration_ms, 3),
                 "preview_metadata_ms": round(self.preview_metadata_ms, 3),
                 "preview_sql_duration_ms": round(self.preview_sql_duration_ms, 3),
+                "preview_query_ms": round(self.preview_query_ms, 3),
+                "preview_query_row_count": self.preview_query_row_count,
+                "preview_cache_file_checks_ms": round(self.preview_cache_file_checks_ms, 3),
+                "preview_cache_file_check_count": self.preview_cache_file_check_count,
+                "preview_count_maps_ms": round(self.preview_count_maps_ms, 3),
+                "preview_composition_ms": round(self.preview_composition_ms, 3),
+                "preview_other_ms": round(preview_other_ms, 3),
             },
         )
 
@@ -2840,6 +2862,7 @@ def child_folders(
                 config,
                 connection,
                 [int(row["id"]) for row in rows],
+                diagnostics=diagnostics,
             )
             diagnostics.end_preview(preview_started)
         elif include_previews:
@@ -2958,7 +2981,12 @@ def _root_child_folders_with_disk_candidates(
     active_ids = [folder_id for _kind, _folder, folder_id in page_items if folder_id is not None]
     if include_previews and diagnostics is not None:
         preview_started = diagnostics.begin_preview()
-        previews_by_folder = _folder_preview_items_by_folder(config, connection, active_ids)
+        previews_by_folder = _folder_preview_items_by_folder(
+            config,
+            connection,
+            active_ids,
+            diagnostics=diagnostics,
+        )
         diagnostics.end_preview(preview_started)
     elif include_previews:
         previews_by_folder = _folder_preview_items_by_folder(config, connection, active_ids)
@@ -3209,18 +3237,20 @@ def _folder_preview_items_by_folder(
     config: Config,
     connection: sqlite3.Connection,
     folder_ids: list[int],
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
 ) -> dict[int, list[dict[str, Any]]]:
     """Return stored automatic folder preview items for child folder cards.
 
     This read-only UI helper combines direct auto previews with parent-derived
     auto_parent previews into one deterministic representation. It does not
-    generate thumbnails and only returns items whose thumbnail is ready and
-    whose cache file exists.
+    generate thumbnails and only returns items whose thumbnail is ready.
     """
     if not folder_ids:
         return {}
 
     placeholders = ",".join("?" for _ in folder_ids)
+    query_started = time.perf_counter() if diagnostics is not None else 0.0
     rows = connection.execute(
         f"""
         SELECT
@@ -3256,14 +3286,16 @@ def _folder_preview_items_by_folder(
         """,
         folder_ids,
     ).fetchall()
+    if diagnostics is not None:
+        diagnostics.preview_query_ms += (time.perf_counter() - query_started) * 1000.0
+        diagnostics.preview_query_row_count += len(rows)
 
     grouped: dict[int, dict[str, list[dict[str, Any]]]] = {}
 
+    grouping_started = time.perf_counter() if diagnostics is not None else 0.0
     for row in rows:
-        output_rel_path = str(row["output_rel_path"] or "")
-        if not _thumbnail_output_file_exists(config.output_root, output_rel_path):
-            continue
-
+        # Cache-file validation is deferred to each thumbnail request so folder
+        # browsing does not perform hundreds of cold filesystem probes.
         folder_id = int(row["folder_id"])
         selection_type = str(row["selection_type"])
         if selection_type not in {"auto", "auto_parent"}:
@@ -3278,8 +3310,15 @@ def _folder_preview_items_by_folder(
             "thumbnail_type": str(row["thumbnail_type"]),
             "variant_key": str(row["variant_key"]),
         })
+    if diagnostics is not None:
+        diagnostics.preview_composition_ms += (time.perf_counter() - grouping_started) * 1000.0
 
+    count_maps_started = time.perf_counter() if diagnostics is not None else 0.0
     direct_visual_counts, recursive_visual_counts = folder_preview_visual_media_count_maps(connection)
+    if diagnostics is not None:
+        diagnostics.preview_count_maps_ms += (time.perf_counter() - count_maps_started) * 1000.0
+
+    composition_started = time.perf_counter() if diagnostics is not None else 0.0
     result: dict[int, list[dict[str, Any]]] = {}
     for folder_id, by_type in grouped.items():
         auto_rows = sorted(by_type["auto"], key=lambda item: int(item["position"]))
@@ -3296,20 +3335,10 @@ def _folder_preview_items_by_folder(
         )
         result[folder_id] = [dict(item) for item in selected]
 
+    if diagnostics is not None:
+        diagnostics.preview_composition_ms += (time.perf_counter() - composition_started) * 1000.0
+
     return result
-
-
-def _thumbnail_output_file_exists(output_root: Path, output_rel_path: str) -> bool:
-    if not output_rel_path:
-        return False
-
-    candidate = output_root / output_rel_path
-
-    try:
-        return candidate.exists() and candidate.is_file()
-    except OSError:
-        return False
-
 
 def _folder_previews_requested(raw_value: str | None) -> bool:
     """Return whether child-folder cards should include stored previews.

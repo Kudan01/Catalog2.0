@@ -94,6 +94,11 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 self.assertIn("folder_fs_status_ms", metrics)
                 self.assertIn("root_enumeration_ms", metrics)
                 self.assertIn("preview_metadata_ms", metrics)
+                self.assertIn("preview_query_ms", metrics)
+                self.assertIn("preview_cache_file_checks_ms", metrics)
+                self.assertIn("preview_count_maps_ms", metrics)
+                self.assertIn("preview_composition_ms", metrics)
+                self.assertIn("preview_other_ms", metrics)
                 self.assertIn("other_ms", metrics)
                 self.assertIn("folder_fs_checks", metrics)
                 for field, value in metrics.items():
@@ -102,6 +107,23 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
 
             self.assertGreaterEqual(root_metrics["source_root_status_checks"], 1)
             self.assertEqual(0.0, child_metrics["root_enumeration_ms"])
+            self.assertEqual(1, child_metrics["preview_query_row_count"])
+            self.assertEqual(0, child_metrics["preview_cache_file_check_count"])
+            self.assertEqual(0.0, child_metrics["preview_cache_file_checks_ms"])
+            preview_parts = sum(
+                child_metrics[field]
+                for field in (
+                    "preview_query_ms",
+                    "preview_cache_file_checks_ms",
+                    "preview_count_maps_ms",
+                    "preview_composition_ms",
+                    "preview_other_ms",
+                )
+            )
+            self.assertLessEqual(
+                abs(child_metrics["preview_metadata_ms"] - preview_parts),
+                0.01,
+            )
 
     def test_folder_browse_summary_formats_requests_in_order(self) -> None:
         events = [
@@ -116,6 +138,9 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
         self.assertIn("page:                2", output)
         self.assertIn("include_previews:    true", output)
         self.assertIn("folder_fs_checks:    3", output)
+        self.assertIn("preview_query:       0.250 ms (7 rows)", output)
+        self.assertIn("cache_file_checks:   0.500 ms (7 checks)", output)
+        self.assertIn("other_preview:       0.050 ms", output)
         self.assertIn("other:               1.000 ms", output)
 
     @staticmethod
@@ -154,6 +179,13 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 "folder_fs_status_ms": 3.0,
                 "root_enumeration_ms": 4.0 if is_root else 0.0,
                 "preview_metadata_ms": 1.0,
+                "preview_query_ms": 0.25,
+                "preview_query_row_count": 7,
+                "preview_cache_file_checks_ms": 0.5,
+                "preview_cache_file_check_count": 7,
+                "preview_count_maps_ms": 0.1,
+                "preview_composition_ms": 0.1,
+                "preview_other_ms": 0.05,
                 "other_ms": 1.0,
                 "source_root_status_checks": 4,
                 "folder_fs_checks": 3,
@@ -188,12 +220,43 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
             parent_id = FolderBrowseDiagnosticsTests._insert_folder(
                 connection, "Parent", root_id, "Parent", 1, scan_id
             )
-            FolderBrowseDiagnosticsTests._insert_folder(
+            child_id = FolderBrowseDiagnosticsTests._insert_folder(
                 connection, "Parent/Child", parent_id, "Child", 2, scan_id
+            )
+            media_id = connection.execute(
+                """
+                INSERT INTO media_files (
+                    rel_path, path_key, folder_id, file_name, extension, media_type,
+                    size_bytes, modified_time, sort_key, last_successful_scan_id, is_available
+                ) VALUES ('Parent/Child/preview.jpg', 'parent/child/preview.jpg', ?,
+                          'preview.jpg', '.jpg', 'image', 1, 1, 'preview.jpg', ?, 1)
+                """,
+                (child_id, scan_id),
+            ).lastrowid
+            connection.execute(
+                """
+                INSERT INTO thumbnails (
+                    media_id, thumbnail_type, cache_class, variant_key, output_rel_path,
+                    width, height, file_size_bytes, source_size_bytes, source_modified_time,
+                    algorithm_version, status, created_at, updated_at
+                ) VALUES (?, 'photo_tile', 'dynamic', 'default', '_cache/preview.thumb',
+                          1, 1, 1, 1, 1, 'test', 'ready', 1, 1)
+                """,
+                (media_id,),
+            )
+            connection.execute(
+                """
+                INSERT INTO folder_preview_items (folder_id, selection_type, position, media_id)
+                VALUES (?, 'auto', 1, ?)
+                """,
+                (child_id, media_id),
             )
             connection.commit()
         finally:
             connection.close()
+        cache_path = output_root / "_cache" / "preview.thumb"
+        cache_path.parent.mkdir()
+        cache_path.write_bytes(b"preview")
         return load_config(config_path)
 
     @staticmethod

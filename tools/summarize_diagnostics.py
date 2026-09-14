@@ -173,6 +173,13 @@ def folder_browse_performance_lines(events: list[dict[str, Any]]) -> list[str]:
                 f"folder_fs_status:    {number(record.get('folder_fs_status_ms'))} ms",
                 f"root_enumeration:    {number(record.get('root_enumeration_ms'))} ms",
                 f"preview_metadata:    {number(record.get('preview_metadata_ms'))} ms",
+                f"  preview_query:       {number(record.get('preview_query_ms'))} ms "
+                f"({record.get('preview_query_row_count', 0)} rows)",
+                f"  cache_file_checks:   {number(record.get('preview_cache_file_checks_ms'))} ms "
+                f"({record.get('preview_cache_file_check_count', 0)} checks)",
+                f"  count_maps:          {number(record.get('preview_count_maps_ms'))} ms",
+                f"  composition:         {number(record.get('preview_composition_ms'))} ms",
+                f"  other_preview:       {number(record.get('preview_other_ms'))} ms",
                 f"other:               {number(record.get('other_ms'))} ms",
                 f"source_root_checks:  {record.get('source_root_status_checks', 0)}",
                 f"folder_fs_checks:    {record.get('folder_fs_checks', 0)}",
