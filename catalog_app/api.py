@@ -3235,15 +3235,18 @@ def _folder_preview_items_by_folder(
             t.output_rel_path AS output_rel_path,
             t.status AS status,
             fpi.selection_type AS selection_type
+        -- CROSS JOIN keeps the small requested folder-preview set as SQLite's
+        -- outer loop; starting from all ready thumbnails is prohibitively broad
+        -- on large catalogs even though the final result contains few rows.
         FROM folder_preview_items AS fpi
-        JOIN media_files AS mf
-          ON mf.id = fpi.media_id
-         AND mf.is_available = 1
-        JOIN thumbnails AS t
-          ON t.media_id = mf.id
-         AND t.status = 'ready'
+        CROSS JOIN media_files AS mf
+        CROSS JOIN thumbnails AS t INDEXED BY idx_thumbnails_media_kind
         WHERE fpi.selection_type IN ('auto', 'auto_parent')
           AND fpi.folder_id IN ({placeholders})
+          AND mf.id = fpi.media_id
+          AND mf.is_available = 1
+          AND t.media_id = mf.id
+          AND t.status = 'ready'
           AND (
                 (mf.media_type = 'image' AND t.thumbnail_type = 'photo_tile' AND t.variant_key = 'default')
              OR (mf.media_type = 'gif'   AND t.thumbnail_type = 'gif_preview' AND t.variant_key = 'default')

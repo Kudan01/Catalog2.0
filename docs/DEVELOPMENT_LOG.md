@@ -51,3 +51,26 @@ This technical log records completed and approved development steps: what change
 - Added assertions for the required timing fields, root/non-root context, operation counts, and readable summary formatting.
 - Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.
 - Functional `/api/folders` behavior was intentionally left unchanged.
+
+## 2026-09-14 — Folder preview query join order
+
+### Changes
+
+- Constrained the folder preview metadata query to start from requested `folder_preview_items`, then look up media and thumbnails through existing selective indexes.
+- Added regression coverage for multiple folders, `auto` and `auto_parent` ordering, unavailable media, invalid thumbnail states/types, missing cache files, and manual rows.
+
+### Reason
+
+- Prevent SQLite from starting the small-scope folder preview query with a broad scan of all ready thumbnails on large catalogs.
+
+### Files
+
+- `catalog_app/api.py`
+- `tests/test_folder_preview_query.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Added exact-result assertions covering the existing folder preview selection and ordering contract without time-based thresholds.
+- Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.
+- Folder preview selection behavior and the `/api/folders` response contract were intentionally left unchanged.
