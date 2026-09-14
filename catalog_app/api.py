@@ -2702,6 +2702,9 @@ class _FolderBrowseDiagnostics:
     preview_cache_file_check_count: int = 0
     source_root_status_checks: int = 0
     folder_fs_checks: int = 0
+    folder_fs_batch_enumerations: int = 0
+    folder_fs_fallback_checks: int = 0
+    folder_fs_batch_ms: float = 0.0
 
     @classmethod
     def create(cls) -> _FolderBrowseDiagnostics | None:
@@ -2754,6 +2757,9 @@ class _FolderBrowseDiagnostics:
                 "source_root_status_checks": self.source_root_status_checks,
                 "folder_fs_status_ms": round(self.folder_fs_status_ms, 3),
                 "folder_fs_checks": self.folder_fs_checks,
+                "folder_fs_batch_ms": round(self.folder_fs_batch_ms, 3),
+                "folder_fs_batch_enumerations": self.folder_fs_batch_enumerations,
+                "folder_fs_fallback_checks": self.folder_fs_fallback_checks,
                 "root_enumeration_ms": round(self.root_enumeration_ms, 3),
                 "preview_metadata_ms": round(self.preview_metadata_ms, 3),
                 "preview_sql_duration_ms": round(self.preview_sql_duration_ms, 3),
@@ -2873,13 +2879,15 @@ def child_folders(
             )
         else:
             previews_by_folder = {}
-        folders = []
-        for row in rows:
-            folder = _folder_dict(row)
-            _attach_folder_filesystem_status(config, folder, diagnostics=diagnostics)
+        folders = [_folder_dict(row) for row in rows]
+        _attach_folder_filesystem_status_targeted(
+            config,
+            folders,
+            diagnostics=diagnostics,
+        )
+        for row, folder in zip(rows, folders, strict=True):
             if include_previews:
                 folder["folder_previews"] = previews_by_folder.get(int(row["id"]), [])
-            folders.append(folder)
 
         result = {
             "ok": True,
@@ -2948,11 +2956,16 @@ def _root_child_folders_with_disk_candidates(
         ).fetchall()
         active_path_keys = {str(row["path_key"]) for row in active_rows}
 
+    active_folders = [_folder_dict(row) for row in active_rows]
+    snapshot = _attach_folder_filesystem_status_batch(
+        config,
+        "",
+        active_folders,
+        diagnostics=diagnostics,
+    )
     items: list[tuple[str, dict[str, Any], int | None]] = []
 
-    for row in active_rows:
-        folder = _folder_dict(row)
-        _attach_folder_filesystem_status(config, folder, diagnostics=diagnostics)
+    for row, folder in zip(active_rows, active_folders, strict=True):
         if include_previews:
             folder["folder_previews"] = []
         items.append(("active", folder, int(row["id"])))
@@ -2962,7 +2975,7 @@ def _root_child_folders_with_disk_candidates(
     for folder in _disk_top_level_folder_candidates(
         config,
         active_path_keys,
-        diagnostics=diagnostics,
+        snapshot=snapshot,
     ):
         items.append(("disk", folder, None))
     if diagnostics is not None:
@@ -3018,54 +3031,157 @@ def _root_child_folders_with_disk_candidates(
     }
 
 
-def _disk_top_level_folder_candidates(
+@dataclass(frozen=True)
+class _FolderFilesystemEntrySnapshot:
+    name: str
+    rel_path: str
+    path_key: str
+    is_dir: bool
+    is_link_or_junction: bool
+
+
+@dataclass(frozen=True)
+class _FolderFilesystemSnapshot:
+    source_status: Any
+    resolved_root: Path | None
+    entries: dict[str, _FolderFilesystemEntrySnapshot]
+    ambiguous_path_keys: frozenset[str]
+    complete: bool
+    iteration_error: str | None = None
+
+
+def _folder_filesystem_snapshot(
     config: Config,
-    active_path_keys: set[str],
+    parent_rel_path: str,
     *,
     diagnostics: _FolderBrowseDiagnostics | None = None,
-) -> list[dict[str, Any]]:
-    """Return immediate data_root directories that are not active catalog roots."""
-    candidates: list[dict[str, Any]] = []
+) -> _FolderFilesystemSnapshot:
+    """Read one direct-child filesystem snapshot for a folder browse request."""
+    source_status = (
+        diagnostics.source_root_status(config)
+        if diagnostics is not None
+        else source_root_status(config)
+    )
+    if not source_status.available:
+        return _FolderFilesystemSnapshot(source_status, None, {}, frozenset(), True)
 
-    status = diagnostics.source_root_status(config) if diagnostics is not None else source_root_status(config)
-    if not status.available:
-        return candidates
+    started = time.perf_counter() if diagnostics is not None else 0.0
+
+    def finish(snapshot: _FolderFilesystemSnapshot) -> _FolderFilesystemSnapshot:
+        if diagnostics is not None:
+            diagnostics.folder_fs_batch_ms += (time.perf_counter() - started) * 1000.0
+        return snapshot
 
     try:
-        iterator = os.scandir(config.data_root)
-    except OSError:
-        return candidates
+        resolved_root = config.data_root.expanduser().resolve(strict=True)
+        parent_path = safe_join_catalog_path(
+            resolved_root,
+            parent_rel_path,
+            allow_root=True,
+        )
+    except (OSError, PathValidationError):
+        return finish(_FolderFilesystemSnapshot(source_status, None, {}, frozenset(), False))
 
+    if diagnostics is not None:
+        diagnostics.folder_fs_batch_enumerations += 1
+
+    try:
+        iterator = os.scandir(parent_path)
+    except (FileNotFoundError, NotADirectoryError):
+        return finish(
+            _FolderFilesystemSnapshot(source_status, resolved_root, {}, frozenset(), True)
+        )
+    except OSError:
+        return finish(
+            _FolderFilesystemSnapshot(source_status, resolved_root, {}, frozenset(), False)
+        )
+
+    entries: dict[str, _FolderFilesystemEntrySnapshot] = {}
+    ambiguous_path_keys: set[str] = set()
     try:
         with iterator:
             for entry in iterator:
                 try:
-                    if entry.name in IGNORED_DIRECTORY_NAMES:
-                        continue
-
-                    if _is_dir_entry_link_or_junction(entry):
-                        continue
-
-                    if not entry.is_dir(follow_symlinks=False):
-                        continue
-
-                    try:
-                        rel_path = normalize_catalog_relative_path(entry.name, allow_root=False)
-                    except PathValidationError:
-                        continue
-
-                    if catalog_path_key(rel_path) in active_path_keys:
-                        continue
-
-                    candidates.append(_disk_root_candidate_dict(rel_path=rel_path, name=entry.name))
-                except OSError:
+                    rel_path = normalize_catalog_relative_path(
+                        f"{parent_rel_path}/{entry.name}" if parent_rel_path else entry.name,
+                        allow_root=False,
+                    )
+                except PathValidationError:
                     continue
+
+                path_key = catalog_path_key(rel_path)
+                if path_key in entries:
+                    # A case/path-key collision cannot be assigned safely from
+                    # one directory snapshot, so both candidates use fallback.
+                    ambiguous_path_keys.add(path_key)
+                    continue
+
+                try:
+                    is_link_or_junction = _is_dir_entry_link_or_junction(entry)
+                    is_dir = entry.is_dir(follow_symlinks=is_link_or_junction)
+                except OSError:
+                    ambiguous_path_keys.add(path_key)
+                    continue
+
+                entries[path_key] = _FolderFilesystemEntrySnapshot(
+                    name=entry.name,
+                    rel_path=rel_path,
+                    path_key=path_key,
+                    is_dir=is_dir,
+                    is_link_or_junction=is_link_or_junction,
+                )
     except OSError as exc:
+        return finish(
+            _FolderFilesystemSnapshot(
+                source_status,
+                resolved_root,
+                {},
+                frozenset(),
+                False,
+                _technical_error_detail(exc),
+            )
+        )
+
+    return finish(
+        _FolderFilesystemSnapshot(
+            source_status,
+            resolved_root,
+            entries,
+            frozenset(ambiguous_path_keys),
+            True,
+        )
+    )
+
+
+def _disk_top_level_folder_candidates(
+    config: Config,
+    active_path_keys: set[str],
+    *,
+    snapshot: _FolderFilesystemSnapshot | None = None,
+) -> list[dict[str, Any]]:
+    """Return immediate data_root directories that are not active catalog roots."""
+    candidates: list[dict[str, Any]] = []
+
+    if snapshot is None:
+        snapshot = _folder_filesystem_snapshot(config, "")
+    if snapshot.iteration_error:
         raise ApiError.from_message(
             500,
             "navigation.data_root.scan_failed",
-            payload={"technical_detail": str(exc)},
-        ) from exc
+            payload={"technical_detail": snapshot.iteration_error},
+        )
+    if not snapshot.source_status.available or not snapshot.complete:
+        return candidates
+
+    for entry in snapshot.entries.values():
+        if (
+            entry.name in IGNORED_DIRECTORY_NAMES
+            or entry.is_link_or_junction
+            or not entry.is_dir
+            or entry.path_key in active_path_keys
+        ):
+            continue
+        candidates.append(_disk_root_candidate_dict(rel_path=entry.rel_path, name=entry.name))
 
     return candidates
 
@@ -3133,18 +3249,159 @@ def _attach_folder_filesystem_status(
     )
 
 
+def _attach_folder_filesystem_status_batch(
+    config: Config,
+    parent_rel_path: str,
+    folders: list[dict[str, Any]],
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
+) -> _FolderFilesystemSnapshot:
+    """Attach statuses from one parent enumeration, with per-item fallback."""
+    started = time.perf_counter() if diagnostics is not None else 0.0
+    source_before = diagnostics.source_root_status_ms if diagnostics is not None else 0.0
+    snapshot = _folder_filesystem_snapshot(
+        config,
+        parent_rel_path,
+        diagnostics=diagnostics,
+    )
+
+    for folder in folders:
+        rel_path = str(folder.get("rel_path") or "")
+        status = _folder_filesystem_status_from_snapshot(snapshot, rel_path)
+        if status is None:
+            # Preserve the original safety checks for ambiguous snapshot data,
+            # but reuse the request-scoped source-root result.
+            if diagnostics is not None:
+                diagnostics.folder_fs_fallback_checks += 1
+            status = _folder_filesystem_status(
+                config,
+                rel_path,
+                precomputed_source_status=snapshot.source_status,
+                resolved_root=snapshot.resolved_root,
+            )
+        folder["filesystem"] = status
+
+    if diagnostics is not None:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        source_ms = diagnostics.source_root_status_ms - source_before
+        diagnostics.folder_fs_status_ms += max(0.0, elapsed_ms - source_ms)
+        diagnostics.folder_fs_checks += len(folders)
+    return snapshot
+
+
+def _attach_folder_filesystem_status_targeted(
+    config: Config,
+    folders: list[dict[str, Any]],
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
+) -> None:
+    """Check only DB folders on a non-root page with shared request state."""
+    if not folders:
+        return
+
+    started = time.perf_counter() if diagnostics is not None else 0.0
+    source_before = diagnostics.source_root_status_ms if diagnostics is not None else 0.0
+    source_status_value = (
+        diagnostics.source_root_status(config)
+        if diagnostics is not None
+        else source_root_status(config)
+    )
+
+    resolved_root = Path(source_status_value.path) if source_status_value.available else None
+
+    for folder in folders:
+        rel_path = str(folder.get("rel_path") or "")
+        folder["filesystem"] = _folder_filesystem_status(
+            config,
+            rel_path,
+            precomputed_source_status=source_status_value,
+            resolved_root=resolved_root,
+        )
+
+    if diagnostics is not None:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        source_ms = diagnostics.source_root_status_ms - source_before
+        diagnostics.folder_fs_status_ms += max(0.0, elapsed_ms - source_ms)
+        diagnostics.folder_fs_checks += len(folders)
+
+
+def _folder_filesystem_status_from_snapshot(
+    snapshot: _FolderFilesystemSnapshot,
+    rel_path: str,
+) -> dict[str, Any] | None:
+    try:
+        normalized = normalize_catalog_relative_path(rel_path, allow_root=True)
+    except PathValidationError:
+        return None
+
+    if not snapshot.source_status.available:
+        return _folder_filesystem_status_payload("source_root_unavailable", normalized)
+    if not snapshot.complete:
+        return None
+
+    path_key = catalog_path_key(normalized)
+    if path_key in snapshot.ambiguous_path_keys:
+        return None
+
+    entry = snapshot.entries.get(path_key)
+    if entry is None:
+        return _folder_filesystem_status_payload("missing", normalized)
+    if entry.is_link_or_junction:
+        return _folder_filesystem_status_payload(
+            "link_or_junction",
+            normalized,
+            exists=True,
+            is_dir=entry.is_dir,
+            is_link_or_junction=True,
+        )
+    if not entry.is_dir:
+        return _folder_filesystem_status_payload(
+            "not_directory",
+            normalized,
+            exists=True,
+        )
+    return _folder_filesystem_status_payload("ok", normalized, exists=True, is_dir=True)
+
+
+def _folder_filesystem_status_payload(
+    reason: str,
+    rel_path: str,
+    *,
+    exists: bool = False,
+    is_dir: bool = False,
+    is_link_or_junction: bool = False,
+) -> dict[str, Any]:
+    return {
+        "checked": True,
+        "exists": exists,
+        "is_dir": is_dir,
+        "is_link_or_junction": is_link_or_junction,
+        "is_usable": reason == "ok",
+        "reason": reason,
+        "message_object": _folder_filesystem_message(reason, rel_path),
+    }
+
+
 def _folder_filesystem_status(
     config: Config,
     rel_path: str,
     *,
     diagnostics: _FolderBrowseDiagnostics | None = None,
+    precomputed_source_status: Any | None = None,
+    resolved_root: Path | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter() if diagnostics is not None else 0.0
     source_before = diagnostics.source_root_status_ms if diagnostics is not None else 0.0
     try:
         normalized = normalize_catalog_relative_path(rel_path, allow_root=True)
-        source_status = diagnostics.source_root_status(config) if diagnostics is not None else source_root_status(config)
-        if not source_status.available:
+        source_status_value = precomputed_source_status
+        if source_status_value is None:
+            source_status_value = (
+                diagnostics.source_root_status(config)
+                if diagnostics is not None
+                else source_root_status(config)
+            )
+        if not source_status_value.available:
             return {
                 "checked": True,
                 "exists": False,
@@ -3157,7 +3414,20 @@ def _folder_filesystem_status(
                 ),
             }
 
-        root = config.data_root.expanduser().resolve(strict=True)
+        root = resolved_root or config.data_root.expanduser().resolve(strict=True)
+        unresolved_target = root.joinpath(*PurePosixPath(normalized).parts)
+        if _is_path_link_or_junction_path(unresolved_target):
+            return {
+                "checked": True,
+                "exists": unresolved_target.exists(),
+                "is_dir": unresolved_target.is_dir() if unresolved_target.exists() else False,
+                "is_link_or_junction": True,
+                "is_usable": False,
+                "reason": "link_or_junction",
+                "message_object": _folder_filesystem_message(
+                    "link_or_junction", normalized
+                ),
+            }
         target = safe_join_catalog_path(root, normalized, allow_root=True)
 
         if _is_path_link_or_junction_path(target):

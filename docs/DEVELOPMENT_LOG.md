@@ -152,3 +152,31 @@ This technical log records completed and approved development steps: what change
 - Automated tests, the manual Windows workflow, and runtime diagnostics passed.
 - Runtime diagnostics confirmed that duplicate current-parent `/api/folders` requests no longer occur.
 - The `/api/folders` backend and folder filesystem-status logic were not changed in this step.
+## 2026-09-14 — 7C.2/7C.2a Runtime filesystem status optimization for `/api/folders`
+
+### Changes
+
+- A request-scoped `source_root_status` removed redundant repeated source-root checks.
+- Root browsing continues to use one shared filesystem snapshot for both active database folders and disk-only candidates.
+- Cold validation showed that the original non-root batch `scandir` was unsuitable for directories containing many media entries. 7C.2a therefore checks only database folders returned on the current non-root page and does not enumerate the entire parent directory.
+- A non-root page with no child folders performs no child-folder filesystem work.
+- All existing filesystem statuses and path, link, and junction safety checks remain preserved. The frontend and 7C.1 orchestration were unchanged.
+
+### Reason
+
+- Reduce redundant runtime filesystem work without making non-root browse cost depend on every physical entry in a media-heavy parent directory.
+
+### Files
+
+- `catalog_app/api.py`
+- `tools/summarize_diagnostics.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `tests/test_folder_filesystem_batch.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite passed: 20 tests, OK.
+- In cold validation, a representative problematic `/api/folders` request improved from approximately 2603 ms to 1056 ms total, while `folder_fs_status` improved from approximately 1728 ms to 395 ms and batch enumerations changed from 1 to 0.
+- For a non-root request with zero child folders, total time improved from approximately 126 ms to 21 ms and child-folder filesystem work from approximately 94 ms to 0 ms.
+- This does not establish that overall Catalog performance is solved. Startup still takes approximately 10.8 seconds, with separate diagnosed bottlenecks in `/api/status`, `/api/jobs/status`, and the thumbnail pipeline.

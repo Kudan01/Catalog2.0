@@ -92,6 +92,9 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 self.assertIn("sql_ms", metrics)
                 self.assertIn("source_root_status_ms", metrics)
                 self.assertIn("folder_fs_status_ms", metrics)
+                self.assertIn("folder_fs_batch_ms", metrics)
+                self.assertIn("folder_fs_batch_enumerations", metrics)
+                self.assertIn("folder_fs_fallback_checks", metrics)
                 self.assertIn("root_enumeration_ms", metrics)
                 self.assertIn("preview_metadata_ms", metrics)
                 self.assertIn("preview_query_ms", metrics)
@@ -105,7 +108,13 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                     if field.endswith("_ms"):
                         self.assertGreaterEqual(value, 0.0)
 
-            self.assertGreaterEqual(root_metrics["source_root_status_checks"], 1)
+            self.assertEqual(1, root_metrics["source_root_status_checks"])
+            self.assertEqual(1, child_metrics["source_root_status_checks"])
+            self.assertEqual(1, root_metrics["folder_fs_batch_enumerations"])
+            self.assertEqual(0, child_metrics["folder_fs_batch_enumerations"])
+            self.assertEqual(0.0, child_metrics["folder_fs_batch_ms"])
+            self.assertEqual(0, root_metrics["folder_fs_fallback_checks"])
+            self.assertEqual(0, child_metrics["folder_fs_fallback_checks"])
             self.assertEqual(0.0, child_metrics["root_enumeration_ms"])
             self.assertEqual(1, child_metrics["preview_query_row_count"])
             self.assertEqual(0, child_metrics["preview_cache_file_check_count"])
@@ -138,6 +147,8 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
         self.assertIn("page:                2", output)
         self.assertIn("include_previews:    true", output)
         self.assertIn("folder_fs_checks:    3", output)
+        self.assertIn("batch_status:       0.750 ms (1 enumerations)", output)
+        self.assertIn("fallback_checks:    0", output)
         self.assertIn("preview_query:       0.250 ms (7 rows)", output)
         self.assertIn("cache_file_checks:   0.500 ms (7 checks)", output)
         self.assertIn("other_preview:       0.050 ms", output)
@@ -177,6 +188,9 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 "sql_ms": 2.0,
                 "source_root_status_ms": 1.0,
                 "folder_fs_status_ms": 3.0,
+                "folder_fs_batch_ms": 0.75,
+                "folder_fs_batch_enumerations": 1,
+                "folder_fs_fallback_checks": 0,
                 "root_enumeration_ms": 4.0 if is_root else 0.0,
                 "preview_metadata_ms": 1.0,
                 "preview_query_ms": 0.25,

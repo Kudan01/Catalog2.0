@@ -171,6 +171,9 @@ def folder_browse_performance_lines(events: list[dict[str, Any]]) -> list[str]:
                 f"SQL:                 {number(record.get('sql_ms'))} ms",
                 f"source_root_status:  {number(record.get('source_root_status_ms'))} ms",
                 f"folder_fs_status:    {number(record.get('folder_fs_status_ms'))} ms",
+                f"  batch_status:       {number(record.get('folder_fs_batch_ms'))} ms "
+                f"({record.get('folder_fs_batch_enumerations', 0)} enumerations)",
+                f"  fallback_checks:    {record.get('folder_fs_fallback_checks', 0)}",
                 f"root_enumeration:    {number(record.get('root_enumeration_ms'))} ms",
                 f"preview_metadata:    {number(record.get('preview_metadata_ms'))} ms",
                 f"  preview_query:       {number(record.get('preview_query_ms'))} ms "
