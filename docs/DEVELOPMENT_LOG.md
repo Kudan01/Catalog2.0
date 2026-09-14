@@ -180,3 +180,31 @@ This technical log records completed and approved development steps: what change
 - In cold validation, a representative problematic `/api/folders` request improved from approximately 2603 ms to 1056 ms total, while `folder_fs_status` improved from approximately 1728 ms to 395 ms and batch enumerations changed from 1 to 0.
 - For a non-root request with zero child folders, total time improved from approximately 126 ms to 21 ms and child-folder filesystem work from approximately 94 ms to 0 ms.
 - This does not establish that overall Catalog performance is solved. Startup still takes approximately 10.8 seconds, with separate diagnosed bottlenecks in `/api/status`, `/api/jobs/status`, and the thumbnail pipeline.
+
+## 2026-09-14 — Startup SQL count aggregation
+
+### Changes
+
+- `/api/status` and `/api/jobs/status` previously performed multiple separate `COUNT` passes over `media_files`.
+- Introduced a shared aggregate query: `SELECT COUNT(*), COALESCE(SUM(is_available), 0) FROM media_files`.
+- Each endpoint now obtains total and available counts in one pass and derives unavailable as total minus available. The same approach is used for `folders`.
+- Public response contracts were unchanged. The endpoints remain independent, so startup still performs two aggregated `media_files` passes: one for `/api/status` and one for `/api/jobs/status`.
+
+### Reason
+
+- Remove redundant cold database passes with a small local change and without adding persistent counters or changing the startup contract.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/scan_store.py`
+- `tests/test_status_counts.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Targeted automated tests passed: 3/3, OK. The full automated test suite passed: 23/23, OK.
+- Before the change, cold measurements were approximately 10824 ms for frontend initial load, 7837 ms for `/api/status`, and 2054 ms for `/api/jobs/status`.
+- After the change, cold measurements were approximately 9047 ms for frontend initial load, 7877 ms for `/api/status`, and 120 ms for `/api/jobs/status`.
+- Cold frontend initial load improved by approximately 1.8 seconds (about 16%), and removing redundant count passes substantially improved `/api/jobs/status`.
+- The dominant `/api/status` cold cost remained approximately 7.9 seconds. Further substantial cold-start improvement would require a different design than this local aggregation change; startup and overall Catalog performance are not considered solved.

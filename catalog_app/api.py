@@ -31,7 +31,7 @@ from .media_types import MediaType, classify_media, is_html_playable_video, norm
 from .paths import PathValidationError, is_path_within, normalize_catalog_relative_path, safe_join_catalog_path, same_path
 from .scan_lock import scan_lock_path
 from .scan_activate import _calculate_folder_statistics
-from .scan_store import read_scan_status
+from .scan_store import active_table_counts, read_scan_status
 from .scanner import IGNORED_DIRECTORY_NAMES, source_root_status
 from .sorting import catalog_path_key, natural_sort_key
 from .thumbnail_cache import (
@@ -2532,6 +2532,14 @@ def catalog_status(config: Config) -> dict[str, Any]:
         ).fetchone()
 
         source_status = source_root_status(config)
+        folder_count, available_folder_count = active_table_counts(
+            connection,
+            "folders",
+        )
+        media_count, available_media_count = active_table_counts(
+            connection,
+            "media_files",
+        )
 
         return {
             "ok": True,
@@ -2547,22 +2555,10 @@ def catalog_status(config: Config) -> dict[str, Any]:
             "active_scan_id": (
                 int(active_scan_id[0]) if active_scan_id is not None else None
             ),
-            "available_folders": _count(
-                connection,
-                "SELECT COUNT(*) FROM folders WHERE is_available = 1",
-            ),
-            "available_media": _count(
-                connection,
-                "SELECT COUNT(*) FROM media_files WHERE is_available = 1",
-            ),
-            "unavailable_folders": _count(
-                connection,
-                "SELECT COUNT(*) FROM folders WHERE is_available = 0",
-            ),
-            "unavailable_media": _count(
-                connection,
-                "SELECT COUNT(*) FROM media_files WHERE is_available = 0",
-            ),
+            "available_folders": available_folder_count,
+            "available_media": available_media_count,
+            "unavailable_folders": folder_count - available_folder_count,
+            "unavailable_media": media_count - available_media_count,
         }
 
 

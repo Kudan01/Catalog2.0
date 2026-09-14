@@ -432,10 +432,14 @@ def read_scan_status(db_path: Path) -> ScanStatus:
             """
         ).fetchone()
 
-        active_folder_count = _scalar_count(connection, "folders")
-        active_media_count = _scalar_count(connection, "media_files")
-        available_folder_count = _available_count(connection, "folders")
-        available_media_count = _available_count(connection, "media_files")
+        active_folder_count, available_folder_count = active_table_counts(
+            connection,
+            "folders",
+        )
+        active_media_count, available_media_count = active_table_counts(
+            connection,
+            "media_files",
+        )
         unavailable_folder_count = active_folder_count - available_folder_count
         unavailable_media_count = active_media_count - available_media_count
         active_scan_row = connection.execute(
@@ -945,17 +949,25 @@ def _expect_payload(action: ScanAction, expected_type: type):
     return action.payload
 
 
-def _scalar_count(connection: sqlite3.Connection, table: str) -> int:
-    return int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+def active_table_counts(
+    connection: sqlite3.Connection,
+    table_name: str,
+) -> tuple[int, int]:
+    """Return total and available rows with one table scan."""
+    if table_name not in {"folders", "media_files"}:
+        raise ValueError(f"Disallowed active catalog table: {table_name}")
 
-
-
-def _available_count(connection: sqlite3.Connection, table_name: str) -> int:
-    return int(
-        connection.execute(
-            f"SELECT COUNT(*) FROM {table_name} WHERE is_available = 1"
-        ).fetchone()[0]
-    )
+    # Combining these aggregates avoids two cold full-table passes; is_available
+    # is not the leading column of any index used for global catalog counts.
+    row = connection.execute(
+        f"""
+        SELECT
+            COUNT(*) AS total_count,
+            COALESCE(SUM(is_available), 0) AS available_count
+        FROM {table_name}
+        """
+    ).fetchone()
+    return int(row[0]), int(row[1])
 
 def _count_for_scan(
     connection: sqlite3.Connection,
