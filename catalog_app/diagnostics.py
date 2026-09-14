@@ -35,6 +35,7 @@ class RequestSqlMetrics:
     count: int = 0
     total_ms: float = 0.0
     slowest: list[dict[str, Any]] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -190,6 +191,24 @@ def finish_http_request(
 
 def diagnostic_sql_connection_factory() -> type[sqlite3.Connection] | None:
     return DiagnosticConnection if get_diagnostics_session() is not None else None
+
+
+def diagnostic_request_active() -> bool:
+    """Return whether the current call is inside an instrumented HTTP request."""
+    return get_diagnostics_session() is not None and _current_request_metrics.get() is not None
+
+
+def diagnostic_request_sql_snapshot() -> tuple[int, float]:
+    metrics = _current_request_metrics.get()
+    if metrics is None:
+        return (0, 0.0)
+    return (metrics.count, metrics.total_ms)
+
+
+def diagnostic_set_request_detail(name: str, value: Mapping[str, Any]) -> None:
+    metrics = _current_request_metrics.get()
+    if metrics is not None and get_diagnostics_session() is not None:
+        metrics.details[name] = _json_safe(value)
 
 
 def record_sql(statement: str, elapsed_ms: float, *, operation: str) -> None:
@@ -360,6 +379,28 @@ class DiagnosticsSession:
         is_transport = path == "/api/diagnostics/events"
         event = "backend.http.diagnostic_transport" if is_transport else "backend.http.request"
         current_rss_bytes = process_rss_bytes()
+        details = dict(sql_metrics.details)
+        folder_browse = details.get("folder_browse")
+        if isinstance(folder_browse, dict):
+            folder_browse = dict(folder_browse)
+            preview_sql_ms = max(0.0, float(folder_browse.pop("preview_sql_duration_ms", 0.0)))
+            # Preview wall time already contains its SQL; subtract only SQL from
+            # the remaining request phases to keep the "other" bucket disjoint.
+            tracked_ms = sum(
+                max(0.0, float(folder_browse.get(field, 0.0)))
+                for field in (
+                    "source_root_status_ms",
+                    "folder_fs_status_ms",
+                    "root_enumeration_ms",
+                    "preview_metadata_ms",
+                )
+            )
+            tracked_ms += max(0.0, sql_metrics.total_ms - preview_sql_ms)
+            folder_browse["total_ms"] = round(elapsed_ms, 3)
+            folder_browse["sql_ms"] = round(sql_metrics.total_ms, 3)
+            folder_browse["other_ms"] = round(max(0.0, elapsed_ms - tracked_ms), 3)
+            details["folder_browse"] = folder_browse
+
         self.record(
             event,
             method=method,
@@ -372,6 +413,7 @@ class DiagnosticsSession:
             sql_duration_ms=round(sql_metrics.total_ms, 3),
             slowest_sql=sql_metrics.slowest,
             process_rss_bytes=current_rss_bytes,
+            **details,
         )
         if is_transport:
             return

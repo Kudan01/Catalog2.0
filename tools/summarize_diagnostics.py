@@ -121,6 +121,12 @@ def print_session(
                 f"max {number(value.get('max_ms'))} ms, count {value.get('count', 0)}"
             )
 
+    folder_lines = folder_browse_performance_lines(events)
+    if folder_lines:
+        print()
+        for line in folder_lines:
+            print(line)
+
     print("slowest HTTP:")
     for item in summary.get("slowest_http_requests", [])[:8]:
         print(
@@ -134,6 +140,46 @@ def print_session(
         print(
             f"- {number(item.get('total_ms'))} ms / {item.get('count', 0)}×: {sql[:140]}"
         )
+
+
+def folder_browse_performance_lines(events: list[dict[str, Any]]) -> list[str]:
+    """Format successful /api/folders breakdowns in request order."""
+    records = [
+        event.get("folder_browse")
+        for event in events
+        if event.get("event") == "backend.http.request"
+        and event.get("path") == "/api/folders"
+        and isinstance(event.get("folder_browse"), dict)
+    ]
+    if not records:
+        return []
+
+    lines = ["Folder browse performance", "-" * 72]
+    for index, record in enumerate(records, start=1):
+        if index > 1:
+            lines.append("")
+        lines.extend(
+            [
+                f"/api/folders request {index}",
+                f"folder:              {record.get('folder', '-')}",
+                f"root:                {'yes' if record.get('is_root') else 'no'}",
+                f"page:                {record.get('page', '-')}",
+                f"page_size:           {record.get('page_size', '-')}",
+                f"include_previews:    {'true' if record.get('include_previews') else 'false'}",
+                f"returned_folders:    {record.get('returned_folders', '-')}",
+                f"total:               {number(record.get('total_ms'))} ms",
+                f"SQL:                 {number(record.get('sql_ms'))} ms",
+                f"source_root_status:  {number(record.get('source_root_status_ms'))} ms",
+                f"folder_fs_status:    {number(record.get('folder_fs_status_ms'))} ms",
+                f"root_enumeration:    {number(record.get('root_enumeration_ms'))} ms",
+                f"preview_metadata:    {number(record.get('preview_metadata_ms'))} ms",
+                f"other:               {number(record.get('other_ms'))} ms",
+                f"source_root_checks:  {record.get('source_root_status_checks', 0)}",
+                f"folder_fs_checks:    {record.get('folder_fs_checks', 0)}",
+            ]
+        )
+    lines.append("")
+    return lines
 
 
 def print_comparison(

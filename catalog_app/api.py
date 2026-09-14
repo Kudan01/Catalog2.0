@@ -6,6 +6,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,11 @@ from .message_contract import BackendMessage, MessageSeverity, build_backend_mes
 
 from .config import Config
 from .database import open_database
+from .diagnostics import (
+    diagnostic_request_active,
+    diagnostic_request_sql_snapshot,
+    diagnostic_set_request_detail,
+)
 from .folder_preview_candidates import (
     build_folder_preview_tree_plan,
     effective_folder_preview_rows,
@@ -2679,6 +2685,67 @@ def folder_detail(config: Config, raw_path: str) -> dict[str, Any]:
         }
 
 
+@dataclass
+class _FolderBrowseDiagnostics:
+    """Collect non-overlapping /api/folders phases for the active request trace."""
+
+    source_root_status_ms: float = 0.0
+    folder_fs_status_ms: float = 0.0
+    root_enumeration_ms: float = 0.0
+    preview_metadata_ms: float = 0.0
+    preview_sql_duration_ms: float = 0.0
+    source_root_status_checks: int = 0
+    folder_fs_checks: int = 0
+
+    @classmethod
+    def create(cls) -> _FolderBrowseDiagnostics | None:
+        return cls() if diagnostic_request_active() else None
+
+    def source_root_status(self, config: Config) -> Any:
+        started = time.perf_counter()
+        try:
+            return source_root_status(config)
+        finally:
+            self.source_root_status_ms += (time.perf_counter() - started) * 1000.0
+            self.source_root_status_checks += 1
+
+    def begin_preview(self) -> tuple[float, tuple[int, float]]:
+        return time.perf_counter(), diagnostic_request_sql_snapshot()
+
+    def end_preview(self, started: tuple[float, tuple[int, float]]) -> None:
+        clock_started, (_sql_count, sql_started_ms) = started
+        self.preview_metadata_ms += (time.perf_counter() - clock_started) * 1000.0
+        self.preview_sql_duration_ms += max(
+            0.0,
+            diagnostic_request_sql_snapshot()[1] - sql_started_ms,
+        )
+
+    def finish(
+        self,
+        params: FolderPageParams,
+        include_previews: bool,
+        result: dict[str, Any],
+    ) -> None:
+        diagnostic_set_request_detail(
+            "folder_browse",
+            {
+                "folder": (params.parent_rel_path or "<root>")[:300],
+                "is_root": params.parent_rel_path == "",
+                "page": params.page,
+                "page_size": params.page_size,
+                "include_previews": include_previews,
+                "returned_folders": len(result.get("folders", [])),
+                "source_root_status_ms": round(self.source_root_status_ms, 3),
+                "source_root_status_checks": self.source_root_status_checks,
+                "folder_fs_status_ms": round(self.folder_fs_status_ms, 3),
+                "folder_fs_checks": self.folder_fs_checks,
+                "root_enumeration_ms": round(self.root_enumeration_ms, 3),
+                "preview_metadata_ms": round(self.preview_metadata_ms, 3),
+                "preview_sql_duration_ms": round(self.preview_sql_duration_ms, 3),
+            },
+        )
+
+
 def child_folders(
     config: Config,
     raw_parent: str,
@@ -2693,6 +2760,7 @@ def child_folders(
     discovery candidates; they allow the UI to start update-branch for a new
     top-level root without first running a full scan.
     """
+    diagnostics = _FolderBrowseDiagnostics.create()
     params = _folder_page_params(
         config,
         raw_parent=raw_parent,
@@ -2706,13 +2774,17 @@ def child_folders(
         parent = _available_folder_by_key(connection, parent_key)
 
         if params.parent_rel_path == "":
-            return _root_child_folders_with_disk_candidates(
+            result = _root_child_folders_with_disk_candidates(
                 config=config,
                 connection=connection,
                 parent=parent,
                 params=params,
                 include_previews=include_previews,
+                diagnostics=diagnostics,
             )
+            if diagnostics is not None:
+                diagnostics.finish(params, include_previews, result)
+            return result
 
         if parent is None:
             raise ApiError.from_message(
@@ -2762,24 +2834,31 @@ def child_folders(
         ).fetchall()
 
         pages = math.ceil(total / params.page_size) if total else 0
-        previews_by_folder = (
-            _folder_preview_items_by_folder(
+        if include_previews and diagnostics is not None:
+            preview_started = diagnostics.begin_preview()
+            previews_by_folder = _folder_preview_items_by_folder(
                 config,
                 connection,
                 [int(row["id"]) for row in rows],
             )
-            if include_previews
-            else {}
-        )
+            diagnostics.end_preview(preview_started)
+        elif include_previews:
+            previews_by_folder = _folder_preview_items_by_folder(
+                config,
+                connection,
+                [int(row["id"]) for row in rows],
+            )
+        else:
+            previews_by_folder = {}
         folders = []
         for row in rows:
             folder = _folder_dict(row)
-            _attach_folder_filesystem_status(config, folder)
+            _attach_folder_filesystem_status(config, folder, diagnostics=diagnostics)
             if include_previews:
                 folder["folder_previews"] = previews_by_folder.get(int(row["id"]), [])
             folders.append(folder)
 
-        return {
+        result = {
             "ok": True,
             "parent": {
                 "rel_path": str(parent["rel_path"]),
@@ -2793,6 +2872,9 @@ def child_folders(
             "folders": folders,
             "includes_previews": include_previews,
         }
+        if diagnostics is not None:
+            diagnostics.finish(params, include_previews, result)
+        return result
 
 
 def _root_child_folders_with_disk_candidates(
@@ -2802,6 +2884,7 @@ def _root_child_folders_with_disk_candidates(
     parent: sqlite3.Row | None,
     params: FolderPageParams,
     include_previews: bool,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
 ) -> dict[str, Any]:
     """Return root children plus disk-only top-level folders.
 
@@ -2846,13 +2929,25 @@ def _root_child_folders_with_disk_candidates(
 
     for row in active_rows:
         folder = _folder_dict(row)
-        _attach_folder_filesystem_status(config, folder)
+        _attach_folder_filesystem_status(config, folder, diagnostics=diagnostics)
         if include_previews:
             folder["folder_previews"] = []
         items.append(("active", folder, int(row["id"])))
 
-    for folder in _disk_top_level_folder_candidates(config, active_path_keys):
+    enumeration_started = time.perf_counter() if diagnostics is not None else 0.0
+    enumeration_source_before = diagnostics.source_root_status_ms if diagnostics is not None else 0.0
+    for folder in _disk_top_level_folder_candidates(
+        config,
+        active_path_keys,
+        diagnostics=diagnostics,
+    ):
         items.append(("disk", folder, None))
+    if diagnostics is not None:
+        diagnostics.root_enumeration_ms += max(
+            0.0,
+            (time.perf_counter() - enumeration_started) * 1000.0
+            - (diagnostics.source_root_status_ms - enumeration_source_before),
+        )
 
     items.sort(key=lambda item: (natural_sort_key(str(item[1]["name"])), str(item[1]["rel_path"])))
 
@@ -2861,11 +2956,14 @@ def _root_child_folders_with_disk_candidates(
     page_items = items[params.offset : params.offset + params.page_size]
 
     active_ids = [folder_id for _kind, _folder, folder_id in page_items if folder_id is not None]
-    previews_by_folder = (
-        _folder_preview_items_by_folder(config, connection, active_ids)
-        if include_previews
-        else {}
-    )
+    if include_previews and diagnostics is not None:
+        preview_started = diagnostics.begin_preview()
+        previews_by_folder = _folder_preview_items_by_folder(config, connection, active_ids)
+        diagnostics.end_preview(preview_started)
+    elif include_previews:
+        previews_by_folder = _folder_preview_items_by_folder(config, connection, active_ids)
+    else:
+        previews_by_folder = {}
 
     folders: list[dict[str, Any]] = []
     for kind, folder, folder_id in page_items:
@@ -2895,11 +2993,13 @@ def _root_child_folders_with_disk_candidates(
 def _disk_top_level_folder_candidates(
     config: Config,
     active_path_keys: set[str],
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
 ) -> list[dict[str, Any]]:
     """Return immediate data_root directories that are not active catalog roots."""
     candidates: list[dict[str, Any]] = []
 
-    status = source_root_status(config)
+    status = diagnostics.source_root_status(config) if diagnostics is not None else source_root_status(config)
     if not status.available:
         return candidates
 
@@ -2987,19 +3087,35 @@ def _disk_root_candidate_dict(*, rel_path: str, name: str) -> dict[str, Any]:
 
 
 
-def _attach_folder_filesystem_status(config: Config, folder: dict[str, Any]) -> None:
+def _attach_folder_filesystem_status(
+    config: Config,
+    folder: dict[str, Any],
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
+) -> None:
     """Attach a cheap runtime filesystem check for one displayed folder.
 
     This checks only the concrete folder path. It does not recurse, scan media,
     count files or write to the database.
     """
-    folder["filesystem"] = _folder_filesystem_status(config, str(folder.get("rel_path") or ""))
+    folder["filesystem"] = _folder_filesystem_status(
+        config,
+        str(folder.get("rel_path") or ""),
+        diagnostics=diagnostics,
+    )
 
 
-def _folder_filesystem_status(config: Config, rel_path: str) -> dict[str, Any]:
+def _folder_filesystem_status(
+    config: Config,
+    rel_path: str,
+    *,
+    diagnostics: _FolderBrowseDiagnostics | None = None,
+) -> dict[str, Any]:
+    started = time.perf_counter() if diagnostics is not None else 0.0
+    source_before = diagnostics.source_root_status_ms if diagnostics is not None else 0.0
     try:
         normalized = normalize_catalog_relative_path(rel_path, allow_root=True)
-        source_status = source_root_status(config)
+        source_status = diagnostics.source_root_status(config) if diagnostics is not None else source_root_status(config)
         if not source_status.available:
             return {
                 "checked": True,
@@ -3075,6 +3191,12 @@ def _folder_filesystem_status(config: Config, rel_path: str) -> dict[str, Any]:
             ),
             "technical_detail": _technical_error_detail(exc),
         }
+    finally:
+        if diagnostics is not None:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            source_ms = diagnostics.source_root_status_ms - source_before
+            diagnostics.folder_fs_status_ms += max(0.0, elapsed_ms - source_ms)
+            diagnostics.folder_fs_checks += 1
 
 def _is_path_link_or_junction_path(path: Path) -> bool:
     if path.is_symlink():

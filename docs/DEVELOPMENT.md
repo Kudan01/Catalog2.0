@@ -34,13 +34,22 @@ python tools/check_backend_message_contract.py --inventory
 
 ## Diagnostic summaries
 
+To start an installed Catalog instance with diagnostics enabled, run this from its instance folder in PowerShell:
+
 ```powershell
-python tools/summarize_diagnostics.py PATH
+$env:CATALOG2_DIAGNOSTICS = "1"
+& ".\Start Catalog.bat"
 ```
 
-Summarizes diagnostic sessions from a diagnostics directory, a `*_summary.json` file, or a `.jsonl` events file; when a directory is supplied, it shows the latest two sessions by default and compares them.
+Browse the folders to be measured, then stop the Catalog with `Ctrl+C` so the diagnostic summary is finalized. Diagnostic files are written under `Catalog_Output\_state\diagnostics\`.
 
-To choose how many latest sessions are loaded from a directory:
+```powershell
+python tools/summarize_diagnostics.py "C:\path\to\Catalog_Output\_state\diagnostics" --latest 1
+```
+
+Summarizes the latest diagnostic session, including individual `/api/folders` request breakdowns. The path may also point to one `*_summary.json` file or one `.jsonl` events file.
+
+To load and compare more sessions from a diagnostics directory:
 
 ```powershell
 python tools/summarize_diagnostics.py PATH --latest N
