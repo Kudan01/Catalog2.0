@@ -1066,7 +1066,7 @@
   "tree.kind.photos": "fotky",
   "tree.kind.root": "hlavní",
   "tree.kind.videos": "videa",
-  "tree.moreFolders": "další složky nejsou ve stromu zobrazené",
+  "tree.moreFolders": "další složky zobrazíte otevřením této složky v hlavním přehledu",
   "tree.openBranch": "Otevřít větev",
   "tree.root": "Hlavní stránka",
   "unit.bytes": "{bytes} B",

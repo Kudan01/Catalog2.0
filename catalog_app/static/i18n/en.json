@@ -1066,7 +1066,7 @@
   "tree.kind.photos": "photos",
   "tree.kind.root": "home",
   "tree.kind.videos": "videos",
-  "tree.moreFolders": "more folders are not shown in the tree",
+  "tree.moreFolders": "open this folder in the main view to browse more folders",
   "tree.openBranch": "Open branch",
   "tree.root": "Home",
   "unit.bytes": "{bytes} B",

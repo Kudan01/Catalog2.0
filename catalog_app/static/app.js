@@ -298,6 +298,7 @@ const state = {
   mediaPages: 0,
   childPage: 1,
   childPages: 0,
+  childPageSize: 0,
   collapsedChildFoldersByFolder: {},
   rootPage: 1,
   rootPages: 0,
@@ -306,6 +307,7 @@ const state = {
   treeLoadPromise: null,
   treeLoadGeneration: 0,
   treeKnownChildrenByParent: new Map(),
+  currentFolderChildrenRequest: null,
   viewLoadRequestId: 0,
   searchQuery: "",
   searchFolder: "",
@@ -5821,10 +5823,11 @@ function treeNodeForPath(path) {
   return null;
 }
 
-function rememberTreeChildren(parentPath, data) {
+function rememberTreeChildren(parentPath, data, options = {}) {
   const normalizedParent = String(parentPath || "");
+  const replace = options.replace === true;
   let entry = state.treeKnownChildrenByParent.get(normalizedParent);
-  if (!entry) {
+  if (!entry || replace) {
     entry = { folders: new Map() };
     state.treeKnownChildrenByParent.set(normalizedParent, entry);
   }
@@ -5833,6 +5836,10 @@ function rememberTreeChildren(parentPath, data) {
     const { folder_previews: _folderPreviews, ...treeFolder } = folder;
     entry.folders.set(String(treeFolder.rel_path || ""), treeFolder);
   }
+  entry.page = Number(data?.page || 1);
+  entry.pageSize = Number(data?.page_size || 0);
+  entry.pages = Number(data?.pages || 0);
+  entry.total = Number(data?.total || 0);
   return entry;
 }
 
@@ -5873,15 +5880,23 @@ function ensureTreeChildrenContainer(node) {
   return children;
 }
 
-function mergeTreeFolderNodes(container, folders, depth) {
+function mergeTreeFolderNodes(container, folders, depth, options = {}) {
   if (!container) return;
+
+  const folderItems = Array.from(folders || []);
+  if (options.replace === true) {
+    const desiredPaths = new Set(folderItems.map((folder) => String(folder.rel_path || "")));
+    for (const node of treeContainerFolderNodes(container)) {
+      if (!desiredPaths.has(treeNodePath(node))) node.remove();
+    }
+  }
 
   const existingByPath = new Map(
     treeContainerFolderNodes(container).map((node) => [treeNodePath(node), node]),
   );
   const moreNote = Array.from(container.children).find((child) => child.classList?.contains("tree-more")) || null;
 
-  for (const folder of folders || []) {
+  for (const folder of folderItems) {
     const path = String(folder.rel_path || "");
     const existing = existingByPath.get(path);
     if (existing) {
@@ -5907,11 +5922,19 @@ function applyKnownTreeChildrenToNode(node) {
 
 function hydrateTreeBranchFromChildrenData(parentPath, data) {
   const normalizedParent = String(parentPath || "");
-  rememberTreeChildren(normalizedParent, data);
+  const isCurrentParent = state.view === "folder" && state.folder === normalizedParent;
+  const entry = rememberTreeChildren(normalizedParent, data, { replace: isCurrentParent });
+
+  if (!state.treeLoaded && normalizedParent === "" && isCurrentParent) {
+    renderRootTreePage(data);
+    return;
+  }
   if (!state.treeLoaded) return;
 
   if (normalizedParent === "") {
-    mergeTreeFolderNodes(els.folderList, data?.folders || [], 0);
+    mergeTreeFolderNodes(els.folderList, entry.folders.values(), 0, {
+      replace: isCurrentParent,
+    });
     setTreeContainerMoreNote(els.folderList, Number(data?.pages || 0) > 1);
     setTreeActiveFolder();
     return;
@@ -5920,10 +5943,17 @@ function hydrateTreeBranchFromChildrenData(parentPath, data) {
   const parentNode = treeNodeForPath(normalizedParent);
   if (!parentNode) return;
 
-  const children = applyKnownTreeChildrenToNode(parentNode);
+  const children = ensureTreeChildrenContainer(parentNode);
   if (children) {
+    mergeTreeFolderNodes(
+      children,
+      entry.folders.values(),
+      Number(parentNode._treeDepth || 0) + 1,
+      { replace: isCurrentParent },
+    );
     setTreeContainerMoreNote(children, Number(data?.pages || 0) > 1);
   }
+  if (isCurrentParent) parentNode._treeChildrenLoaded = true;
   if (state.view === "folder" && state.folder === normalizedParent) {
     setTreeNodeExpanded(parentNode, true);
   }
@@ -6008,6 +6038,26 @@ async function ensureTreeNodeChildren(node) {
 
   const folder = node._treeFolder;
   const depth = Number(node._treeDepth || 0);
+
+  if (state.view === "folder" && sameCatalogPath(folder.rel_path, state.folder)) {
+    const pending = state.currentFolderChildrenRequest;
+    if (pending && sameCatalogPath(pending.parent, folder.rel_path)) {
+      const data = await pending.promise;
+      if (state.view === "folder" && sameCatalogPath(folder.rel_path, state.folder)) {
+        hydrateTreeBranchFromChildrenData(folder.rel_path, data);
+      }
+    } else {
+      const entry = state.treeKnownChildrenByParent.get(String(folder.rel_path || ""));
+      if (entry) {
+        const children = ensureTreeChildrenContainer(node);
+        mergeTreeFolderNodes(children, entry.folders.values(), depth + 1, { replace: true });
+        setTreeContainerMoreNote(children, Number(entry.pages || 0) > 1);
+        node._treeChildrenLoaded = true;
+      }
+    }
+    return node._treeChildrenElement || null;
+  }
+
   node._treeChildrenPromise = (async () => {
     const childrenData = await fetchJson("/api/folders", {
       parent: folder.rel_path,
@@ -6102,37 +6152,8 @@ async function loadRootFolders(options = {}) {
       return;
     }
 
-    state.rootPage = data.page || 1;
-    state.rootPages = data.pages;
-    state.rootTotal = data.total;
-    els.folderList.classList.add("folder-tree");
-    els.rootPageInfo.textContent = text("pagination.folders", {
-      total: data.total,
-      page: data.pages ? data.page : 0,
-      pages: data.pages,
-    });
-    els.prevRootPage.disabled = true;
-    els.nextRootPage.disabled = true;
-
-    const fragment = document.createDocumentFragment();
-    fragment.appendChild(folderTreeRootNode());
-
-    if (data.folders.length === 0) {
-      fragment.appendChild(emptyText(text("empty.rootFolders")));
-    } else {
-      for (const folder of data.folders) {
-        fragment.appendChild(folderTreeNode(folder, 0));
-      }
-
-      if (data.pages > 1) {
-        fragment.appendChild(treeMoreNote());
-      }
-    }
-
-    // Build the tree outside the DOM and replace it once. Navigation then
-    // changes only the active node and lazily loads one preview-free branch.
-    els.folderList.replaceChildren(fragment);
-    state.treeLoaded = true;
+    rememberTreeChildren("", data);
+    renderRootTreePage(data);
     await syncTreePath(state.folder, { requestId });
 
     diagnosticOperationEnd("frontend.tree.load", operation, {
@@ -6152,6 +6173,38 @@ async function loadRootFolders(options = {}) {
       state.treeLoadPromise = null;
     }
   }
+}
+
+function renderRootTreePage(data) {
+  state.rootPage = Number(data?.page || 1);
+  state.rootPages = Number(data?.pages || 0);
+  state.rootTotal = Number(data?.total || 0);
+  els.folderList.classList.add("folder-tree");
+  els.rootPageInfo.textContent = text("pagination.folders", {
+    total: state.rootTotal,
+    page: state.rootPages ? state.rootPage : 0,
+    pages: state.rootPages,
+  });
+  els.prevRootPage.disabled = true;
+  els.nextRootPage.disabled = true;
+
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(folderTreeRootNode());
+  const folders = Array.from(data?.folders || []).map((folder) => {
+    const { folder_previews: _folderPreviews, ...treeFolder } = folder;
+    return treeFolder;
+  });
+
+  if (folders.length === 0) {
+    fragment.appendChild(emptyText(text("empty.rootFolders")));
+  } else {
+    for (const folder of folders) fragment.appendChild(folderTreeNode(folder, 0));
+    if (state.rootPages > 1) fragment.appendChild(treeMoreNote());
+  }
+
+  els.folderList.replaceChildren(fragment);
+  state.treeLoaded = true;
+  setTreeActiveFolder();
 }
 
 function folderTreeRootNode() {
@@ -6416,10 +6469,8 @@ async function refreshCurrentViewAndTree(options = {}) {
 
   const requestId = beginViewLoadRequest();
   setTreeActiveFolder();
-  await Promise.all([
-    loadCurrentFolder({ requestId }),
-    loadRootFolders({ requestId, force: forceTree }),
-  ]);
+  await loadCurrentFolder({ requestId });
+  await loadRootFolders({ requestId });
 }
 
 async function openFolder(path) {
@@ -6444,10 +6495,8 @@ async function openFolder(path) {
   updateViewButtons();
   setTreeActiveFolder(nextFolder);
 
-  const [contentRendered] = await Promise.all([
-    loadCurrentFolder({ requestId }),
-    loadRootFolders({ requestId }),
-  ]);
+  const contentRendered = await loadCurrentFolder({ requestId });
+  await loadRootFolders({ requestId });
   diagnosticOperationEnd("frontend.navigation.folder", operation, {
     to_folder: state.folder,
     final_view: state.view,
@@ -6494,15 +6543,35 @@ async function loadCurrentFolder(options = {}) {
     return rendered;
   }
 
-  const [folderData, childrenData, mediaData] = await Promise.all([
-    fetchJson("/api/folder", { path: snapshot.folder }),
-    fetchJson("/api/folders", { parent: snapshot.folder, page: snapshot.childPage }),
-    fetchJson("/api/media", {
-      folder: snapshot.folder,
-      type: snapshot.mediaType,
-      page: snapshot.mediaPage,
-    }),
-  ]);
+  const childrenPromise = fetchJson("/api/folders", {
+    parent: snapshot.folder,
+    page: snapshot.childPage,
+  });
+  const childrenRequest = {
+    parent: snapshot.folder,
+    page: snapshot.childPage,
+    promise: childrenPromise,
+  };
+  state.currentFolderChildrenRequest = childrenRequest;
+
+  let folderData;
+  let childrenData;
+  let mediaData;
+  try {
+    [folderData, childrenData, mediaData] = await Promise.all([
+      fetchJson("/api/folder", { path: snapshot.folder }),
+      childrenPromise,
+      fetchJson("/api/media", {
+        folder: snapshot.folder,
+        type: snapshot.mediaType,
+        page: snapshot.mediaPage,
+      }),
+    ]);
+  } finally {
+    if (state.currentFolderChildrenRequest === childrenRequest) {
+      state.currentFolderChildrenRequest = null;
+    }
+  }
 
   if (!viewLoadIsCurrent(requestId, snapshot)) {
     diagnosticOperationEnd("frontend.folder.load_current", operation, {
@@ -6744,6 +6813,7 @@ function updateChildPager(data) {
   const hasPages = pages > 0;
 
   state.childPages = pages;
+  state.childPageSize = Math.max(0, Number(data.page_size) || 0);
   els.childPageInfo.textContent = text("pagination.folders", {
     total: data.total,
     page: hasPages ? page : 0,

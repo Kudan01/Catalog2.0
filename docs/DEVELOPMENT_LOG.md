@@ -125,3 +125,30 @@ This technical log records completed and approved development steps: what change
 - Confirmed that stale thumbnails and unavailable media remain excluded.
 - Confirmed that ready metadata with a missing cache file remains in the folder response and is rejected with the existing controlled response when that specific thumbnail is requested.
 - Attempted `python -m unittest discover -s tests -v`; this workspace has no runnable Linux `python`, so the suite remains to be run in the supported Windows development environment.
+
+## 2026-09-14 — 7C.1 Current-parent folder data shared by cards and tree
+
+### Changes
+
+- Changed current folder cards and the current-parent tree to consume one shared `/api/folders` response.
+- Removed the duplicate tree request for the current parent, including the duplicate root request during startup.
+- Changed the current-parent tree to show exactly the active folder-card page instead of accumulating previously visited pages.
+- Preserved lazy loading and caching for other, non-current tree branches.
+
+### Reason
+
+- Remove redundant folder browsing work and give the current-parent tree one clear data source. This is an architectural correction; a user-visible performance improvement was not demonstrated in this step.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_folder_tree_orchestration.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Automated tests, the manual Windows workflow, and runtime diagnostics passed.
+- Runtime diagnostics confirmed that duplicate current-parent `/api/folders` requests no longer occur.
+- The `/api/folders` backend and folder filesystem-status logic were not changed in this step.
