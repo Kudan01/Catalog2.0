@@ -436,6 +436,15 @@ h2 { font-size: 17px; }
   flex-wrap: wrap;
 }
 
+.folder-pager[hidden] {
+  display: none;
+}
+
+.folder-pager-bottom {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .folder-pager .page-jump input {
   width: 76px;
   padding: 6px 9px;

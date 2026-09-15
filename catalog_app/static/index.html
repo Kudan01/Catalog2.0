@@ -90,20 +90,31 @@
           </h2>
           <div class="folder-section-controls">
             <div id="childPageInfo" class="muted"></div>
-            <div id="childPager" class="pager compact folder-pager">
-              <button id="firstChildPage" type="button" data-text="actions.first"></button>
-              <button id="prevChildPage" type="button" data-text="actions.previous"></button>
-              <form id="childPageJumpForm" class="page-jump" novalidate>
+            <div id="childPager" class="pager compact folder-pager" data-child-pager data-child-pager-position="top">
+              <button id="firstChildPage" type="button" data-child-page-action="first" data-text="actions.first"></button>
+              <button id="prevChildPage" type="button" data-child-page-action="previous" data-text="actions.previous"></button>
+              <form id="childPageJumpForm" class="page-jump" data-child-page-jump-form novalidate>
                 <label for="childPageJumpInput" data-text="pagination.jumpLabel"></label>
-                <input id="childPageJumpInput" type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
+                <input id="childPageJumpInput" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
                 <button id="childPageJumpButton" type="submit" data-text="actions.go"></button>
               </form>
-              <button id="nextChildPage" type="button" data-text="actions.next"></button>
-              <button id="lastChildPage" type="button" data-text="actions.last"></button>
+              <button id="nextChildPage" type="button" data-child-page-action="next" data-text="actions.next"></button>
+              <button id="lastChildPage" type="button" data-child-page-action="last" data-text="actions.last"></button>
             </div>
           </div>
         </div>
         <div id="childFolders" class="cards"></div>
+        <div class="pager compact folder-pager folder-pager-bottom" data-child-pager data-child-pager-position="bottom" hidden>
+          <button type="button" data-child-page-action="first" data-text="actions.first"></button>
+          <button type="button" data-child-page-action="previous" data-text="actions.previous"></button>
+          <form class="page-jump" data-child-page-jump-form novalidate>
+            <label for="childPageJumpInputBottom" data-text="pagination.jumpLabel"></label>
+            <input id="childPageJumpInputBottom" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
+            <button type="submit" data-text="actions.go"></button>
+          </form>
+          <button type="button" data-child-page-action="next" data-text="actions.next"></button>
+          <button type="button" data-child-page-action="last" data-text="actions.last"></button>
+        </div>
       </section>
 
       <section>

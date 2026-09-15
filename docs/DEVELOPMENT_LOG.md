@@ -334,3 +334,30 @@ This technical log records completed and approved development steps: what change
 - The transition was successfully validated on an existing development instance, and Catalog was functionally validated after the final implementation.
 - `git diff --check` passed.
 - The final runtime does not contain the temporary startup/global migration scan.
+
+## 2026-09-15 — Child-folder pagination controls above and below cards
+
+### Changes
+
+- Kept the existing child-folder pager in the section header and added the same controls below the child-folder cards.
+- Both pager instances use `state.childPage`, `state.childPages`, `state.childPageSize`, and the existing `goToChildPage()` navigation path.
+- Shared DOM roles synchronize first, previous, jump, next, and last controls without duplicate element IDs.
+- The bottom pager contains controls only and follows child-folder availability and the section's collapsed state.
+
+### Reason
+
+- Keep child-folder navigation accessible after browsing a page of cards without introducing a second pagination state or navigation implementation.
+
+### Files
+
+- `catalog_app/static/index.html`
+- `catalog_app/static/app.js`
+- `catalog_app/static/style.css`
+- `tests/test_child_folder_pagers.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Added a targeted static contract test for shared state, event binding, synchronized controls, visibility, and unique HTML IDs.
+- The Docker environment does not provide a Python interpreter, so the unittest could not be executed here.
+- Static duplicate-ID inspection and `git diff --check` passed.

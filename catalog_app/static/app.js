@@ -744,13 +744,7 @@ const els = {
   childFolders: document.getElementById("childFolders"),
   childFoldersToggle: document.getElementById("childFoldersToggle"),
   childPageInfo: document.getElementById("childPageInfo"),
-  childPager: document.getElementById("childPager"),
-  firstChildPage: document.getElementById("firstChildPage"),
-  prevChildPage: document.getElementById("prevChildPage"),
-  childPageJumpForm: document.getElementById("childPageJumpForm"),
-  childPageJumpInput: document.getElementById("childPageJumpInput"),
-  nextChildPage: document.getElementById("nextChildPage"),
-  lastChildPage: document.getElementById("lastChildPage"),
+  childPagers: Array.from(document.querySelectorAll("[data-child-pager]")),
   mediaTitle: document.getElementById("mediaTitle"),
   mediaList: document.getElementById("mediaList"),
   pageInfo: document.getElementById("pageInfo"),
@@ -7117,8 +7111,39 @@ async function goToMediaPage(page) {
 }
 
 function setChildPagerVisible(visible) {
-  if (els.childPager) {
-    els.childPager.hidden = !visible;
+  for (const pager of els.childPagers) {
+    const isBottom = pager.dataset.childPagerPosition === "bottom";
+    pager.hidden = !visible || (isBottom && (
+      state.childPages <= 1
+      || areChildFoldersCollapsed()
+      || els.childFolders.children.length === 0
+    ));
+  }
+}
+
+function childPagerControls(pager) {
+  return {
+    first: pager.querySelector('[data-child-page-action="first"]'),
+    previous: pager.querySelector('[data-child-page-action="previous"]'),
+    next: pager.querySelector('[data-child-page-action="next"]'),
+    last: pager.querySelector('[data-child-page-action="last"]'),
+    jumpForm: pager.querySelector("[data-child-page-jump-form]"),
+    jumpInput: pager.querySelector("[data-child-page-jump-input]"),
+  };
+}
+
+function syncChildPagerControls(page, pages) {
+  const hasPages = pages > 0;
+  for (const pager of els.childPagers) {
+    const controls = childPagerControls(pager);
+    controls.first.disabled = !hasPages || page <= 1;
+    controls.previous.disabled = !hasPages || page <= 1;
+    controls.next.disabled = !hasPages || page >= pages;
+    controls.last.disabled = !hasPages || page >= pages;
+    controls.jumpInput.disabled = !hasPages;
+    controls.jumpInput.min = "1";
+    controls.jumpInput.max = hasPages ? String(pages) : "1";
+    controls.jumpInput.value = hasPages ? String(page) : "";
   }
 }
 
@@ -7126,12 +7151,7 @@ function resetChildPager() {
   state.childPages = 0;
   els.childPageInfo.textContent = "";
   setChildPagerVisible(false);
-  els.firstChildPage.disabled = true;
-  els.prevChildPage.disabled = true;
-  els.nextChildPage.disabled = true;
-  els.lastChildPage.disabled = true;
-  els.childPageJumpInput.disabled = true;
-  els.childPageJumpInput.value = "";
+  syncChildPagerControls(1, 0);
 }
 
 function updateChildPager(data) {
@@ -7148,15 +7168,7 @@ function updateChildPager(data) {
   });
 
   setChildPagerVisible(hasPages);
-  els.firstChildPage.disabled = !hasPages || page <= 1;
-  els.prevChildPage.disabled = !hasPages || page <= 1;
-  els.nextChildPage.disabled = !hasPages || page >= pages;
-  els.lastChildPage.disabled = !hasPages || page >= pages;
-
-  els.childPageJumpInput.disabled = !hasPages;
-  els.childPageJumpInput.min = "1";
-  els.childPageJumpInput.max = hasPages ? String(pages) : "1";
-  els.childPageJumpInput.value = hasPages ? String(page) : "";
+  syncChildPagerControls(page, pages);
 }
 
 async function goToChildPage(page) {
@@ -7164,7 +7176,7 @@ async function goToChildPage(page) {
 
   const targetPage = clampPageNumber(page, state.childPages);
   if (targetPage === state.childPage) {
-    els.childPageJumpInput.value = String(targetPage);
+    syncChildPagerControls(targetPage, state.childPages);
     return;
   }
 
@@ -7349,6 +7361,7 @@ function setChildFoldersExpandedInDom(expanded) {
   if (els.childFolders) {
     els.childFolders.hidden = !expanded;
   }
+  setChildPagerVisible(state.childPages > 0);
 }
 
 function updateChildFoldersCollapseState() {
@@ -8636,18 +8649,17 @@ if (els.childFoldersToggle) {
   });
 }
 
-els.firstChildPage.addEventListener("click", () => goToChildPage(1));
-
-els.prevChildPage.addEventListener("click", () => goToChildPage(state.childPage - 1));
-
-els.childPageJumpForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  goToChildPage(els.childPageJumpInput.value);
-});
-
-els.nextChildPage.addEventListener("click", () => goToChildPage(state.childPage + 1));
-
-els.lastChildPage.addEventListener("click", () => goToChildPage(state.childPages));
+for (const pager of els.childPagers) {
+  const controls = childPagerControls(pager);
+  controls.first.addEventListener("click", () => goToChildPage(1));
+  controls.previous.addEventListener("click", () => goToChildPage(state.childPage - 1));
+  controls.jumpForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    goToChildPage(controls.jumpInput.value);
+  });
+  controls.next.addEventListener("click", () => goToChildPage(state.childPage + 1));
+  controls.last.addEventListener("click", () => goToChildPage(state.childPages));
+}
 
 if (DIAGNOSTICS_ENABLED) {
   window.addEventListener("scroll", scheduleFolderPreviewScrollSnapshot, { passive: true });
