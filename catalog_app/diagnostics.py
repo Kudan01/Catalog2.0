@@ -401,6 +401,22 @@ class DiagnosticsSession:
             folder_browse["other_ms"] = round(max(0.0, elapsed_ms - tracked_ms), 3)
             details["folder_browse"] = folder_browse
 
+        thumbnail = details.get("thumbnail")
+        if isinstance(thumbnail, dict):
+            thumbnail = dict(thumbnail)
+            tracked_ms = sum(
+                max(0.0, float(thumbnail.get(field, 0.0)))
+                for field in (
+                    "media_lookup_ms",
+                    "thumbnail_lookup_ms",
+                    "cache_file_check_ms",
+                )
+            )
+            thumbnail["http_status"] = int(status_code)
+            thumbnail["total_ms"] = round(elapsed_ms, 3)
+            thumbnail["other_ms"] = round(max(0.0, elapsed_ms - tracked_ms), 3)
+            details["thumbnail"] = thumbnail
+
         self.record(
             event,
             method=method,

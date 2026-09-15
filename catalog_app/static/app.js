@@ -8,7 +8,15 @@ const diagnosticState = {
   sequence: 0,
   mutationCount: 0,
   lastMutationCount: 0,
+  folderPreviewNavigation: null,
+  folderPreviewScroll: null,
+  folderPreviewScrollTimer: null,
+  childPageChange: null,
 };
+const folderPreviewResourceUrlByImage = DIAGNOSTICS_ENABLED ? new WeakMap() : null;
+if (DIAGNOSTICS_ENABLED && typeof performance.setResourceTimingBufferSize === "function") {
+  performance.setResourceTimingBufferSize(5000);
+}
 
 function diagnosticEvent(event, fields = {}) {
   if (!DIAGNOSTICS_ENABLED) return;
@@ -62,6 +70,278 @@ function diagnosticOperationEnd(event, operation, fields = {}) {
     mutations: diagnosticState.mutationCount - operation.mutations,
     ...fields,
   });
+}
+
+function cancelFolderPreviewMeasurement(slot, expectedMeasurement = null) {
+  const measurement = diagnosticState[slot];
+  if (!measurement || (expectedMeasurement && measurement !== expectedMeasurement)) return;
+  diagnosticState[slot] = null;
+  diagnosticOperationEnd(measurement.event, measurement.operation, { result: "stale" });
+  if (measurement.childPageMeasurement) {
+    cancelChildPageMeasurement(measurement.childPageMeasurement);
+  }
+}
+
+function cancelChildPageMeasurement(expectedMeasurement = null) {
+  const measurement = diagnosticState.childPageChange;
+  if (!measurement || (expectedMeasurement && measurement !== expectedMeasurement)) return;
+  diagnosticState.childPageChange = null;
+  diagnosticOperationEnd("frontend.child_folders.page_change", measurement.operation, {
+    result: "stale",
+    target_page: measurement.targetPage,
+  });
+}
+
+function beginChildPageMeasurement(folder, targetPage) {
+  if (!DIAGNOSTICS_ENABLED) return null;
+  cancelChildPageMeasurement();
+  const measurement = {
+    targetPage,
+    foldersResponseMs: null,
+    cardsRenderedMs: null,
+    apiRequestCounts: {
+      "/api/folder": 0,
+      "/api/folders": 0,
+      "/api/media": 0,
+    },
+    operation: diagnosticOperationStart("frontend.child_folders.page_change", {
+      folder: String(folder || ""),
+      target_page: targetPage,
+    }),
+  };
+  diagnosticState.childPageChange = measurement;
+  return measurement;
+}
+
+function childPageElapsed(measurement) {
+  return Math.round((performance.now() - measurement.operation.started) * 1000) / 1000;
+}
+
+function recordChildPageApiRequest(measurement, path) {
+  if (!measurement || diagnosticState.childPageChange !== measurement) return;
+  if (Object.prototype.hasOwnProperty.call(measurement.apiRequestCounts, path)) {
+    measurement.apiRequestCounts[path] += 1;
+  }
+}
+
+function finishChildPageMeasurement(measurement, visiblePreviewsReadyMs) {
+  if (!measurement || diagnosticState.childPageChange !== measurement) return;
+  diagnosticState.childPageChange = null;
+  diagnosticOperationEnd("frontend.child_folders.page_change", measurement.operation, {
+    result: "ok",
+    target_page: measurement.targetPage,
+    total_ms: childPageElapsed(measurement),
+    folders_response_ms: measurement.foldersResponseMs,
+    cards_rendered_ms: measurement.cardsRenderedMs,
+    visible_previews_ready_ms: visiblePreviewsReadyMs,
+    api_folder_count: measurement.apiRequestCounts["/api/folder"],
+    api_folders_count: measurement.apiRequestCounts["/api/folders"],
+    api_media_count: measurement.apiRequestCounts["/api/media"],
+  });
+}
+
+function beginFolderPreviewNavigationMeasurement(folder, page, trigger) {
+  if (!DIAGNOSTICS_ENABLED) return null;
+  if (diagnosticState.folderPreviewScrollTimer) {
+    window.clearTimeout(diagnosticState.folderPreviewScrollTimer);
+    diagnosticState.folderPreviewScrollTimer = null;
+  }
+  cancelFolderPreviewMeasurement("folderPreviewNavigation");
+  cancelFolderPreviewMeasurement("folderPreviewScroll");
+  if (trigger !== "page_change") cancelChildPageMeasurement();
+  const measurement = {
+    event: "frontend.folder_previews.navigation",
+    folder: String(folder || ""),
+    page: Number(page) || 1,
+    operation: diagnosticOperationStart("frontend.folder_previews.navigation", {
+      folder: String(folder || ""),
+      page: Number(page) || 1,
+      trigger,
+    }),
+  };
+  diagnosticState.folderPreviewNavigation = measurement;
+  return measurement;
+}
+
+function folderPreviewImageIsVisible(image) {
+  if (!image || !image.isConnected) return false;
+  const rect = image.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  let top = 0;
+  let left = 0;
+  let right = window.innerWidth || document.documentElement.clientWidth || 0;
+  let bottom = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (usesIndependentContentScroll()) {
+    const content = document.querySelector(".content");
+    if (content) {
+      const contentRect = content.getBoundingClientRect();
+      top = Math.max(top, contentRect.top);
+      left = Math.max(left, contentRect.left);
+      right = Math.min(right, contentRect.right);
+      bottom = Math.min(bottom, contentRect.bottom);
+    }
+  }
+  return rect.bottom > top && rect.top < bottom && rect.right > left && rect.left < right;
+}
+
+function finishFolderPreviewSnapshot(slot, measurement, fields, images, zeroWhenComplete = false) {
+  if (!measurement || diagnosticState[slot] !== measurement) return;
+  const alreadyComplete = images.filter(image => image.complete).length;
+  const pending = images.filter(image => !image.complete);
+  const resourceUrls = new Set(images.map(image => (
+    folderPreviewResourceUrlByImage?.get(image)
+    || image.currentSrc
+    || image.getAttribute("src")
+    || ""
+  )).filter(Boolean));
+  const baseFields = {
+    folder: measurement.folder,
+    page: measurement.page,
+    visible_count: images.length,
+    already_complete_count: alreadyComplete,
+    pending_count: pending.length,
+    ...fields,
+  };
+
+  const finish = () => {
+    if (diagnosticState[slot] !== measurement) return;
+    diagnosticState[slot] = null;
+    const elapsed = zeroWhenComplete && pending.length === 0
+      ? 0
+      : Math.round((performance.now() - measurement.operation.started) * 1000) / 1000;
+    const finishedAt = performance.now();
+    const allResourceEntries = typeof performance.getEntriesByType === "function"
+      ? performance.getEntriesByType("resource")
+      : [];
+    const resourceEntries = allResourceEntries.filter(entry => (
+        entry.initiatorType === "img"
+        && resourceUrls.has(entry.name)
+        && entry.responseEnd >= measurement.operation.started
+      ));
+    const allThumbnailEntries = allResourceEntries.filter(entry => {
+      if (entry.initiatorType !== "img") return false;
+      if (entry.startTime < measurement.operation.started || entry.startTime > finishedAt) return false;
+      try {
+        return new URL(entry.name, window.location.origin).pathname === "/media/thumbnail";
+      } catch (_) {
+        return false;
+      }
+    });
+    const firstResourceStart = resourceEntries.length
+      ? Math.min(...resourceEntries.map(entry => entry.startTime))
+      : 0;
+    const lastResourceEnd = resourceEntries.length
+      ? Math.max(...resourceEntries.map(entry => entry.responseEnd))
+      : 0;
+    const slowestResource = resourceEntries.length
+      ? Math.max(...resourceEntries.map(entry => entry.duration))
+      : 0;
+    const phaseSummary = (selector) => {
+      const values = resourceEntries.map(entry => Math.max(0, selector(entry)));
+      return {
+        average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0,
+        maximum: values.length ? Math.max(...values) : 0,
+      };
+    };
+    const queue = phaseSummary(entry => entry.requestStart - entry.fetchStart);
+    const ttfb = phaseSummary(entry => entry.responseStart - entry.requestStart);
+    const download = phaseSummary(entry => entry.responseEnd - entry.responseStart);
+    diagnosticOperationEnd(measurement.event, measurement.operation, {
+      result: "ok",
+      ...baseFields,
+      visible_previews_ready_ms: elapsed,
+      thumbnail_resource_count: resourceEntries.length,
+      visible_snapshot_request_count: resourceEntries.length,
+      all_thumbnail_request_count_during_interval: allThumbnailEntries.length,
+      thumbnail_resource_span_ms: Math.round(Math.max(0, lastResourceEnd - firstResourceStart) * 1000) / 1000,
+      slowest_thumbnail_resource_ms: Math.round(Math.max(0, slowestResource) * 1000) / 1000,
+      thumbnail_queue_avg_ms: Math.round(queue.average * 1000) / 1000,
+      thumbnail_queue_max_ms: Math.round(queue.maximum * 1000) / 1000,
+      thumbnail_ttfb_avg_ms: Math.round(ttfb.average * 1000) / 1000,
+      thumbnail_ttfb_max_ms: Math.round(ttfb.maximum * 1000) / 1000,
+      thumbnail_download_avg_ms: Math.round(download.average * 1000) / 1000,
+      thumbnail_download_max_ms: Math.round(download.maximum * 1000) / 1000,
+    });
+    if (measurement.childPageMeasurement) {
+      finishChildPageMeasurement(
+        measurement.childPageMeasurement,
+        childPageElapsed(measurement.childPageMeasurement),
+      );
+    }
+  };
+
+  if (!pending.length) {
+    finish();
+    return;
+  }
+
+  // The snapshot is fixed here: later viewport changes must not add new images.
+  let remaining = pending.length;
+  for (const image of pending) {
+    let completed = false;
+    const completeOne = () => {
+      if (completed) return;
+      completed = true;
+      remaining -= 1;
+      if (remaining === 0) finish();
+    };
+    image.addEventListener("load", completeOne, { once: true });
+    image.addEventListener("error", completeOne, { once: true });
+    // Close the listener-registration race if a cached image completed meanwhile.
+    if (image.complete) completeOne();
+  }
+}
+
+function scheduleFolderPreviewNavigationSnapshot(measurement, childrenData) {
+  if (!DIAGNOSTICS_ENABLED || !measurement) return;
+  measurement.page = Number(childrenData?.page) || measurement.page;
+  window.requestAnimationFrame(() => {
+    if (diagnosticState.folderPreviewNavigation !== measurement) return;
+    const allImages = Array.from(els.childFolders.querySelectorAll("img.folder-preview-image"));
+    const visibleImages = allImages.filter(folderPreviewImageIsVisible);
+    finishFolderPreviewSnapshot(
+      "folderPreviewNavigation",
+      measurement,
+      {
+        cards_count: Array.isArray(childrenData?.folders) ? childrenData.folders.length : 0,
+        preview_images_count: allImages.length,
+      },
+      visibleImages,
+    );
+  });
+}
+
+function scheduleFolderPreviewScrollSnapshot() {
+  if (!DIAGNOSTICS_ENABLED) return;
+  if (diagnosticState.folderPreviewScrollTimer) {
+    window.clearTimeout(diagnosticState.folderPreviewScrollTimer);
+  }
+  diagnosticState.folderPreviewScrollTimer = window.setTimeout(() => {
+    diagnosticState.folderPreviewScrollTimer = null;
+    if (state.view !== "folder" || diagnosticState.folderPreviewNavigation) return;
+    cancelFolderPreviewMeasurement("folderPreviewScroll");
+    const measurement = {
+      event: "frontend.folder_previews.scroll",
+      folder: String(state.folder || ""),
+      page: Number(state.childPage) || 1,
+      operation: diagnosticOperationStart("frontend.folder_previews.scroll", {
+        folder: String(state.folder || ""),
+        page: Number(state.childPage) || 1,
+      }),
+    };
+    diagnosticState.folderPreviewScroll = measurement;
+    const visibleImages = Array.from(
+      els.childFolders.querySelectorAll("img.folder-preview-image")
+    ).filter(folderPreviewImageIsVisible);
+    finishFolderPreviewSnapshot(
+      "folderPreviewScroll",
+      measurement,
+      {},
+      visibleImages,
+      true,
+    );
+  }, 200);
 }
 
 if (DIAGNOSTICS_ENABLED && "MutationObserver" in window) {
@@ -6475,6 +6755,11 @@ async function refreshCurrentViewAndTree(options = {}) {
 
 async function openFolder(path) {
   const nextFolder = path || "";
+  const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
+    nextFolder,
+    1,
+    "navigation",
+  );
   const operation = diagnosticOperationStart("frontend.navigation.folder", {
     from_folder: state.folder,
     to_folder: nextFolder,
@@ -6495,7 +6780,7 @@ async function openFolder(path) {
   updateViewButtons();
   setTreeActiveFolder(nextFolder);
 
-  const contentRendered = await loadCurrentFolder({ requestId });
+  const contentRendered = await loadCurrentFolder({ requestId, folderPreviewMeasurement });
   await loadRootFolders({ requestId });
   diagnosticOperationEnd("frontend.navigation.folder", operation, {
     to_folder: state.folder,
@@ -6517,6 +6802,9 @@ async function openFavorites() {
 }
 
 async function loadCurrentFolder(options = {}) {
+  if (DIAGNOSTICS_ENABLED && !options.folderPreviewMeasurement) {
+    cancelFolderPreviewMeasurement("folderPreviewNavigation");
+  }
   const requestId = options.requestId ?? beginViewLoadRequest();
   const snapshot = currentViewLoadSnapshot();
   const operation = diagnosticOperationStart("frontend.folder.load_current", {
@@ -6543,10 +6831,21 @@ async function loadCurrentFolder(options = {}) {
     return rendered;
   }
 
-  const childrenPromise = fetchJson("/api/folders", {
+  recordChildPageApiRequest(options.childPageMeasurement, "/api/folders");
+  let childrenPromise = fetchJson("/api/folders", {
     parent: snapshot.folder,
     page: snapshot.childPage,
   });
+  if (options.childPageMeasurement) {
+    childrenPromise = childrenPromise.then(data => {
+      if (diagnosticState.childPageChange === options.childPageMeasurement) {
+        options.childPageMeasurement.foldersResponseMs = childPageElapsed(
+          options.childPageMeasurement,
+        );
+      }
+      return data;
+    });
+  }
   const childrenRequest = {
     parent: snapshot.folder,
     page: snapshot.childPage,
@@ -6558,6 +6857,8 @@ async function loadCurrentFolder(options = {}) {
   let childrenData;
   let mediaData;
   try {
+    recordChildPageApiRequest(options.childPageMeasurement, "/api/folder");
+    recordChildPageApiRequest(options.childPageMeasurement, "/api/media");
     [folderData, childrenData, mediaData] = await Promise.all([
       fetchJson("/api/folder", { path: snapshot.folder }),
       childrenPromise,
@@ -6567,6 +6868,17 @@ async function loadCurrentFolder(options = {}) {
         page: snapshot.mediaPage,
       }),
     ]);
+  } catch (error) {
+    if (options.folderPreviewMeasurement) {
+      cancelFolderPreviewMeasurement(
+        "folderPreviewNavigation",
+        options.folderPreviewMeasurement,
+      );
+    }
+    if (options.childPageMeasurement) {
+      cancelChildPageMeasurement(options.childPageMeasurement);
+    }
+    throw error;
   } finally {
     if (state.currentFolderChildrenRequest === childrenRequest) {
       state.currentFolderChildrenRequest = null;
@@ -6574,6 +6886,15 @@ async function loadCurrentFolder(options = {}) {
   }
 
   if (!viewLoadIsCurrent(requestId, snapshot)) {
+    if (options.folderPreviewMeasurement) {
+      cancelFolderPreviewMeasurement(
+        "folderPreviewNavigation",
+        options.folderPreviewMeasurement,
+      );
+    }
+    if (options.childPageMeasurement) {
+      cancelChildPageMeasurement(options.childPageMeasurement);
+    }
     diagnosticOperationEnd("frontend.folder.load_current", operation, {
       resolved_view: "folder",
       result: "stale",
@@ -6584,7 +6905,11 @@ async function loadCurrentFolder(options = {}) {
   hydrateTreeBranchFromChildrenData(snapshot.folder, childrenData);
   renderFolder(folderData.folder, folderData.breadcrumb);
   renderChildFolders(childrenData);
+  if (options.childPageMeasurement && diagnosticState.childPageChange === options.childPageMeasurement) {
+    options.childPageMeasurement.cardsRenderedMs = childPageElapsed(options.childPageMeasurement);
+  }
   renderMedia(mediaData);
+  scheduleFolderPreviewNavigationSnapshot(options.folderPreviewMeasurement, childrenData);
   diagnosticOperationEnd("frontend.folder.load_current", operation, {
     resolved_view: "folder",
     result: "ok",
@@ -6842,8 +7167,20 @@ async function goToChildPage(page) {
   }
 
   state.childPage = targetPage;
+  const childPageMeasurement = beginChildPageMeasurement(state.folder, targetPage);
+  const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
+    state.folder,
+    targetPage,
+    "page_change",
+  );
+  if (folderPreviewMeasurement) {
+    folderPreviewMeasurement.childPageMeasurement = childPageMeasurement;
+  }
   scrollToCatalogTop();
-  await reloadSafely(loadCurrentFolder);
+  await reloadSafely(() => loadCurrentFolder({
+    folderPreviewMeasurement,
+    childPageMeasurement,
+  }));
 }
 
 function renderSearchHeader(data) {
@@ -6971,6 +7308,12 @@ function folderPreviewMarkup(folder) {
 
 function bindFolderPreviewImageErrors(card) {
   for (const image of card.querySelectorAll("img.folder-preview-image")) {
+    if (folderPreviewResourceUrlByImage) {
+      folderPreviewResourceUrlByImage.set(
+        image,
+        image.currentSrc || image.getAttribute("src") || "",
+      );
+    }
     const box = image.closest("[data-thumbnail-preview]");
     if (!box) continue;
 
@@ -8305,6 +8648,14 @@ els.childPageJumpForm.addEventListener("submit", (event) => {
 els.nextChildPage.addEventListener("click", () => goToChildPage(state.childPage + 1));
 
 els.lastChildPage.addEventListener("click", () => goToChildPage(state.childPages));
+
+if (DIAGNOSTICS_ENABLED) {
+  window.addEventListener("scroll", scheduleFolderPreviewScrollSnapshot, { passive: true });
+  const catalogContent = document.querySelector(".content");
+  if (catalogContent) {
+    catalogContent.addEventListener("scroll", scheduleFolderPreviewScrollSnapshot, { passive: true });
+  }
+}
 
 els.prevRootPage.addEventListener("click", async () => {
   if (state.rootPage > 1) {

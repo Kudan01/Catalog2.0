@@ -127,6 +127,21 @@ def print_session(
         for line in folder_lines:
             print(line)
 
+    preview_lines = folder_preview_readiness_lines(events)
+    if preview_lines:
+        for line in preview_lines:
+            print(line)
+
+    thumbnail_lines = existing_thumbnail_performance_lines(events)
+    if thumbnail_lines:
+        for line in thumbnail_lines:
+            print(line)
+
+    child_page_lines = child_folder_page_performance_lines(events)
+    if child_page_lines:
+        for line in child_page_lines:
+            print(line)
+
     print("slowest HTTP:")
     for item in summary.get("slowest_http_requests", [])[:8]:
         print(
@@ -186,6 +201,149 @@ def folder_browse_performance_lines(events: list[dict[str, Any]]) -> list[str]:
                 f"other:               {number(record.get('other_ms'))} ms",
                 f"source_root_checks:  {record.get('source_root_status_checks', 0)}",
                 f"folder_fs_checks:    {record.get('folder_fs_checks', 0)}",
+            ]
+        )
+    lines.append("")
+    return lines
+
+
+def folder_preview_readiness_lines(events: list[dict[str, Any]]) -> list[str]:
+    """Format completed folder-preview viewport snapshots in event order."""
+    records = [
+        event
+        for event in events
+        if event.get("event") in {
+            "frontend.folder_previews.navigation.end",
+            "frontend.folder_previews.scroll.end",
+        }
+        and event.get("result") == "ok"
+    ]
+    if not records:
+        return []
+
+    lines = ["Folder preview readiness", "-" * 72]
+    for index, record in enumerate(records, start=1):
+        if index > 1:
+            lines.append("")
+        kind = (
+            "navigation/page"
+            if str(record.get("event", "")).endswith("navigation.end")
+            else "scroll"
+        )
+        lines.extend(
+            [
+                f"{kind} snapshot {index}",
+                f"folder:                     {record.get('folder', '-')}",
+                f"page:                       {record.get('page', '-')}",
+            ]
+        )
+        if kind == "navigation/page":
+            lines.extend(
+                [
+                    f"cards_count:                {record.get('cards_count', 0)}",
+                    f"preview_images_count:       {record.get('preview_images_count', 0)}",
+                ]
+            )
+        lines.extend(
+            [
+                f"visible_count:               {record.get('visible_count', 0)}",
+                f"already_complete_count:      {record.get('already_complete_count', 0)}",
+                f"pending_count:               {record.get('pending_count', 0)}",
+                f"visible_previews_ready_ms:   {number(record.get('visible_previews_ready_ms'))} ms",
+                f"thumbnail_resource_count:    {record.get('thumbnail_resource_count', 0)}",
+                f"visible_snapshot_requests:   {record.get('visible_snapshot_request_count', 0)}",
+                f"all_thumbnail_requests:      {record.get('all_thumbnail_request_count_during_interval', 0)}",
+                f"thumbnail_resource_span_ms:  {number(record.get('thumbnail_resource_span_ms'))} ms",
+                f"slowest_thumbnail_resource:  {number(record.get('slowest_thumbnail_resource_ms'))} ms",
+                f"thumbnail_queue:              avg {number(record.get('thumbnail_queue_avg_ms'))} ms, "
+                f"max {number(record.get('thumbnail_queue_max_ms'))} ms",
+                f"thumbnail_ttfb:               avg {number(record.get('thumbnail_ttfb_avg_ms'))} ms, "
+                f"max {number(record.get('thumbnail_ttfb_max_ms'))} ms",
+                f"thumbnail_download:           avg {number(record.get('thumbnail_download_avg_ms'))} ms, "
+                f"max {number(record.get('thumbnail_download_max_ms'))} ms",
+            ]
+        )
+    lines.append("")
+    return lines
+
+
+def existing_thumbnail_performance_lines(events: list[dict[str, Any]]) -> list[str]:
+    """Aggregate existing-only thumbnail request phases and outcomes."""
+    records = [
+        event
+        for event in events
+        if event.get("event") == "backend.http.request"
+        and event.get("path") == "/media/thumbnail"
+        and isinstance(event.get("thumbnail"), dict)
+        and event["thumbnail"].get("existing_only") is True
+    ]
+    if not records:
+        return []
+
+    def values(field: str) -> list[float]:
+        result = []
+        for record in records:
+            try:
+                result.append(max(0.0, float(record["thumbnail"].get(field, 0.0))))
+            except (TypeError, ValueError):
+                result.append(0.0)
+        return result
+
+    def avg_max(field: str) -> str:
+        items = values(field)
+        return f"avg {number(sum(items) / len(items))} ms, max {number(max(items))} ms"
+
+    outcomes: dict[str, int] = {}
+    types: dict[str, int] = {}
+    for record in records:
+        detail = record["thumbnail"]
+        outcome = f"{detail.get('http_status', record.get('status_code', '-'))} {detail.get('result', '-')}"
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        thumbnail_type = str(detail.get("thumbnail_type", "-") or "-")
+        types[thumbnail_type] = types.get(thumbnail_type, 0) + 1
+
+    lines = [
+        "Existing-only thumbnail performance",
+        "-" * 72,
+        f"request_count:        {len(records)}",
+        f"total:                {avg_max('total_ms')}",
+        f"media_lookup:         {avg_max('media_lookup_ms')}",
+        f"thumbnail_lookup:     {avg_max('thumbnail_lookup_ms')}",
+        f"cache_file_check:     {avg_max('cache_file_check_ms')}",
+        f"other:                {avg_max('other_ms')}",
+        "thumbnail_types:      " + ", ".join(f"{key}={value}" for key, value in sorted(types.items())),
+        "results:              " + ", ".join(f"{key}={value}" for key, value in sorted(outcomes.items())),
+        "",
+    ]
+    return lines
+
+
+def child_folder_page_performance_lines(events: list[dict[str, Any]]) -> list[str]:
+    """Format completed child-folder page changes in event order."""
+    records = [
+        event
+        for event in events
+        if event.get("event") == "frontend.child_folders.page_change.end"
+        and event.get("result") == "ok"
+    ]
+    if not records:
+        return []
+
+    lines = ["Child-folder pagination", "-" * 72]
+    for index, record in enumerate(records, start=1):
+        if index > 1:
+            lines.append("")
+        lines.extend(
+            [
+                f"page change {index}",
+                f"target_page:               {record.get('target_page', '-')}",
+                f"total:                     {number(record.get('total_ms'))} ms",
+                f"folders_response:          {number(record.get('folders_response_ms'))} ms",
+                f"cards_rendered:            {number(record.get('cards_rendered_ms'))} ms",
+                f"visible_previews_ready:    {number(record.get('visible_previews_ready_ms'))} ms",
+                f"/api/folder requests:      {record.get('api_folder_count', 0)}",
+                f"/api/folders requests:     {record.get('api_folders_count', 0)}",
+                f"/api/media requests:       {record.get('api_media_count', 0)}",
             ]
         )
     lines.append("")

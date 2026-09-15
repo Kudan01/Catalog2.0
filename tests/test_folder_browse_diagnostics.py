@@ -17,7 +17,12 @@ from catalog_app.diagnostics import (
 )
 from catalog_app.setup_instance import _instance_config_text
 from catalog_app.sorting import catalog_path_key
-from tools.summarize_diagnostics import folder_browse_performance_lines
+from tools.summarize_diagnostics import (
+    child_folder_page_performance_lines,
+    existing_thumbnail_performance_lines,
+    folder_browse_performance_lines,
+    folder_preview_readiness_lines,
+)
 
 
 class FolderBrowseDiagnosticsTests(unittest.TestCase):
@@ -153,6 +158,161 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
         self.assertIn("cache_file_checks:   0.500 ms (7 checks)", output)
         self.assertIn("other_preview:       0.050 ms", output)
         self.assertIn("other:               1.000 ms", output)
+
+    def test_folder_preview_readiness_summary_formats_navigation_and_scroll(self) -> None:
+        events = [
+            {
+                "event": "frontend.folder_previews.navigation.end",
+                "result": "ok",
+                "folder": "parent_folder",
+                "page": 2,
+                "cards_count": 4,
+                "preview_images_count": 12,
+                "visible_count": 6,
+                "already_complete_count": 2,
+                "pending_count": 4,
+                "visible_previews_ready_ms": 321.5,
+                "thumbnail_resource_count": 4,
+                "visible_snapshot_request_count": 4,
+                "all_thumbnail_request_count_during_interval": 9,
+                "thumbnail_resource_span_ms": 300.0,
+                "slowest_thumbnail_resource_ms": 125.0,
+                "thumbnail_queue_avg_ms": 10.0,
+                "thumbnail_queue_max_ms": 20.0,
+                "thumbnail_ttfb_avg_ms": 30.0,
+                "thumbnail_ttfb_max_ms": 50.0,
+                "thumbnail_download_avg_ms": 5.0,
+                "thumbnail_download_max_ms": 8.0,
+            },
+            {
+                "event": "frontend.folder_previews.navigation.end",
+                "result": "stale",
+            },
+            {
+                "event": "frontend.folder_previews.scroll.end",
+                "result": "ok",
+                "folder": "parent_folder",
+                "page": 2,
+                "visible_count": 3,
+                "already_complete_count": 3,
+                "pending_count": 0,
+                "visible_previews_ready_ms": 0,
+                "thumbnail_resource_count": 0,
+                "visible_snapshot_request_count": 0,
+                "all_thumbnail_request_count_during_interval": 0,
+                "thumbnail_resource_span_ms": 0,
+                "slowest_thumbnail_resource_ms": 0,
+                "thumbnail_queue_avg_ms": 0,
+                "thumbnail_queue_max_ms": 0,
+                "thumbnail_ttfb_avg_ms": 0,
+                "thumbnail_ttfb_max_ms": 0,
+                "thumbnail_download_avg_ms": 0,
+                "thumbnail_download_max_ms": 0,
+            },
+        ]
+
+        output = "\n".join(folder_preview_readiness_lines(events))
+
+        self.assertIn("Folder preview readiness", output)
+        self.assertIn("navigation/page snapshot 1", output)
+        self.assertIn("cards_count:                4", output)
+        self.assertIn("preview_images_count:       12", output)
+        self.assertIn("pending_count:               4", output)
+        self.assertIn("visible_previews_ready_ms:   321.500 ms", output)
+        self.assertIn("thumbnail_resource_count:    4", output)
+        self.assertIn("visible_snapshot_requests:   4", output)
+        self.assertIn("all_thumbnail_requests:      9", output)
+        self.assertIn("thumbnail_resource_span_ms:  300.000 ms", output)
+        self.assertIn("slowest_thumbnail_resource:  125.000 ms", output)
+        self.assertIn("thumbnail_queue:              avg 10.000 ms, max 20.000 ms", output)
+        self.assertIn("thumbnail_ttfb:               avg 30.000 ms, max 50.000 ms", output)
+        self.assertIn("thumbnail_download:           avg 5.000 ms, max 8.000 ms", output)
+        self.assertIn("scroll snapshot 2", output)
+        self.assertIn("visible_previews_ready_ms:   0.000 ms", output)
+        self.assertNotIn("snapshot 3", output)
+
+    def test_existing_thumbnail_summary_excludes_non_existing_only_requests(self) -> None:
+        events = [
+            self._thumbnail_event(True, 200, "existing", total=20, media=2, thumbnail=3, cache=5, other=10),
+            self._thumbnail_event(True, 404, "thumbnail.cache.missing", total=10, media=1, thumbnail=2, cache=3, other=4),
+            self._thumbnail_event(False, 200, "generated", total=500, media=5, thumbnail=5, cache=5, other=485),
+        ]
+
+        output = "\n".join(existing_thumbnail_performance_lines(events))
+
+        self.assertIn("request_count:        2", output)
+        self.assertIn("total:                avg 15.000 ms, max 20.000 ms", output)
+        self.assertIn("media_lookup:         avg 1.500 ms, max 2.000 ms", output)
+        self.assertIn("thumbnail_lookup:     avg 2.500 ms, max 3.000 ms", output)
+        self.assertIn("cache_file_check:     avg 4.000 ms, max 5.000 ms", output)
+        self.assertIn("other:                avg 7.000 ms, max 10.000 ms", output)
+        self.assertIn("photo_tile=2", output)
+        self.assertIn("200 existing=1", output)
+        self.assertIn("404 thumbnail.cache.missing=1", output)
+        self.assertNotIn("generated", output)
+
+    def test_child_folder_page_summary_formats_stages_and_request_counts(self) -> None:
+        events = [
+            {
+                "event": "frontend.child_folders.page_change.end",
+                "result": "ok",
+                "target_page": 3,
+                "total_ms": 900,
+                "folders_response_ms": 200,
+                "cards_rendered_ms": 300,
+                "visible_previews_ready_ms": 900,
+                "api_folder_count": 1,
+                "api_folders_count": 1,
+                "api_media_count": 1,
+            },
+            {
+                "event": "frontend.child_folders.page_change.end",
+                "result": "stale",
+                "target_page": 4,
+            },
+        ]
+
+        output = "\n".join(child_folder_page_performance_lines(events))
+
+        self.assertIn("Child-folder pagination", output)
+        self.assertIn("target_page:               3", output)
+        self.assertIn("total:                     900.000 ms", output)
+        self.assertIn("folders_response:          200.000 ms", output)
+        self.assertIn("cards_rendered:            300.000 ms", output)
+        self.assertIn("visible_previews_ready:    900.000 ms", output)
+        self.assertIn("/api/folder requests:      1", output)
+        self.assertIn("/api/folders requests:     1", output)
+        self.assertIn("/api/media requests:       1", output)
+        self.assertNotIn("target_page:               4", output)
+
+    @staticmethod
+    def _thumbnail_event(
+        existing_only: bool,
+        status: int,
+        result: str,
+        *,
+        total: float,
+        media: float,
+        thumbnail: float,
+        cache: float,
+        other: float,
+    ) -> dict[str, object]:
+        return {
+            "event": "backend.http.request",
+            "path": "/media/thumbnail",
+            "status_code": status,
+            "thumbnail": {
+                "existing_only": existing_only,
+                "thumbnail_type": "photo_tile",
+                "http_status": status,
+                "result": result,
+                "total_ms": total,
+                "media_lookup_ms": media,
+                "thumbnail_lookup_ms": thumbnail,
+                "cache_file_check_ms": cache,
+                "other_ms": other,
+            },
+        }
 
     @staticmethod
     def _diagnosed_request(config, raw_path: str, *, parent: str, include_previews: str):

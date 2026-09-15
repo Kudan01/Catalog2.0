@@ -208,3 +208,36 @@ This technical log records completed and approved development steps: what change
 - After the change, cold measurements were approximately 9047 ms for frontend initial load, 7877 ms for `/api/status`, and 120 ms for `/api/jobs/status`.
 - Cold frontend initial load improved by approximately 1.8 seconds (about 16%), and removing redundant count passes substantially improved `/api/jobs/status`.
 - The dominant `/api/status` cold cost remained approximately 7.9 seconds. Further substantial cold-start improvement would require a different design than this local aggregation change; startup and overall Catalog performance are not considered solved.
+
+## 2026-09-15 — Folder preview and child-pagination performance diagnostics
+
+### Changes
+
+- Added end-to-end folder preview readiness diagnostics for navigation/page changes and debounced scroll snapshots.
+- Added timing for the `existing_only=1` thumbnail hot path: backend total, media lookup, thumbnail lookup, cache-file check, and other time.
+- Extended frontend Resource Timing metrics to separate browser queue/scheduling, TTFB, and download time.
+- Added child-folder pagination timings for total completion, `/api/folders` response, rendered cards, and visible previews readiness, together with request counts for `/api/folder`, `/api/folders`, and `/api/media`.
+- The instrumentation does not change browse, lazy-loading, or thumbnail runtime behavior.
+
+### Reason
+
+- Distinguish backend thumbnail work, browser scheduling, resource transfer, and repeated page-loading stages without applying an optimization.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/diagnostics.py`
+- `catalog_app/static/app.js`
+- `catalog_app/thumbnail_cache.py`
+- `tools/summarize_diagnostics.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `tests/test_folder_preview_query.py`
+- `tests/test_folder_preview_readiness_diagnostics.py`
+- `tests/test_folder_tree_orchestration.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The automated test suite passed.
+- Runtime measurements showed that multi-second waits for existing folder previews are dominated by browser request queue/scheduling rather than downloading the small image responses.
+- Child-folder page changes request `/api/folder`, `/api/folders`, and `/api/media` again, with `/api/folders` accounting for a significant part of the measured delay.

@@ -454,6 +454,7 @@ def ready_cached_thumbnail_resource(
     media_id: int,
     thumbnail_type: ThumbnailKind,
     variant_key: str,
+    diagnostic_timings: dict[str, float] | None = None,
 ) -> ThumbnailResource | None:
     """Return an already-ready thumbnail by trusting DB state during browsing.
 
@@ -461,32 +462,46 @@ def ready_cached_thumbnail_resource(
     not update usage metadata. Scan/activation logic is responsible for marking
     thumbnails stale when source files change.
     """
-    with open_database(config.db_path, read_only=True, validate=False) as connection:
-        row = connection.execute(
-            """
-            SELECT
-                output_rel_path,
-                width,
-                height,
-                file_size_bytes,
-                cache_class,
-                status
-            FROM thumbnails
-            WHERE media_id = ?
-              AND thumbnail_type = ?
-              AND variant_key = ?
-            """,
-            (media_id, thumbnail_type, variant_key),
-        ).fetchone()
+    lookup_started = time.perf_counter() if diagnostic_timings is not None else 0.0
+    try:
+        with open_database(config.db_path, read_only=True, validate=False) as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    output_rel_path,
+                    width,
+                    height,
+                    file_size_bytes,
+                    cache_class,
+                    status
+                FROM thumbnails
+                WHERE media_id = ?
+                  AND thumbnail_type = ?
+                  AND variant_key = ?
+                """,
+                (media_id, thumbnail_type, variant_key),
+            ).fetchone()
+    finally:
+        if diagnostic_timings is not None:
+            diagnostic_timings["thumbnail_lookup_ms"] = (
+                time.perf_counter() - lookup_started
+            ) * 1000.0
 
     if row is None or str(row["status"]) != "ready":
         return None
 
-    path = _thumbnail_filesystem_path(config, str(row["output_rel_path"]))
-    if not path.exists() or not path.is_file():
-        return None
+    check_started = time.perf_counter() if diagnostic_timings is not None else 0.0
+    try:
+        path = _thumbnail_filesystem_path(config, str(row["output_rel_path"]))
+        if not path.exists() or not path.is_file():
+            return None
 
-    stat_result = path.stat()
+        stat_result = path.stat()
+    finally:
+        if diagnostic_timings is not None:
+            diagnostic_timings["cache_file_check_ms"] = (
+                time.perf_counter() - check_started
+            ) * 1000.0
     return ThumbnailResource(
         rel_path=str(row["output_rel_path"]),
         thumbnail_type=thumbnail_type,

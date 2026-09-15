@@ -24,7 +24,7 @@ class FolderTreeOrchestrationContractTests(unittest.TestCase):
         body = self._function_body("async function openFolder(path)")
 
         self.assertLess(
-            body.index("await loadCurrentFolder({ requestId })"),
+            body.index("await loadCurrentFolder({ requestId, folderPreviewMeasurement })"),
             body.index("await loadRootFolders({ requestId })"),
         )
         self.assertNotIn("Promise.all", body)

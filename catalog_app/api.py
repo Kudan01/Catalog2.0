@@ -4521,6 +4521,57 @@ def thumbnail_media_resource(
     existing_only: bool = False,
     frame_index: int | None = None,
 ) -> ThumbnailResource:
+    """Resolve a thumbnail and publish phase timings for an active HTTP trace."""
+    if not diagnostic_request_active():
+        return _thumbnail_media_resource_impl(
+            config,
+            raw_path,
+            raw_variant,
+            existing_only=existing_only,
+            frame_index=frame_index,
+        )
+
+    timings = {
+        "media_lookup_ms": 0.0,
+        "thumbnail_lookup_ms": 0.0,
+        "cache_file_check_ms": 0.0,
+    }
+    result = "error"
+    try:
+        resource = _thumbnail_media_resource_impl(
+            config,
+            raw_path,
+            raw_variant,
+            existing_only=existing_only,
+            frame_index=frame_index,
+            diagnostic_timings=timings,
+        )
+        result = "generated" if resource.generated else "existing"
+        return resource
+    except ApiError as exc:
+        result = str(exc.message_object.get("code") or "api_error")
+        raise
+    finally:
+        diagnostic_set_request_detail(
+            "thumbnail",
+            {
+                "existing_only": bool(existing_only),
+                "thumbnail_type": (raw_variant or "photo_tile").strip().lower(),
+                "result": result,
+                **{key: round(max(0.0, value), 3) for key, value in timings.items()},
+            },
+        )
+
+
+def _thumbnail_media_resource_impl(
+    config: Config,
+    raw_path: str,
+    raw_variant: str = "photo_tile",
+    *,
+    existing_only: bool = False,
+    frame_index: int | None = None,
+    diagnostic_timings: dict[str, float] | None = None,
+) -> ThumbnailResource:
     """Resolve a supported thumbnail resource for a catalog media file."""
     variant = (raw_variant or "photo_tile").strip().lower()
     if variant not in {"photo_tile", "gif_preview", "video_poster", "video_frame"}:
@@ -4533,21 +4584,28 @@ def thumbnail_media_resource(
     rel_path = _normalize_api_path(raw_path, allow_root=False)
     path_key = catalog_path_key(rel_path)
 
-    with open_database(config.db_path, read_only=True, validate=False) as connection:
-        row = connection.execute(
-            """
-            SELECT
-                id,
-                rel_path,
-                file_name,
-                extension,
-                media_type
-            FROM media_files
-            WHERE path_key = ?
-              AND is_available = 1
-            """,
-            (path_key,),
-        ).fetchone()
+    lookup_started = time.perf_counter() if diagnostic_timings is not None else 0.0
+    try:
+        with open_database(config.db_path, read_only=True, validate=False) as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    rel_path,
+                    file_name,
+                    extension,
+                    media_type
+                FROM media_files
+                WHERE path_key = ?
+                  AND is_available = 1
+                """,
+                (path_key,),
+            ).fetchone()
+    finally:
+        if diagnostic_timings is not None:
+            diagnostic_timings["media_lookup_ms"] = (
+                time.perf_counter() - lookup_started
+            ) * 1000.0
 
     if row is None:
         raise ApiError.from_message(
@@ -4600,6 +4658,7 @@ def thumbnail_media_resource(
             media_id=int(row["id"]),
             thumbnail_type=variant,
             variant_key=fast_variant_key,
+            diagnostic_timings=diagnostic_timings,
         )
     except ThumbnailCacheError as exc:
         raise ApiError.from_message(

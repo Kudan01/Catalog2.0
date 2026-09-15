@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -15,11 +16,20 @@ from catalog_app.api import (
 )
 from catalog_app.config import load_config
 from catalog_app.database import initialize_database
+from catalog_app.diagnostics import (
+    begin_http_request,
+    finish_diagnostics_session,
+    finish_http_request,
+    start_diagnostics_session,
+)
 from catalog_app.schema import SCHEMA_STATEMENTS
 from catalog_app.setup_instance import _instance_config_text
 
 
 class FolderPreviewQueryTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        finish_diagnostics_session("test_cleanup")
+
     def test_multiple_folders_preserve_auto_parent_order_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             output_root = Path(temp)
@@ -153,6 +163,91 @@ class FolderPreviewQueryTests(unittest.TestCase):
 
             self.assertEqual(404, raised.exception.status_code)
             self.assertEqual("thumbnail.cache.missing", raised.exception.message_object["code"])
+
+    def test_thumbnail_request_diagnostics_separate_existing_only_and_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            data_root = root / "data"
+            output_root = root / "Catalog_Output"
+            data_root.mkdir()
+            output_root.mkdir()
+            config_path = output_root / "config.json"
+            config_path.write_text(
+                _instance_config_text(config_data_root=str(data_root)),
+                encoding="utf-8",
+            )
+            initialize_database(output_root / "catalog.db")
+            config = load_config(config_path)
+
+            connection = sqlite3.connect(config.db_path)
+            try:
+                scan_id = self._insert_scan(connection)
+                root_id = self._insert_folder(connection, scan_id, "", None, 0, 1, 1)
+                self._add_preview(
+                    connection,
+                    output_root,
+                    scan_id,
+                    root_id,
+                    "auto",
+                    1,
+                    "example.jpg",
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            session = start_diagnostics_session(
+                config_path=config.config_path,
+                output_root=config.output_root,
+                command="test",
+                cli_elapsed_ms=0.0,
+                config_load_ms=0.0,
+                process_elapsed_ms=0.0,
+            )
+            try:
+                for existing_only in (True, False):
+                    trace = begin_http_request(
+                        "GET",
+                        "/media/thumbnail?path=media/example.jpg"
+                        f"&variant=photo_tile&existing_only={int(existing_only)}",
+                    )
+                    resource = thumbnail_media_resource(
+                        config,
+                        "media/example.jpg",
+                        "photo_tile",
+                        existing_only=existing_only,
+                    )
+                    self.assertFalse(resource.generated)
+                    finish_http_request(trace, status_code=200, response_bytes=resource.size_bytes)
+            finally:
+                finish_diagnostics_session("test_complete")
+
+            events = [
+                json.loads(line)
+                for line in session.log_path.read_text(encoding="utf-8").splitlines()
+            ]
+            requests = [
+                event
+                for event in events
+                if event.get("event") == "backend.http.request"
+                and event.get("path") == "/media/thumbnail"
+            ]
+            self.assertEqual(2, len(requests))
+            self.assertTrue(requests[0]["thumbnail"]["existing_only"])
+            self.assertFalse(requests[1]["thumbnail"]["existing_only"])
+            for request in requests:
+                detail = request["thumbnail"]
+                self.assertEqual("photo_tile", detail["thumbnail_type"])
+                self.assertEqual("existing", detail["result"])
+                self.assertEqual(200, detail["http_status"])
+                for field in (
+                    "total_ms",
+                    "media_lookup_ms",
+                    "thumbnail_lookup_ms",
+                    "cache_file_check_ms",
+                    "other_ms",
+                ):
+                    self.assertGreaterEqual(detail[field], 0.0)
 
     @staticmethod
     def _insert_scan(connection: sqlite3.Connection) -> int:
