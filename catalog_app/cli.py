@@ -23,6 +23,8 @@ from .database import (
     validate_database_runtime,
 )
 from .folder_preview_candidates import (
+    FOLDER_PREVIEW_REQUESTED_COUNT,
+    FOLDER_PREVIEW_SELECTION_VARIANT,
     FolderPreviewCandidateError,
     apply_branch_folder_preview_plan,
     apply_folder_preview_candidates,
@@ -199,18 +201,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--variant",
-        type=int,
-        default=0,
-        help="Stable selection variant for folder preview commands; default is 0.",
-    )
-    parser.add_argument(
-        "--preview-count",
-        type=int,
-        default=6,
-        help="Candidate count for folder preview commands, range 1 to 12; default is 6.",
-    )
-    parser.add_argument(
         "--all",
         action="store_true",
         help="Usable only with folder-preview-clear-auto; deletes all auto folder preview records from the DB.",
@@ -375,12 +365,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.folder and args.command not in folder_preview_folder_commands:
             raise ConfigError("The --folder parameter can be used only with folder preview commands.")
-
-        if args.command not in folder_preview_plan_commands and args.variant != 0:
-            raise ConfigError("The --variant parameter can be used only with folder preview planning commands.")
-
-        if args.command not in folder_preview_plan_commands and args.preview_count != 6:
-            raise ConfigError("The --preview-count parameter can be used only with folder preview planning commands.")
 
         if args.all and args.command != "folder-preview-clear-auto":
             raise ConfigError("The --all parameter can be used only with folder-preview-clear-auto.")
@@ -605,8 +589,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = folder_preview_candidate_report(
                 config,
                 folder_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             for line in folder_preview_candidate_report_lines(report):
                 print(line)
@@ -617,8 +601,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = apply_folder_preview_candidates(
                 config,
                 folder_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             for line in folder_preview_apply_result_lines(result):
                 print(line)
@@ -631,8 +615,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 plan = build_branch_folder_preview_plan(
                     config,
                     branch_rel_path=args.folder,
-                    variant=args.variant,
-                    requested_count=args.preview_count,
+                    variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                    requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                 )
                 for line in folder_preview_branch_plan_lines(plan):
                     print(line)
@@ -641,8 +625,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = apply_branch_folder_preview_plan(
                 config,
                 branch_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             for line in folder_preview_branch_apply_result_lines(result):
                 print(line)
@@ -655,8 +639,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 plan = build_branch_folder_preview_plan(
                     config,
                     branch_rel_path=args.folder,
-                    variant=args.variant,
-                    requested_count=args.preview_count,
+                    variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                    requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                     recursive=args.recursive,
                 )
                 for line in folder_preview_branch_plan_lines(plan):
@@ -668,8 +652,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = build_branch_folder_previews_with_thumbnails(
                 config,
                 branch_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                 recursive=args.recursive,
                 progress=lambda line: print(line, flush=True),
             )
@@ -682,8 +666,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = folder_preview_parent_candidate_report(
                 config,
                 folder_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             for line in folder_preview_parent_candidate_report_lines(report):
                 print(line)
@@ -694,8 +678,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = apply_folder_preview_parent_candidates(
                 config,
                 folder_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             for line in folder_preview_parent_apply_result_lines(result):
                 print(line)
@@ -708,8 +692,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 plan = build_parent_branch_folder_preview_plan(
                     config,
                     branch_rel_path=args.folder,
-                    variant=args.variant,
-                    requested_count=args.preview_count,
+                    variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                    requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                     recursive=args.recursive,
                 )
                 for line in folder_preview_parent_branch_plan_lines(plan):
@@ -719,8 +703,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = apply_parent_branch_folder_preview_plan(
                 config,
                 branch_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                 recursive=args.recursive,
                 progress=lambda line: print(line, flush=True),
             )
@@ -735,8 +719,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 plan = build_folder_preview_tree_plan(
                     config,
                     branch_rel_path=args.folder,
-                    variant=args.variant,
-                    requested_count=args.preview_count,
+                    variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                    requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                 )
                 for line in folder_preview_tree_plan_lines(plan):
                     print(line)
@@ -745,8 +729,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = build_folder_preview_tree(
                 config,
                 branch_rel_path=args.folder,
-                variant=args.variant,
-                requested_count=args.preview_count,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
                 progress=lambda line: print(line, flush=True),
             )
             for line in folder_preview_tree_build_result_lines(result, include_folder_details=False):

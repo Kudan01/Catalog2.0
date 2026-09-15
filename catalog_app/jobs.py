@@ -22,6 +22,8 @@ from .scan_plan import ScanAction, build_scan_plan
 from .scan_store import ScanStageResult, discard_staged_scan_by_id, read_scan_status, stage_scan_plan
 from .scanner import ensure_source_root_available, validate_scan_scope
 from .folder_preview_candidates import (
+    FOLDER_PREVIEW_REQUESTED_COUNT,
+    FOLDER_PREVIEW_SELECTION_VARIANT,
     FolderPreviewTreeBuildResult,
     build_folder_preview_tree,
     maintain_folder_previews_for_scopes,
@@ -919,6 +921,8 @@ class JobManager:
             folder_result = build_folder_preview_tree(
                 config,
                 branch_rel_path=branch_rel_path,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             payload = _prepare_previews_result_dict(
                 branch_rel_path=branch_rel_path,
@@ -937,6 +941,8 @@ class JobManager:
             result = build_folder_preview_tree(
                 config,
                 branch_rel_path=branch_rel_path,
+                variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+                requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
             )
             payload = _folder_preview_tree_build_result_dict(result)
             payload["duration_seconds"] = time.monotonic() - started
@@ -1099,6 +1105,8 @@ def _run_catalog_update_preview_maintenance(
         config,
         auto_folder_rels=targets["folder_preview_auto_rels"],
         parent_folder_rels=targets["folder_preview_parent_rels"],
+        variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+        requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
     )
 
     return {

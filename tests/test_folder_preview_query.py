@@ -16,6 +16,7 @@ from catalog_app.api import (
     folder_preview_cache_resource,
     thumbnail_media_resource,
 )
+from catalog_app.folder_preview_candidates import effective_folder_preview_rows
 from catalog_app.config import load_config
 from catalog_app.database import initialize_database
 from catalog_app.diagnostics import (
@@ -80,7 +81,10 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 connection.set_trace_callback(statements.append)
                 with patch.object(Path, "exists", wraps=Path.exists) as exists_mock, patch.object(
                     Path, "is_file", wraps=Path.is_file
-                ) as is_file_mock:
+                ) as is_file_mock, patch(
+                    "catalog_app.api.effective_folder_preview_rows",
+                    wraps=effective_folder_preview_rows,
+                ) as effective_rows:
                     result = _folder_preview_items_by_folder(
                         SimpleNamespace(output_root=output_root),
                         connection,
@@ -88,6 +92,10 @@ class FolderPreviewQueryTests(unittest.TestCase):
                     )
                 self.assertEqual(0, exists_mock.call_count)
                 self.assertEqual(0, is_file_mock.call_count)
+                self.assertGreater(effective_rows.call_count, 0)
+                for call in effective_rows.call_args_list:
+                    self.assertEqual(6, call.kwargs["requested_count"])
+                    self.assertEqual(0, call.kwargs["variant"])
             finally:
                 connection.close()
 

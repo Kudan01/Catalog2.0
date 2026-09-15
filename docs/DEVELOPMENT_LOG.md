@@ -273,3 +273,32 @@ This technical log records completed and approved development steps: what change
 - The automated test suite passed.
 - Real validation measured `/api/folders` at approximately 36–66 ms and cards rendered at approximately 54–81 ms on the validated child-folder pages.
 - During rapid cold scrolling, previews can still wait in the browser request queue for several seconds; the resulting UX was product-accepted as sufficient for this phase.
+
+## 2026-09-15 — Folder-preview production contract
+
+### Changes
+
+- Unified the production folder-preview contract on `requested_count=6` and `variant=0`.
+- Removed the `--preview-count` and `--variant` CLI options.
+- Browser, jobs/server workflows, and preview builds now use the same fixed contract.
+- The existing `auto` plus `auto_parent` model, square-root weighting, hierarchical sampling, and final maximum of six previews remain unchanged.
+- The database schema and thumbnail/cache data are unchanged, so existing previews do not require a rebuild. Reroll was not implemented.
+
+### Reason
+
+- Prevent production workflows from creating folder-preview states with different count or variant settings.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/cli.py`
+- `catalog_app/folder_preview_candidates.py`
+- `catalog_app/jobs.py`
+- `catalog_app/server.py`
+- `tests/test_folder_preview_contract.py`
+- `tests/test_folder_preview_query.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The automated test suite passed.

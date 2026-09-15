@@ -1007,8 +1007,6 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                     "folder",
                     default=_single_query_value(query, "branch", default=""),
                 ),
-                variant=_optional_int_query_value(query, "variant") or 0,
-                requested_count=_optional_int_query_value(query, "preview_count") or 6,
             ), HTTPStatus.OK
 
         if path == "/api/folder/missing-delete-plan":

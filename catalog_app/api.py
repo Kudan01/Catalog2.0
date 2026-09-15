@@ -22,6 +22,8 @@ from .diagnostics import (
     diagnostic_set_request_detail,
 )
 from .folder_preview_candidates import (
+    FOLDER_PREVIEW_REQUESTED_COUNT,
+    FOLDER_PREVIEW_SELECTION_VARIANT,
     build_folder_preview_tree_plan,
     effective_folder_preview_rows,
     folder_preview_visual_media_count_maps,
@@ -2445,16 +2447,13 @@ def _folder_name_from_rel_path(rel_path: str) -> str:
 def folder_preview_build_tree_plan_page(
     config: Config,
     raw_folder: str,
-    *,
-    variant: int = 0,
-    requested_count: int = 6,
 ) -> dict[str, Any]:
     """Return a read-only UI summary of the unified folder preview tree plan."""
     plan = build_folder_preview_tree_plan(
         config,
         branch_rel_path=raw_folder,
-        variant=variant,
-        requested_count=requested_count,
+        variant=FOLDER_PREVIEW_SELECTION_VARIANT,
+        requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
     )
     return {
         "ok": True,
@@ -3572,8 +3571,8 @@ def _folder_preview_items_by_folder(
         selected = effective_folder_preview_rows(
             auto_rows,
             parent_rows,
-            requested_count=6,
-            variant=0,
+            requested_count=FOLDER_PREVIEW_REQUESTED_COUNT,
+            variant=FOLDER_PREVIEW_SELECTION_VARIANT,
             direct_visual_media_count=direct_count,
             descendant_visual_media_count=max(0, recursive_count - direct_count),
         )

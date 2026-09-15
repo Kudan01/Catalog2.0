@@ -23,6 +23,10 @@ from .thumbnail_cache import (
 )
 
 
+FOLDER_PREVIEW_REQUESTED_COUNT = 6
+FOLDER_PREVIEW_SELECTION_VARIANT = 0
+
+
 class FolderPreviewCandidateError(RuntimeError):
     """Raised when folder preview candidate diagnostics cannot be built."""
 
