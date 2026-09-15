@@ -241,3 +241,35 @@ This technical log records completed and approved development steps: what change
 - The automated test suite passed.
 - Runtime measurements showed that multi-second waits for existing folder previews are dominated by browser request queue/scheduling rather than downloading the small image responses.
 - Child-folder page changes request `/api/folder`, `/api/folders`, and `/api/media` again, with `/api/folders` accounting for a significant part of the measured delay.
+
+## 2026-09-15 — Step 7 folder-browse performance completion
+
+### Changes
+
+- Folder previews are now served directly from the existing thumbnail cache through `/media/folder-preview`, without repeated `media_files` or `thumbnails` database lookups.
+- Normal non-root `/api/folders` browsing no longer performs per-folder filesystem probing.
+- The folder-preview browse query was simplified and no longer uses `media_files`.
+- Root filesystem behavior remains unchanged.
+- The database schema, preview selection semantics, Prepare/Update/Reroll workflows, and the limit of six previews per card remain unchanged.
+
+### Reason
+
+- Remove redundant work from the user-visible child-folder page path while preserving the established preview and root-browse contracts.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `catalog_app/thumbnail_cache.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `tests/test_folder_filesystem_batch.py`
+- `tests/test_folder_preview_query.py`
+- `tests/test_folder_preview_readiness_diagnostics.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The automated test suite passed.
+- Real validation measured `/api/folders` at approximately 36–66 ms and cards rendered at approximately 54–81 ms on the validated child-folder pages.
+- During rapid cold scrolling, previews can still wait in the browser request queue for several seconds; the resulting UX was product-accepted as sufficient for this phase.

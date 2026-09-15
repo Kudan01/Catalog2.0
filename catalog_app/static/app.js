@@ -223,7 +223,9 @@ function finishFolderPreviewSnapshot(slot, measurement, fields, images, zeroWhen
       if (entry.initiatorType !== "img") return false;
       if (entry.startTime < measurement.operation.started || entry.startTime > finishedAt) return false;
       try {
-        return new URL(entry.name, window.location.origin).pathname === "/media/thumbnail";
+        return ["/media/thumbnail", "/media/folder-preview"].includes(
+          new URL(entry.name, window.location.origin).pathname
+        );
       } catch (_) {
         return false;
       }
@@ -7278,10 +7280,8 @@ function countLine(label, lineText) {
 }
 
 function folderPreviewUrl(preview) {
-  return apiUrl("/media/thumbnail", {
-    path: preview.rel_path,
-    variant: preview.thumbnail_type,
-    existing_only: "1",
+  return apiUrl("/media/folder-preview", {
+    path: preview.thumbnail_cache_path,
   });
 }
 

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import json
+import io
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from catalog_app.api import (
     ApiError,
     _folder_preview_items_by_folder,
     child_folders,
+    folder_preview_cache_resource,
     thumbnail_media_resource,
 )
 from catalog_app.config import load_config
@@ -23,6 +25,7 @@ from catalog_app.diagnostics import (
     start_diagnostics_session,
 )
 from catalog_app.schema import SCHEMA_STATEMENTS
+from catalog_app.server import CatalogRequestHandler
 from catalog_app.setup_instance import _instance_config_text
 
 
@@ -73,6 +76,8 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 )
                 connection.commit()
 
+                statements: list[str] = []
+                connection.set_trace_callback(statements.append)
                 with patch.object(Path, "exists", wraps=Path.exists) as exists_mock, patch.object(
                     Path, "is_file", wraps=Path.is_file
                 ) as is_file_mock:
@@ -88,20 +93,83 @@ class FolderPreviewQueryTests(unittest.TestCase):
 
         self.assertEqual({first_id, second_id}, set(result))
         self.assertEqual(
-            ["auto-1.jpg", "auto-2.jpg", "missing-cache.jpg", "parent-1.gif", "parent-2.mp4"],
-            [item["file_name"] for item in result[first_id]],
+            [
+                "auto-1.jpg.webp",
+                "auto-2.jpg.webp",
+                "wrong-kind.jpg.webp",
+                "missing-cache.jpg.webp",
+                "parent-1.gif.webp",
+                "parent-2.mp4.webp",
+            ],
+            [Path(item["thumbnail_cache_path"]).name for item in result[first_id]],
         )
         self.assertEqual(
-            ["second.jpg", "second-parent.jpg"],
-            [item["file_name"] for item in result[second_id]],
+            ["second.jpg.webp", "second-parent.jpg.webp"],
+            [Path(item["thumbnail_cache_path"]).name for item in result[second_id]],
         )
-        rejected = {
-            "unavailable.jpg",
-            "stale.jpg",
-            "wrong-kind.jpg",
-            "manual.jpg",
+        returned_paths = {
+            Path(item["thumbnail_cache_path"]).name for item in result[first_id]
         }
-        self.assertTrue(rejected.isdisjoint(item["file_name"] for item in result[first_id]))
+        self.assertNotIn("stale.jpg.webp", returned_paths)
+        self.assertNotIn("manual.jpg.webp", returned_paths)
+        self.assertTrue(
+            all(item["thumbnail_cache_path"].startswith("_cache/thumbnails/v1/") for item in result[first_id])
+        )
+        preview_queries = [
+            statement
+            for statement in statements
+            if "FROM folder_preview_items AS fpi" in statement
+        ]
+        self.assertEqual(1, len(preview_queries))
+        self.assertNotIn("media_files", preview_queries[0])
+
+    def test_folder_preview_cache_resource_serves_only_safe_existing_webp(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            data_root = root / "data"
+            output_root = root / "Catalog_Output"
+            data_root.mkdir()
+            output_root.mkdir()
+            config_path = output_root / "config.json"
+            config_path.write_text(
+                _instance_config_text(config_data_root=str(data_root)),
+                encoding="utf-8",
+            )
+            config = load_config(config_path)
+            cache_file = config.thumbnail_cache_dir / "dynamic" / "photo_tiles" / "example.webp"
+            cache_file.parent.mkdir(parents=True)
+            cache_file.write_bytes(b"webp-data")
+            cache_rel_path = cache_file.relative_to(output_root).as_posix()
+
+            with patch("catalog_app.api.open_database") as database_mock, patch(
+                "catalog_app.api.photo_tile_resource"
+            ) as generation_mock:
+                resource = folder_preview_cache_resource(config, cache_rel_path)
+
+            self.assertEqual(cache_file.resolve(), resource.filesystem_path)
+            self.assertEqual(len(b"webp-data"), resource.size_bytes)
+            database_mock.assert_not_called()
+            generation_mock.assert_not_called()
+
+            handler = Mock()
+            handler.config = config
+            handler.wfile = io.BytesIO()
+            CatalogRequestHandler._send_folder_preview_media(handler, cache_rel_path)
+            self.assertEqual(b"webp-data", handler.wfile.getvalue())
+            handler.send_response.assert_called_once_with(200)
+            handler.send_header.assert_any_call("Content-Type", "image/webp")
+
+            with self.assertRaises(ApiError) as missing:
+                folder_preview_cache_resource(
+                    config,
+                    (config.thumbnail_cache_dir / "missing.webp").relative_to(output_root).as_posix(),
+                )
+            self.assertEqual(404, missing.exception.status_code)
+
+            for unsafe_path in ("../outside.webp", "_cache/outside.webp"):
+                with self.subTest(path=unsafe_path), self.assertRaises(ApiError) as unsafe:
+                    folder_preview_cache_resource(config, unsafe_path)
+                self.assertEqual(400, unsafe.exception.status_code)
 
     def test_missing_ready_cache_is_deferred_to_thumbnail_request(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -149,9 +217,10 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 raw_include_previews="1",
             )
             folder = next(item for item in response["folders"] if item["rel_path"] == "folder_a")
+            self.assertEqual(1, len(folder["folder_previews"]))
             self.assertEqual(
-                ["example.jpg"],
-                [item["file_name"] for item in folder["folder_previews"]],
+                "_cache/thumbnails/v1/dynamic/photo_tiles/example.jpg.webp",
+                folder["folder_previews"][0]["thumbnail_cache_path"],
             )
             with self.assertRaises(ApiError) as raised:
                 thumbnail_media_resource(
@@ -337,7 +406,7 @@ class FolderPreviewQueryTests(unittest.TestCase):
             "video": "video_poster",
         }[media_type]
         thumbnail_type = thumbnail_type or expected_type
-        output_rel_path = f"_cache/thumbnails/v1/dynamic/photo_tiles/{file_name}.thumb"
+        output_rel_path = f"_cache/thumbnails/v1/dynamic/photo_tiles/{file_name}.webp"
         connection.execute(
             """
             INSERT INTO thumbnails (

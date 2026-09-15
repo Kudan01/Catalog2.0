@@ -24,6 +24,7 @@ from .api import (
     favorites_page,
     favorites_page_anchor,
     folder_detail,
+    folder_preview_cache_resource,
     folder_preview_build_tree_plan_page,
     missing_folder_delete_plan_page,
     missing_folder_delete_execute_action,
@@ -273,6 +274,13 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                     variant,
                     existing_only=_query_flag_value(query, "existing_only"),
                     frame_index=_optional_int_query_value(query, "frame"),
+                )
+                return
+
+            if path == "/media/folder-preview":
+                query = parse_qs(parsed.query, keep_blank_values=True)
+                self._send_folder_preview_media(
+                    _single_query_value(query, "path", default="")
                 )
                 return
 
@@ -1440,6 +1448,20 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Catalog-Thumbnail-Variant", resource.variant_key)
         self.send_header("X-Catalog-Thumbnail-Cache-Class", resource.cache_class)
         self.send_header("X-Catalog-Thumbnail-Generated", "1" if resource.generated else "0")
+        self.end_headers()
+
+        with resource.filesystem_path.open("rb") as file_handle:
+            shutil.copyfileobj(file_handle, self.wfile, length=256 * 1024)
+
+    def _send_folder_preview_media(self, raw_cache_path: str) -> None:
+        resource = folder_preview_cache_resource(self.config, raw_cache_path)
+        safe_name = quote(resource.file_name)
+
+        self.send_response(int(HTTPStatus.OK))
+        self.send_header("Content-Type", "image/webp")
+        self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{safe_name}")
+        self.send_header("Content-Length", str(resource.size_bytes))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
 
         with resource.filesystem_path.open("rb") as file_handle:

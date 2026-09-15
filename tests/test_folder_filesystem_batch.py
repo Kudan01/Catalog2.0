@@ -59,14 +59,14 @@ class FolderFilesystemBatchTests(unittest.TestCase):
             self.assertEqual(1, len(resolved_roots))
             self.assertNotIn(None, resolved_roots)
 
-    def test_non_root_checks_only_the_database_page(self) -> None:
+    def test_non_root_listing_uses_database_page_without_filesystem_probes(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             config = self._make_catalog(Path(temp))
 
             with patch("catalog_app.api.os.scandir", wraps=ORIGINAL_SCANDIR) as scandir, patch(
                 "catalog_app.api._folder_filesystem_status",
                 wraps=_folder_filesystem_status,
-            ) as status_check:
+            ) as status_check, patch("catalog_app.api.source_root_status") as source_check:
                 response = child_folders(
                     config,
                     "parent_folder",
@@ -76,8 +76,13 @@ class FolderFilesystemBatchTests(unittest.TestCase):
                 )
 
             self.assertEqual(1, response["count"])
-            self.assertEqual(1, status_check.call_count)
-            self.assertEqual([config.data_root], [call.args[0] for call in scandir.call_args_list])
+            self.assertGreater(response["total"], response["count"])
+            self.assertEqual(1, response["page"])
+            self.assertEqual(1, response["page_size"])
+            self.assertNotIn("filesystem", response["folders"][0])
+            scandir.assert_not_called()
+            status_check.assert_not_called()
+            source_check.assert_not_called()
 
     def test_empty_non_root_page_performs_no_child_filesystem_work(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -121,7 +126,7 @@ class FolderFilesystemBatchTests(unittest.TestCase):
             self.assertEqual("ok", folders["parent_folder"]["filesystem"]["reason"])
             self.assertTrue(folders["disk_only"]["is_disk_candidate"])
 
-    def test_batch_statuses_match_with_and_without_previews_and_do_not_write(self) -> None:
+    def test_non_root_payload_matches_with_and_without_previews_and_does_not_write(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             config = self._make_catalog(Path(temp))
             database_before = config.db_path.read_bytes()
@@ -141,18 +146,17 @@ class FolderFilesystemBatchTests(unittest.TestCase):
                 raw_include_previews="1",
             )
 
-            statuses_without = self._status_by_name(without_previews)
-            statuses_with = self._status_by_name(with_previews)
-            self.assertEqual(statuses_without, statuses_with)
-            self.assertEqual("ok", statuses_without["child_ok"])
-            self.assertEqual("missing", statuses_without["child_missing"])
-            self.assertEqual("not_directory", statuses_without["child_file"])
-            self.assertEqual("ok", statuses_without["CHILD_CASE"])
-            if "child_link" in statuses_without:
-                self.assertEqual("link_or_junction", statuses_without["child_link"])
+            self.assertEqual(
+                [folder["rel_path"] for folder in without_previews["folders"]],
+                [folder["rel_path"] for folder in with_previews["folders"]],
+            )
+            self.assertEqual(without_previews["total"], with_previews["total"])
+            self.assertEqual(without_previews["pages"], with_previews["pages"])
+            self.assertTrue(all("filesystem" not in folder for folder in without_previews["folders"]))
+            self.assertTrue(all("filesystem" not in folder for folder in with_previews["folders"]))
             self.assertEqual(database_before, config.db_path.read_bytes())
 
-    def test_source_root_unavailable_is_applied_to_every_child(self) -> None:
+    def test_non_root_listing_uses_active_snapshot_when_source_root_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             config = self._make_catalog(root)
@@ -166,10 +170,8 @@ class FolderFilesystemBatchTests(unittest.TestCase):
                 raw_include_previews="0",
             )
 
-            self.assertEqual(
-                {"source_root_unavailable"},
-                set(self._status_by_name(response).values()),
-            )
+            self.assertGreater(response["count"], 0)
+            self.assertTrue(all("filesystem" not in folder for folder in response["folders"]))
 
     def test_incomplete_batch_uses_individual_fallback_without_source_recheck(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

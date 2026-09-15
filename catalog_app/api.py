@@ -46,6 +46,7 @@ from .thumbnail_cache import (
     thumbnail_cache_protected_orphan_audit,
     thumbnail_cache_protected_orphan_cleanup_plan,
     thumbnail_cache_protected_orphan_cleanup_plan_bundle,
+    thumbnail_cache_filesystem_path,
     execute_protected_thumbnail_cache_orphan_cleanup,
     video_frame_existing_resource,
     video_poster_existing_resource,
@@ -2876,11 +2877,6 @@ def child_folders(
         else:
             previews_by_folder = {}
         folders = [_folder_dict(row) for row in rows]
-        _attach_folder_filesystem_status_targeted(
-            config,
-            folders,
-            diagnostics=diagnostics,
-        )
         for row, folder in zip(rows, folders, strict=True):
             if include_previews:
                 folder["folder_previews"] = previews_by_folder.get(int(row["id"]), [])
@@ -3522,32 +3518,19 @@ def _folder_preview_items_by_folder(
         SELECT
             fpi.folder_id AS folder_id,
             fpi.position AS position,
-            mf.rel_path AS rel_path,
-            mf.file_name AS file_name,
-            mf.media_type AS media_type,
-            mf.extension AS extension,
-            t.thumbnail_type AS thumbnail_type,
-            t.variant_key AS variant_key,
             t.output_rel_path AS output_rel_path,
-            t.status AS status,
             fpi.selection_type AS selection_type
         -- CROSS JOIN keeps the small requested folder-preview set as SQLite's
         -- outer loop; starting from all ready thumbnails is prohibitively broad
         -- on large catalogs even though the final result contains few rows.
         FROM folder_preview_items AS fpi
-        CROSS JOIN media_files AS mf
         CROSS JOIN thumbnails AS t INDEXED BY idx_thumbnails_media_kind
         WHERE fpi.selection_type IN ('auto', 'auto_parent')
           AND fpi.folder_id IN ({placeholders})
-          AND mf.id = fpi.media_id
-          AND mf.is_available = 1
-          AND t.media_id = mf.id
+          AND t.media_id = fpi.media_id
           AND t.status = 'ready'
-          AND (
-                (mf.media_type = 'image' AND t.thumbnail_type = 'photo_tile' AND t.variant_key = 'default')
-             OR (mf.media_type = 'gif'   AND t.thumbnail_type = 'gif_preview' AND t.variant_key = 'default')
-             OR (mf.media_type = 'video' AND t.thumbnail_type = 'video_poster' AND t.variant_key = 'default')
-          )
+          AND t.thumbnail_type IN ('photo_tile', 'gif_preview', 'video_poster')
+          AND t.variant_key = 'default'
         ORDER BY fpi.folder_id, fpi.selection_type, fpi.position
         """,
         folder_ids,
@@ -3569,12 +3552,7 @@ def _folder_preview_items_by_folder(
 
         grouped.setdefault(folder_id, {"auto": [], "auto_parent": []})[selection_type].append({
             "position": int(row["position"]),
-            "rel_path": str(row["rel_path"]),
-            "file_name": str(row["file_name"]),
-            "media_type": str(row["media_type"]),
-            "extension": str(row["extension"]),
-            "thumbnail_type": str(row["thumbnail_type"]),
-            "variant_key": str(row["variant_key"]),
+            "thumbnail_cache_path": str(row["output_rel_path"]),
         })
     if diagnostics is not None:
         diagnostics.preview_composition_ms += (time.perf_counter() - grouping_started) * 1000.0
@@ -4511,6 +4489,43 @@ def original_media_resource(config: Config, raw_path: str) -> OriginalMediaResou
         modified_time=float(stat_result.st_mtime),
     )
 
+
+
+@dataclass(frozen=True)
+class FolderPreviewCacheResource:
+    filesystem_path: Path
+    file_name: str
+    size_bytes: int
+
+
+def folder_preview_cache_resource(
+    config: Config,
+    raw_cache_path: str,
+) -> FolderPreviewCacheResource:
+    """Return one existing WebP from the thumbnail cache without database access."""
+    try:
+        filesystem_path = thumbnail_cache_filesystem_path(config, raw_cache_path)
+    except ThumbnailCacheError as exc:
+        raise ApiError.from_message(
+            400,
+            "request.catalog_path.outside_root",
+            payload={"technical_detail": str(exc)},
+        ) from exc
+
+    if filesystem_path.suffix.lower() != ".webp":
+        raise ApiError.from_message(400, "request.catalog_path.outside_root")
+    if not filesystem_path.exists() or not filesystem_path.is_file():
+        raise ApiError.from_message(
+            404,
+            "thumbnail.cache.missing",
+            params={"path": raw_cache_path, "variant": "folder_preview"},
+        )
+
+    return FolderPreviewCacheResource(
+        filesystem_path=filesystem_path,
+        file_name=filesystem_path.name,
+        size_bytes=int(filesystem_path.stat().st_size),
+    )
 
 
 def thumbnail_media_resource(

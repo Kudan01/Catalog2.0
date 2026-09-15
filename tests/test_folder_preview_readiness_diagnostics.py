@@ -39,7 +39,16 @@ class FolderPreviewReadinessDiagnosticContractTests(unittest.TestCase):
         self.assertIn("entry.requestStart - entry.fetchStart", snapshot)
         self.assertIn("entry.responseStart - entry.requestStart", snapshot)
         self.assertIn("entry.responseEnd - entry.responseStart", snapshot)
-        self.assertIn('pathname === "/media/thumbnail"', snapshot)
+        self.assertIn('"/media/thumbnail", "/media/folder-preview"', snapshot)
+
+    def test_folder_cards_use_direct_cache_endpoint_only(self) -> None:
+        folder_preview_url = self._function_body("function folderPreviewUrl(preview)")
+
+        self.assertIn('apiUrl("/media/folder-preview"', folder_preview_url)
+        self.assertIn("preview.thumbnail_cache_path", folder_preview_url)
+        self.assertNotIn('apiUrl("/media/thumbnail"', folder_preview_url)
+        self.assertNotIn("existing_only", folder_preview_url)
+        self.assertIn('apiUrl("/media/thumbnail"', self.source)
 
     def test_child_page_measurement_tracks_stages_and_existing_api_calls(self) -> None:
         page_change = self._function_body("async function goToChildPage(page)")

@@ -4145,6 +4145,11 @@ def _thumbnail_filesystem_path(config: Config, output_rel_path: str) -> Path:
     return path
 
 
+def thumbnail_cache_filesystem_path(config: Config, output_rel_path: str) -> Path:
+    """Resolve a cache-relative thumbnail path using the canonical safety checks."""
+    return _thumbnail_filesystem_path(config, output_rel_path)
+
+
 def _output_relative_path(config: Config, path: Path) -> str:
     try:
         return path.resolve(strict=False).relative_to(
