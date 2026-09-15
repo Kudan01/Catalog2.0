@@ -9,7 +9,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Iterable, Iterator, Literal
 
 from .config import Config
 from .database import open_database
@@ -25,7 +25,6 @@ ThumbnailKind = Literal[
     "gif_preview",
     "video_poster",
     "video_frame",
-    "folder_preview",
 ]
 
 THUMBNAIL_CACHE_VERSION = "v1"
@@ -62,7 +61,6 @@ PROTECTED_THUMBNAIL_KINDS: frozenset[str] = frozenset({
     "gif_preview",
     "video_poster",
     "video_frame",
-    "folder_preview",
 })
 
 
@@ -128,10 +126,6 @@ def _cache_cleanup_status_messages() -> list[dict[str, object]]:
             "cache.cleanup.source_media.unchanged",
             severity="info",
         ),
-        build_backend_message(
-            "cache.cleanup.folder_preview_referenced.preserved",
-            severity="info",
-        ),
     ]
 
 
@@ -141,7 +135,6 @@ def _cache_cleanup_plan_primary_message(plan: dict[str, object]) -> dict[str, ob
         "bytes_over_dynamic_limit": int(plan.get("bytes_over_dynamic_limit") or 0),
         "candidate_entries": int(plan.get("candidate_entries") or 0),
         "candidate_bytes": int(plan.get("candidate_bytes") or 0),
-        "skipped_referenced_entries": int(plan.get("skipped_referenced_entries") or 0),
     }
 
     if plan.get("needed") is True:
@@ -161,16 +154,6 @@ def _cache_cleanup_plan_primary_message(plan: dict[str, object]) -> dict[str, ob
 def _enrich_cache_cleanup_plan_messages(plan: dict[str, object]) -> dict[str, object]:
     primary = _cache_cleanup_plan_primary_message(plan)
     warnings: list[dict[str, object]] = []
-
-    if plan.get("blocked_by_referenced_dynamic") is True:
-        warnings.append(build_backend_message(
-            "cache.cleanup.plan.blocked_by_referenced_dynamic",
-            severity="warning",
-            params={
-                "skipped_referenced_entries": int(plan.get("skipped_referenced_entries") or 0),
-                "skipped_referenced_bytes": int(plan.get("skipped_referenced_bytes") or 0),
-            },
-        ))
 
     if plan.get("over_dynamic_limit_after_plan") is True:
         warnings.append(build_backend_message(
@@ -314,8 +297,6 @@ class DynamicCacheCleanupExecuteResult:
     deleted_entries: int
     deleted_files: int
     missing_files: int
-    skipped_referenced_entries: int
-    skipped_referenced_bytes: int
     removed_bytes: int
     error_count: int
     duration_seconds: float
@@ -327,7 +308,7 @@ class DynamicCacheCleanupExecuteResult:
             "dynamic_cache_cleanup_execute": True,
             "version": 1,
             "cache_class": "dynamic",
-            "protection_model": "protected_while_folder_preview_referenced",
+            "protection_model": "cache_class",
             "limit_bytes": self.limit_bytes,
             "dynamic_size_before_bytes": self.dynamic_size_before_bytes,
             "dynamic_size_after_bytes": self.dynamic_size_after_bytes,
@@ -339,23 +320,19 @@ class DynamicCacheCleanupExecuteResult:
             "deleted_entries": self.deleted_entries,
             "deleted_files": self.deleted_files,
             "missing_files": self.missing_files,
-            "skipped_referenced_entries": self.skipped_referenced_entries,
-            "skipped_referenced_bytes": self.skipped_referenced_bytes,
             "removed_bytes": self.removed_bytes,
             "error_count": self.error_count,
             "duration_seconds": self.duration_seconds,
             "over_dynamic_limit_before": self.dynamic_size_before_bytes > self.limit_bytes,
             "over_dynamic_limit_after": self.dynamic_size_after_bytes > self.limit_bytes,
             "protected_included": False,
-            "folder_preview_referenced_included": False,
             "sample_deleted": list(self.sample_deleted),
             "sample_errors": list(self.sample_errors),
             "writes": {
                 "source_media": False,
                 "protected_cache": False,
-                "folder_preview_referenced_dynamic": False,
                 "dynamic_cache_files": True,
-                "catalog_db": "delete unreferenced dynamic thumbnail rows only",
+                "catalog_db": "delete dynamic thumbnail rows only",
                 "settings_json": False,
                 "config_json": False,
             },
@@ -377,6 +354,11 @@ def thumbnail_cache_layout(config: Config) -> ThumbnailCacheLayout:
                 path=config.photo_tile_cache_dir,
             ),
             ThumbnailCacheDirectory(
+                kind="photo_tile",
+                cache_class="protected",
+                path=config.protected_photo_tile_cache_dir,
+            ),
+            ThumbnailCacheDirectory(
                 kind="gif_preview",
                 cache_class="protected",
                 path=config.gif_preview_cache_dir,
@@ -390,11 +372,6 @@ def thumbnail_cache_layout(config: Config) -> ThumbnailCacheLayout:
                 kind="video_frame",
                 cache_class="protected",
                 path=config.video_frame_cache_dir,
-            ),
-            ThumbnailCacheDirectory(
-                kind="folder_preview",
-                cache_class="protected",
-                path=config.folder_preview_cache_dir,
             ),
         ),
     )
@@ -445,6 +422,120 @@ def thumbnail_cache_layout_dict(config: Config) -> dict[str, object]:
             for item in layout.directories
         ],
     }
+
+
+def _photo_tile_lock_key(media_id: int) -> tuple[str, str]:
+    # Placement and generation must serialize on thumbnail identity, because
+    # the destination path changes when preview references change.
+    return ("photo_tile", f"{int(media_id)}:{PHOTO_TILE_VARIANT_KEY}")
+
+
+def _photo_tile_cache_class(connection, media_id: int) -> ThumbnailCacheClass:
+    referenced = connection.execute(
+        "SELECT 1 FROM folder_preview_items WHERE media_id = ? LIMIT 1",
+        (int(media_id),),
+    ).fetchone()
+    return "protected" if referenced is not None else "dynamic"
+
+
+def _photo_tile_class_root(config: Config, cache_class: ThumbnailCacheClass) -> Path:
+    return (
+        config.protected_photo_tile_cache_dir
+        if cache_class == "protected"
+        else config.photo_tile_cache_dir
+    )
+
+
+def _photo_tile_path_for_class(
+    config: Config,
+    current_path: Path,
+    cache_class: ThumbnailCacheClass,
+) -> Path:
+    for root in (config.photo_tile_cache_dir, config.protected_photo_tile_cache_dir):
+        try:
+            suffix = current_path.relative_to(root.resolve(strict=False))
+            return _photo_tile_class_root(config, cache_class) / suffix
+        except ValueError:
+            continue
+
+    name = current_path.name
+    return _photo_tile_class_root(config, cache_class) / name[:2] / name[2:4] / name
+
+
+def _reconcile_photo_tile_locked(config: Config, media_id: int) -> bool:
+    """Move one photo tile to the cache class implied by preview references."""
+    with open_database(config.db_path, read_only=False) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT id, cache_class, output_rel_path
+            FROM thumbnails
+            WHERE media_id = ?
+              AND thumbnail_type = 'photo_tile'
+              AND variant_key = ?
+            """,
+            (int(media_id), PHOTO_TILE_VARIANT_KEY),
+        ).fetchone()
+        if row is None:
+            connection.commit()
+            return False
+
+        desired_class = _photo_tile_cache_class(connection, media_id)
+        try:
+            current_path = _thumbnail_filesystem_path(config, str(row["output_rel_path"]))
+        except ThumbnailCacheError:
+            connection.rollback()
+            return False
+        target_path = _photo_tile_path_for_class(config, current_path, desired_class)
+        target_rel_path = _output_relative_path(config, target_path)
+
+        changed = str(row["cache_class"]) != desired_class or current_path != target_path
+        if current_path != target_path:
+            source_exists = current_path.exists() and current_path.is_file()
+            target_exists = target_path.exists() and target_path.is_file()
+            if source_exists:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                if target_exists:
+                    # The DB-referenced file is canonical after an interrupted
+                    # or competing move; discard the stale destination copy.
+                    target_path.unlink()
+                current_path.replace(target_path)
+                changed = True
+            elif target_exists:
+                changed = True
+
+        other_class: ThumbnailCacheClass = "dynamic" if desired_class == "protected" else "protected"
+        duplicate_path = _photo_tile_path_for_class(config, target_path, other_class)
+        if duplicate_path != target_path and duplicate_path.exists() and duplicate_path.is_file():
+            duplicate_path.unlink()
+            changed = True
+
+        if changed:
+            connection.execute(
+                """
+                UPDATE thumbnails
+                SET cache_class = ?, output_rel_path = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (desired_class, target_rel_path, time.time(), int(row["id"])),
+            )
+        connection.commit()
+        return changed
+
+
+def reconcile_photo_tile_cache_lifecycle(
+    config: Config,
+    *,
+    media_ids: Iterable[int],
+) -> int:
+    """Idempotently reconcile only explicitly affected photo-tile identities."""
+    ids = sorted({int(media_id) for media_id in media_ids})
+
+    changed = 0
+    for media_id in ids:
+        with _thumbnail_generation_lock(_photo_tile_lock_key(media_id)):
+            changed += int(_reconcile_photo_tile_locked(config, media_id))
+    return changed
 
 
 
@@ -526,24 +617,8 @@ def photo_tile_resource(
     source_modified_time: float,
 ) -> ThumbnailResource:
     """Return a ready photo_tile thumbnail, creating it on demand when needed."""
-    existing = _ready_existing_photo_tile(
-        config,
-        media_id=media_id,
-        source_size_bytes=source_size_bytes,
-        source_modified_time=source_modified_time,
-    )
-    if existing is not None:
-        return existing
-
-    destination = _photo_tile_destination(
-        config,
-        rel_path=rel_path,
-        source_size_bytes=source_size_bytes,
-        source_modified_time=source_modified_time,
-    )
-    lock_key = ("photo_tile", str(destination))
-
-    with _thumbnail_generation_lock(lock_key):
+    with _thumbnail_generation_lock(_photo_tile_lock_key(media_id)):
+        _reconcile_photo_tile_locked(config, media_id)
         # A previous near-simultaneous request may have created the tile while
         # this request was waiting. Check DB/cache again before opening the
         # original image and doing expensive Pillow work.
@@ -556,6 +631,15 @@ def photo_tile_resource(
         if existing is not None:
             return existing
 
+        with open_database(config.db_path, read_only=True, validate=False) as connection:
+            cache_class = _photo_tile_cache_class(connection, media_id)
+        destination = _photo_tile_destination(
+            config,
+            rel_path=rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+            cache_class=cache_class,
+        )
         return _generate_photo_tile(
             config,
             media_id=media_id,
@@ -564,6 +648,7 @@ def photo_tile_resource(
             source_size_bytes=source_size_bytes,
             source_modified_time=source_modified_time,
             destination=destination,
+            cache_class=cache_class,
         )
 
 
@@ -1011,13 +1096,7 @@ def generate_video_frames_for_scope(
 
 
 def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: int = 12) -> dict[str, object]:
-    """Return a read-only dynamic cache cleanup plan without deleting files or DB rows.
-
-    Automatic cleanup candidates are only unreferenced dynamic cache entries.
-    Dynamic photo_tile entries currently referenced by folder_preview_items are
-    protected while referenced, because deleting them would visually degrade
-    folder cards. Protected cache is reported, but never becomes a candidate.
-    """
+    """Return a read-only cleanup plan for cache_class=dynamic rows only."""
     totals = _cache_size_totals(connection)
     limit = max(0, int(limit_bytes))
     dynamic_size_before = int(totals["dynamic"])
@@ -1029,7 +1108,7 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
         "version": 2,
         "mode": "read_only_plan",
         "cache_class": "dynamic",
-        "protection_model": "protected_while_folder_preview_referenced",
+        "protection_model": "cache_class",
         "needed": bytes_over_dynamic_limit > 0,
         "limit_bytes": limit,
         "dynamic_size_before_bytes": dynamic_size_before,
@@ -1038,83 +1117,20 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
         "bytes_over_dynamic_limit": bytes_over_dynamic_limit,
         "candidate_entries": 0,
         "candidate_bytes": 0,
-        "skipped_referenced_entries": 0,
-        "skipped_referenced_bytes": 0,
         "dynamic_size_after_plan_bytes": dynamic_size_before,
         "protected_size_after_plan_bytes": protected_size_before,
         "total_size_after_plan_bytes": total_size_before,
         "over_dynamic_limit_after_plan": bytes_over_dynamic_limit > 0,
-        "blocked_by_referenced_dynamic": False,
         "protected_included": False,
-        "folder_preview_referenced_included": False,
-        "source": "thumbnails table evidence + folder_preview_items references",
+        "source": "thumbnails table cache_class evidence",
         "sample_limit": int(sample_limit),
         "sample_candidates": [],
-        "sample_skipped_referenced": [],
         "by_status": {},
         "by_type": {},
-        "skipped_referenced_by_status": {},
     }
 
     if bytes_over_dynamic_limit <= 0:
         return _enrich_cache_cleanup_plan_messages(plan)
-
-    referenced_summary = _sum_row(
-        connection,
-        """
-        SELECT COUNT(*) AS entries,
-               COALESCE(SUM(file_size_bytes), 0) AS size_bytes
-        FROM thumbnails
-        WHERE cache_class = 'dynamic'
-          AND EXISTS (
-              SELECT 1
-              FROM folder_preview_items AS fpi
-              WHERE fpi.media_id = thumbnails.media_id
-          )
-        """,
-    )
-    skipped_referenced_entries_total = int(referenced_summary["entries"])
-    skipped_referenced_bytes_total = int(referenced_summary["size_bytes"])
-
-    skipped_samples = [
-        {
-            "output_rel_path": str(row["output_rel_path"]),
-            "thumbnail_type": str(row["thumbnail_type"]),
-            "status": str(row["status"]),
-            "size_bytes": int(row["file_size_bytes"]),
-            "folder_preview_referenced": True,
-        }
-        for row in connection.execute(
-            """
-            SELECT
-                thumbnail_type,
-                output_rel_path,
-                file_size_bytes,
-                status,
-                created_at,
-                updated_at,
-                last_used_at
-            FROM thumbnails
-            WHERE cache_class = 'dynamic'
-              AND EXISTS (
-                  SELECT 1
-                  FROM folder_preview_items AS fpi
-                  WHERE fpi.media_id = thumbnails.media_id
-              )
-            ORDER BY
-                CASE status
-                    WHEN 'missing' THEN 0
-                    WHEN 'stale' THEN 1
-                    WHEN 'error' THEN 2
-                    ELSE 3
-                END,
-                COALESCE(last_used_at, updated_at, created_at, 0),
-                id
-            LIMIT ?
-            """,
-            (int(sample_limit),),
-        ).fetchall()
-    ]
 
     rows = connection.execute(
         """
@@ -1129,11 +1145,6 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
             last_used_at
         FROM thumbnails
         WHERE cache_class = 'dynamic'
-          AND NOT EXISTS (
-              SELECT 1
-              FROM folder_preview_items AS fpi
-              WHERE fpi.media_id = thumbnails.media_id
-          )
         ORDER BY
             CASE status
                 WHEN 'missing' THEN 0
@@ -1152,27 +1163,6 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
     samples: list[dict[str, object]] = []
     by_status: dict[str, dict[str, int]] = {}
     by_type: dict[str, dict[str, int]] = {}
-    skipped_by_status: dict[str, dict[str, int]] = {}
-
-    for row in connection.execute(
-        """
-        SELECT status,
-               COUNT(*) AS entries,
-               COALESCE(SUM(file_size_bytes), 0) AS size_bytes
-        FROM thumbnails
-        WHERE cache_class = 'dynamic'
-          AND EXISTS (
-              SELECT 1
-              FROM folder_preview_items AS fpi
-              WHERE fpi.media_id = thumbnails.media_id
-          )
-        GROUP BY status
-        """
-    ):
-        skipped_by_status[str(row["status"])] = {
-            "entries": int(row["entries"]),
-            "size_bytes": int(row["size_bytes"]),
-        }
 
     for row in rows:
         if current_dynamic <= limit:
@@ -1200,7 +1190,6 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
                 "thumbnail_type": thumbnail_type,
                 "status": status,
                 "size_bytes": size_bytes,
-                "folder_preview_referenced": False,
             })
 
     dynamic_after = max(0, dynamic_size_before - candidate_bytes)
@@ -1209,30 +1198,18 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
     plan.update({
         "candidate_entries": candidate_entries,
         "candidate_bytes": candidate_bytes,
-        "skipped_referenced_entries": skipped_referenced_entries_total,
-        "skipped_referenced_bytes": skipped_referenced_bytes_total,
         "dynamic_size_after_plan_bytes": dynamic_after,
         "protected_size_after_plan_bytes": protected_size_before,
         "total_size_after_plan_bytes": total_after,
         "over_dynamic_limit_after_plan": dynamic_after > limit,
-        "blocked_by_referenced_dynamic": dynamic_after > limit and skipped_referenced_entries_total > 0,
         "sample_candidates": samples,
-        "sample_skipped_referenced": skipped_samples,
         "by_status": by_status,
         "by_type": by_type,
-        "skipped_referenced_by_status": skipped_by_status,
     })
     return _enrich_cache_cleanup_plan_messages(plan)
 
 def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int = 12) -> DynamicCacheCleanupExecuteResult:
-    """Delete only unreferenced dynamic thumbnail cache candidates.
-
-    This is the destructive counterpart of thumbnail_cache_cleanup_plan(). It
-    intentionally rebuilds the same plan immediately before execution and then
-    deletes only dynamic rows that are not currently referenced by
-    folder_preview_items. Protected cache and folder-preview-referenced dynamic
-    cache are never candidates. Source media are never touched.
-    """
+    """Delete only cache_class=dynamic thumbnail cache candidates."""
     started = time.monotonic()
     limit_bytes = int(config.thumbnail_cache_limit_gb * 1024 * 1024 * 1024)
     sample_cap = max(0, int(sample_limit))
@@ -1247,9 +1224,6 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
         dynamic_before = int(totals_before["dynamic"])
         protected_before = int(totals_before["protected"])
         total_before = int(totals_before["total"])
-        skipped_referenced_entries = int(plan.get("skipped_referenced_entries") or 0)
-        skipped_referenced_bytes = int(plan.get("skipped_referenced_bytes") or 0)
-
         if int(plan.get("candidate_entries") or 0) <= 0:
             totals_after = _cache_size_totals(connection)
             return DynamicCacheCleanupExecuteResult(
@@ -1264,8 +1238,6 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
                 deleted_entries=0,
                 deleted_files=0,
                 missing_files=0,
-                skipped_referenced_entries=skipped_referenced_entries,
-                skipped_referenced_bytes=skipped_referenced_bytes,
                 removed_bytes=0,
                 error_count=0,
                 duration_seconds=time.monotonic() - started,
@@ -1286,11 +1258,6 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
                 last_used_at
             FROM thumbnails
             WHERE cache_class = 'dynamic'
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM folder_preview_items AS fpi
-                  WHERE fpi.media_id = thumbnails.media_id
-              )
             ORDER BY
                 CASE status
                     WHEN 'missing' THEN 0
@@ -1381,8 +1348,6 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
         deleted_entries=deleted_entries,
         deleted_files=deleted_files,
         missing_files=missing_files,
-        skipped_referenced_entries=skipped_referenced_entries,
-        skipped_referenced_bytes=skipped_referenced_bytes,
         removed_bytes=removed_bytes,
         error_count=error_count,
         duration_seconds=time.monotonic() - started,
@@ -2554,6 +2519,7 @@ def _ready_existing_photo_tile(
                 file_size_bytes,
                 source_size_bytes,
                 source_modified_time,
+                cache_class,
                 status
             FROM thumbnails
             WHERE media_id = ?
@@ -2591,7 +2557,7 @@ def _ready_existing_photo_tile(
             return ThumbnailResource(
                 rel_path=str(row["output_rel_path"]),
                 thumbnail_type="photo_tile",
-                cache_class="dynamic",
+                cache_class=str(row["cache_class"]),
                 variant_key=PHOTO_TILE_VARIANT_KEY,
                 filesystem_path=path,
                 file_name=path.name,
@@ -2629,6 +2595,7 @@ def _generate_photo_tile(
     source_size_bytes: int,
     source_modified_time: float,
     destination: Path | None = None,
+    cache_class: ThumbnailCacheClass | None = None,
 ) -> ThumbnailResource:
     try:
         from PIL import Image, ImageOps
@@ -2637,16 +2604,32 @@ def _generate_photo_tile(
             "Pillow is not installed. Install dependencies with: python -m pip install -r requirements.txt"
         ) from exc
 
+    if cache_class is None:
+        with open_database(config.db_path, read_only=True, validate=False) as connection:
+            cache_class = _photo_tile_cache_class(connection, media_id)
     if destination is None:
         destination = _photo_tile_destination(
             config,
             rel_path=rel_path,
             source_size_bytes=source_size_bytes,
             source_modified_time=source_modified_time,
+            cache_class=cache_class,
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
     output_rel_path = _output_relative_path(config, destination)
     temp_path = _unique_thumbnail_temp_path(destination)
+    previous_path: Path | None = None
+    with open_database(config.db_path, read_only=True, validate=False) as connection:
+        previous_row = connection.execute(
+            """
+            SELECT output_rel_path
+            FROM thumbnails
+            WHERE media_id = ? AND thumbnail_type = 'photo_tile' AND variant_key = ?
+            """,
+            (int(media_id), PHOTO_TILE_VARIANT_KEY),
+        ).fetchone()
+    if previous_row is not None:
+        previous_path = _thumbnail_filesystem_path(config, str(previous_row["output_rel_path"]))
 
     try:
         with Image.open(source_path) as image:
@@ -2668,6 +2651,8 @@ def _generate_photo_tile(
             )
 
         temp_path.replace(destination)
+        if previous_path is not None and previous_path != destination and previous_path.is_file():
+            previous_path.unlink()
         file_size = destination.stat().st_size
         now = time.time()
 
@@ -2692,7 +2677,7 @@ def _generate_photo_tile(
                     last_used_at,
                     error_message
                 )
-                VALUES (?, 'photo_tile', 'dynamic', ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, NULL)
+                VALUES (?, 'photo_tile', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, NULL)
                 ON CONFLICT(media_id, thumbnail_type, variant_key) DO UPDATE SET
                     cache_class = excluded.cache_class,
                     output_rel_path = excluded.output_rel_path,
@@ -2709,6 +2694,7 @@ def _generate_photo_tile(
                 """,
                 (
                     media_id,
+                    cache_class,
                     PHOTO_TILE_VARIANT_KEY,
                     output_rel_path,
                     int(width),
@@ -2724,15 +2710,16 @@ def _generate_photo_tile(
             )
             connection.commit()
 
-        cleanup_dynamic_thumbnail_cache(
-            config,
-            preserve_output_rel_path=output_rel_path,
-        )
+        if cache_class == "dynamic":
+            cleanup_dynamic_thumbnail_cache(
+                config,
+                preserve_output_rel_path=output_rel_path,
+            )
 
         return ThumbnailResource(
             rel_path=output_rel_path,
             thumbnail_type="photo_tile",
-            cache_class="dynamic",
+            cache_class=cache_class,
             variant_key=PHOTO_TILE_VARIANT_KEY,
             filesystem_path=destination,
             file_name=destination.name,
@@ -2752,6 +2739,7 @@ def _generate_photo_tile(
         _record_photo_tile_error(
             config,
             media_id=media_id,
+            cache_class=cache_class,
             output_rel_path=output_rel_path,
             source_size_bytes=source_size_bytes,
             source_modified_time=source_modified_time,
@@ -3600,11 +3588,6 @@ def cleanup_dynamic_thumbnail_cache(
             FROM thumbnails
             WHERE cache_class = 'dynamic'
               AND (? IS NULL OR output_rel_path <> ?)
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM folder_preview_items AS fpi
-                  WHERE fpi.media_id = thumbnails.media_id
-              )
             ORDER BY
                 CASE status
                     WHEN 'missing' THEN 0
@@ -3727,6 +3710,7 @@ def _record_photo_tile_error(
     config: Config,
     *,
     media_id: int,
+    cache_class: ThumbnailCacheClass,
     output_rel_path: str,
     source_size_bytes: int,
     source_modified_time: float,
@@ -3754,7 +3738,7 @@ def _record_photo_tile_error(
                 last_used_at,
                 error_message
             )
-            VALUES (?, 'photo_tile', 'dynamic', ?, ?, 1, 1, 0, ?, ?, ?, 'error', ?, ?, NULL, ?)
+            VALUES (?, 'photo_tile', ?, ?, ?, 1, 1, 0, ?, ?, ?, 'error', ?, ?, NULL, ?)
             ON CONFLICT(media_id, thumbnail_type, variant_key) DO UPDATE SET
                 cache_class = excluded.cache_class,
                 output_rel_path = excluded.output_rel_path,
@@ -3768,6 +3752,7 @@ def _record_photo_tile_error(
             """,
             (
                 media_id,
+                cache_class,
                 PHOTO_TILE_VARIANT_KEY,
                 output_rel_path,
                 int(source_size_bytes),
@@ -4109,6 +4094,7 @@ def _photo_tile_destination(
     rel_path: str,
     source_size_bytes: int,
     source_modified_time: float,
+    cache_class: ThumbnailCacheClass = "dynamic",
 ) -> Path:
     digest = hashlib.sha256(
         "|".join(
@@ -4124,7 +4110,7 @@ def _photo_tile_destination(
         ).encode("utf-8")
     ).hexdigest()
 
-    return config.photo_tile_cache_dir / digest[:2] / digest[2:4] / f"{digest}{PHOTO_TILE_EXTENSION}"
+    return _photo_tile_class_root(config, cache_class) / digest[:2] / digest[2:4] / f"{digest}{PHOTO_TILE_EXTENSION}"
 
 
 def _thumbnail_filesystem_path(config: Config, output_rel_path: str) -> Path:

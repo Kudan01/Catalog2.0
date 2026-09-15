@@ -302,3 +302,35 @@ This technical log records completed and approved development steps: what change
 ### Validation
 
 - The automated test suite passed.
+
+## 2026-09-15 — Photo tile cache lifecycle
+
+### Changes
+
+- Dynamic cache now contains only cache entries that are safe to delete, while protected cache contains thumbnails that Catalog intentionally preserves.
+- A `photo_tile` referenced by at least one `folder_preview_items` row is stored under `protected/photo_tiles`; an unreferenced `photo_tile` is stored under `dynamic/photo_tiles`.
+- Creating or removing preview references moves only the affected photo tiles. Removing the final reference moves a tile back to dynamic cache.
+- Newly generated photo tiles are created directly in the cache class implied by their current preview references.
+- Lifecycle operations require explicit affected `media_ids` and do not perform a global scan.
+- Cleanup and cache statistics now use `cache_class` directly; the previous special case for dynamic-but-referenced tiles is no longer needed.
+- Removed the unused `protected/folder_previews` cache kind and layout.
+
+### Reason
+
+- Align the physical cache layout with the actual dynamic/protected lifecycle and remove the hidden exception where a physically dynamic file was not safe to delete.
+
+### Files
+
+- `catalog_app/config.py`
+- `catalog_app/folder_preview_candidates.py`
+- `catalog_app/thumbnail_cache.py`
+- `tests/test_photo_tile_cache_lifecycle.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Targeted photo tile lifecycle tests passed.
+- The full unittest suite passed.
+- The transition was successfully validated on an existing development instance, and Catalog was functionally validated after the final implementation.
+- `git diff --check` passed.
+- The final runtime does not contain the temporary startup/global migration scan.

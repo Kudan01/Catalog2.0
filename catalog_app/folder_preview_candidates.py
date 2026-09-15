@@ -19,6 +19,7 @@ from .thumbnail_cache import (
     ThumbnailCacheError,
     gif_preview_resource,
     photo_tile_resource,
+    reconcile_photo_tile_cache_lifecycle,
     video_poster_resource,
 )
 
@@ -368,6 +369,12 @@ def apply_folder_preview_candidates(
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            affected_media_ids = _preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=(report.folder_id,),
+                selection_type="auto",
+            )
+            affected_media_ids.update(candidate.media_id for candidate in report.candidates)
             result = _apply_folder_preview_report(connection, report)
             connection.commit()
 
@@ -375,6 +382,7 @@ def apply_folder_preview_candidates(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     return result
 
 
@@ -574,10 +582,19 @@ def apply_branch_folder_preview_plan(
         recursive=recursive,
     )
     applied_results: list[FolderPreviewApplyResult] = []
+    affected_media_ids: set[int] = set()
 
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            changed_folder_ids = tuple(
+                item.report.folder_id for item in plan.items if item.report is not None
+            )
+            affected_media_ids.update(_preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=changed_folder_ids,
+                selection_type="auto",
+            ))
 
             for item in plan.items:
                 if item.report is None:
@@ -585,6 +602,7 @@ def apply_branch_folder_preview_plan(
 
                 result = _apply_folder_preview_report(connection, item.report)
                 applied_results.append(result)
+                affected_media_ids.update(candidate.media_id for candidate in item.report.candidates)
 
             connection.commit()
 
@@ -592,6 +610,7 @@ def apply_branch_folder_preview_plan(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     return FolderPreviewBranchApplyResult(
         plan=plan,
         applied_results=tuple(applied_results),
@@ -624,9 +643,18 @@ def build_branch_folder_previews_with_thumbnails(
     )
 
     applied_results: list[FolderPreviewApplyResult] = []
+    affected_media_ids: set[int] = set()
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            changed_folder_ids = tuple(
+                item.report.folder_id for item in plan.items if item.report is not None
+            )
+            affected_media_ids.update(_preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=changed_folder_ids,
+                selection_type="auto",
+            ))
 
             for item in plan.items:
                 if item.report is None:
@@ -634,6 +662,7 @@ def build_branch_folder_previews_with_thumbnails(
 
                 result = _apply_folder_preview_report(connection, item.report)
                 applied_results.append(result)
+                affected_media_ids.update(candidate.media_id for candidate in item.report.candidates)
 
             connection.commit()
 
@@ -641,6 +670,7 @@ def build_branch_folder_previews_with_thumbnails(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     planned_items = [item for item in plan.items if item.report is not None]
     skipped_items = [item for item in plan.items if item.report is None]
     total_selected = sum(item.selected_count for item in planned_items)
@@ -945,6 +975,12 @@ def apply_folder_preview_parent_candidates(
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            affected_media_ids = _preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=(report.folder_id,),
+                selection_type="auto_parent",
+            )
+            affected_media_ids.update(candidate.media_id for candidate in report.candidates)
             result = _apply_folder_preview_parent_report(connection, report)
             connection.commit()
 
@@ -952,6 +988,7 @@ def apply_folder_preview_parent_candidates(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     return result
 
 
@@ -1096,14 +1133,22 @@ def apply_parent_branch_folder_preview_plan(
             progress("No folders to process for parent apply.")
 
     applied_results: list[FolderPreviewParentApplyResult] = []
+    affected_media_ids: set[int] = set()
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            changed_folder_ids = tuple(item.report.folder_id for item in planned_items if item.report is not None)
+            affected_media_ids.update(_preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=changed_folder_ids,
+                selection_type="auto_parent",
+            ))
 
             for index, item in enumerate(planned_items, start=1):
                 assert item.report is not None
                 result = _apply_folder_preview_parent_report(connection, item.report)
                 applied_results.append(result)
+                affected_media_ids.update(candidate.media_id for candidate in item.report.candidates)
 
                 if progress is not None:
                     progress(
@@ -1123,6 +1168,7 @@ def apply_parent_branch_folder_preview_plan(
         progress("")
         progress("Parent apply completed. Summary follows.")
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     return FolderPreviewParentBranchApplyResult(
         plan=plan,
         applied_results=tuple(applied_results),
@@ -1348,14 +1394,28 @@ def maintain_folder_previews_for_scopes(
 
     auto_applied_results: list[FolderPreviewApplyResult] = []
     deleted_auto_rows = 0
+    affected_media_ids: set[int] = set()
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
+            auto_folder_ids = tuple(
+                int(folder_id)
+                for folder_id in (
+                    [report.folder_id for report in auto_reports]
+                    + [item["folder_id"] for item in auto_skipped if item.get("folder_id") is not None]
+                )
+            )
+            affected_media_ids.update(_preview_media_ids_for_folder_ids(
+                connection,
+                folder_ids=auto_folder_ids,
+                selection_type="auto",
+            ))
 
             for report in auto_reports:
                 result = _apply_folder_preview_report(connection, report)
                 deleted_auto_rows += result.deleted_auto_rows
                 auto_applied_results.append(result)
+                affected_media_ids.update(candidate.media_id for candidate in report.candidates)
 
             for item in auto_skipped:
                 folder_id = item.get("folder_id")
@@ -1405,6 +1465,11 @@ def maintain_folder_previews_for_scopes(
                     continue
 
                 folder_id = int(folder["id"])
+                affected_media_ids.update(_preview_media_ids_for_folder_ids(
+                    connection,
+                    folder_ids=(folder_id,),
+                    selection_type="auto_parent",
+                ))
 
                 report = _folder_preview_parent_candidate_report_from_connection(
                     config,
@@ -1437,12 +1502,14 @@ def maintain_folder_previews_for_scopes(
                 result = _apply_folder_preview_parent_report(connection, report)
                 deleted_auto_parent_rows += result.deleted_auto_parent_rows
                 parent_applied_results.append(result)
+                affected_media_ids.update(candidate.media_id for candidate in report.candidates)
 
             connection.commit()
         except Exception:
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     thumb_created = sum(1 for item in thumbnail_results if item.action == "created")
     thumb_reused = sum(1 for item in thumbnail_results if item.action == "reused")
     thumb_errors = sum(1 for item in thumbnail_results if item.action == "error")
@@ -1556,6 +1623,7 @@ def build_folder_preview_tree(
 
     auto_applied_results: list[FolderPreviewApplyResult] = []
     deleted_auto_rows = 0
+    affected_auto_media_ids: set[int] = set()
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -1577,6 +1645,9 @@ def build_folder_preview_tree(
                 if current_signature == planned_signature:
                     continue
 
+                affected_auto_media_ids.update(media_id for _, media_id in current_signature)
+                affected_auto_media_ids.update(media_id for _, media_id in planned_signature)
+
                 deleted_auto_rows += _delete_preview_rows_for_folder_ids(
                     connection,
                     folder_ids=(folder_id,),
@@ -1592,6 +1663,7 @@ def build_folder_preview_tree(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_auto_media_ids)
     thumbnail_results: list[FolderPreviewThumbnailBuildResult] = []
     auto_result_by_folder = {item.report.folder_id: item for item in auto_applied_results}
 
@@ -1627,6 +1699,7 @@ def build_folder_preview_tree(
 
     parent_applied_results: list[FolderPreviewParentApplyResult] = []
     deleted_auto_parent_rows = 0
+    affected_parent_media_ids: set[int] = set()
     with open_database(config.db_path, read_only=False) as connection:
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -1648,6 +1721,9 @@ def build_folder_preview_tree(
                 planned_signature = planned_parent.get(folder_id, ())
                 if current_signature == planned_signature:
                     continue
+
+                affected_parent_media_ids.update(media_id for _, media_id in current_signature)
+                affected_parent_media_ids.update(media_id for _, media_id in planned_signature)
 
                 deleted_auto_parent_rows += _delete_preview_rows_for_folder_ids(
                     connection,
@@ -1676,6 +1752,7 @@ def build_folder_preview_tree(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_parent_media_ids)
     if progress is not None and planned_parent_items:
         progress("")
         progress("Unified build completed. Summary follows.")
@@ -1800,6 +1877,11 @@ def clear_auto_folder_previews(
             connection.execute("BEGIN IMMEDIATE")
 
             if all_folders:
+                affected_media_ids = _preview_media_ids_for_folder_ids(
+                    connection,
+                    folder_ids=None,
+                    selection_type="auto",
+                )
                 deleted_cursor = connection.execute(
                     """
                     DELETE FROM folder_preview_items
@@ -1812,6 +1894,11 @@ def clear_auto_folder_previews(
             else:
                 normalized_folder = _normalize_folder_rel_path(folder_rel_path)
                 folder = _available_folder(connection, normalized_folder)
+                affected_media_ids = _preview_media_ids_for_folder_ids(
+                    connection,
+                    folder_ids=(int(folder["id"]),),
+                    selection_type="auto",
+                )
                 deleted_cursor = connection.execute(
                     """
                     DELETE FROM folder_preview_items
@@ -1840,6 +1927,7 @@ def clear_auto_folder_previews(
             connection.rollback()
             raise
 
+    reconcile_photo_tile_cache_lifecycle(config, media_ids=affected_media_ids)
     return FolderPreviewClearAutoResult(
         scope=scope,
         folder_rel_path=folder_rel,
@@ -1915,6 +2003,33 @@ def _count_preview_rows_for_folder_ids(
         (selection_type, *folder_ids),
     ).fetchone()
     return int(row[0])
+
+
+def _preview_media_ids_for_folder_ids(
+    connection: sqlite3.Connection,
+    *,
+    folder_ids: tuple[int, ...] | None,
+    selection_type: str,
+) -> set[int]:
+    """Return media identities affected by replacing one stored selection."""
+    if selection_type not in {"auto", "auto_parent"}:
+        raise FolderPreviewCandidateError(f"Unsupported selection_type for media lookup: {selection_type}")
+    if folder_ids == ():
+        return set()
+
+    params: tuple[object, ...] = (selection_type,)
+    folder_clause = ""
+    if folder_ids is not None:
+        placeholders = ",".join("?" for _ in folder_ids)
+        folder_clause = f" AND folder_id IN ({placeholders})"
+        params = (selection_type, *folder_ids)
+    return {
+        int(row["media_id"])
+        for row in connection.execute(
+            f"SELECT DISTINCT media_id FROM folder_preview_items WHERE selection_type = ?{folder_clause}",
+            params,
+        )
+    }
 
 
 def _delete_preview_rows_for_folder_ids(

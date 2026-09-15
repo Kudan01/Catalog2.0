@@ -127,6 +127,10 @@ class Config:
         return self.thumbnail_dynamic_cache_dir / "photo_tiles"
 
     @property
+    def protected_photo_tile_cache_dir(self) -> Path:
+        return self.thumbnail_protected_cache_dir / "photo_tiles"
+
+    @property
     def gif_preview_cache_dir(self) -> Path:
         return self.thumbnail_protected_cache_dir / "gif_previews"
 
@@ -137,10 +141,6 @@ class Config:
     @property
     def video_frame_cache_dir(self) -> Path:
         return self.thumbnail_protected_cache_dir / "video_frames"
-
-    @property
-    def folder_preview_cache_dir(self) -> Path:
-        return self.thumbnail_protected_cache_dir / "folder_previews"
 
     @property
     def photo_cache_limit_gb(self) -> float:
@@ -330,11 +330,11 @@ def validate_config_paths(config: Config) -> None:
         "thumbnail_cache_dir": config.thumbnail_cache_dir,
         "thumbnail_dynamic_cache_dir": config.thumbnail_dynamic_cache_dir,
         "thumbnail_protected_cache_dir": config.thumbnail_protected_cache_dir,
+        "protected_photo_tile_cache_dir": config.protected_photo_tile_cache_dir,
         "photo_tile_cache_dir": config.photo_tile_cache_dir,
         "gif_preview_cache_dir": config.gif_preview_cache_dir,
         "video_poster_cache_dir": config.video_poster_cache_dir,
         "video_frame_cache_dir": config.video_frame_cache_dir,
-        "folder_preview_cache_dir": config.folder_preview_cache_dir,
     }
 
     for name, path in derived_paths.items():
@@ -381,11 +381,11 @@ def config_summary_lines(config: Config) -> list[str]:
         f"- thumbnail_cache_dir: {config.thumbnail_cache_dir}",
         f"- thumbnail_dynamic_cache_dir: {config.thumbnail_dynamic_cache_dir}",
         f"- thumbnail_protected_cache_dir: {config.thumbnail_protected_cache_dir}",
+        f"- protected_photo_tile_cache_dir: {config.protected_photo_tile_cache_dir}",
         f"- photo_tile_cache_dir: {config.photo_tile_cache_dir}",
         f"- gif_preview_cache_dir: {config.gif_preview_cache_dir}",
         f"- video_poster_cache_dir: {config.video_poster_cache_dir}",
         f"- video_frame_cache_dir: {config.video_frame_cache_dir}",
-        f"- folder_preview_cache_dir: {config.folder_preview_cache_dir}",
         "",
         "Paging:",
         f"- photo_page_size: {config.photo_page_size}",
