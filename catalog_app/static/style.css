@@ -4198,6 +4198,36 @@ body.media-rename-modal-open {
   min-width: 0;
 }
 
+.catalog-management-body.settings-clean-body .settings-form--page-sizes {
+  grid-template-columns:
+    calc(var(--settings-label-width) + var(--settings-row-gap) + var(--settings-number-width))
+    minmax(0, 1fr);
+  column-gap: 28px;
+}
+
+.catalog-management-body.settings-clean-body .settings-page-size-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:first-child .settings-form-row {
+  grid-template-columns: var(--settings-label-width) var(--settings-number-width);
+}
+
+.catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:last-child {
+  width: calc(var(--settings-label-width) + var(--settings-row-gap) + var(--settings-number-width));
+  justify-self: end;
+}
+
+.catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:last-child .settings-form-row {
+  grid-template-columns: var(--settings-label-width) var(--settings-number-width);
+}
+
+.catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-number-control {
+  justify-self: end;
+}
+
 .catalog-management-body.settings-clean-body .settings-form-row--with-actions,
 .catalog-management-body.settings-clean-body .settings-form-row--limit {
   grid-template-columns: var(--settings-label-width) minmax(0, 1fr) auto;
@@ -4592,6 +4622,25 @@ body.media-rename-modal-open {
   .catalog-management-body.settings-clean-body .settings-form--service-numbers,
   .catalog-management-body.settings-clean-body .settings-form--service-numbers .settings-form-row {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:last-child {
+    width: auto;
+    justify-self: stretch;
+  }
+
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:first-child .settings-form-row,
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-page-size-column:last-child .settings-form-row,
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-form-row {
+    grid-template-columns: minmax(0, 1fr) var(--settings-number-width);
+  }
+
+  .catalog-management-body.settings-clean-body .settings-form--page-sizes .settings-number-control {
+    width: var(--settings-number-width);
   }
 
   .catalog-management-body.settings-clean-body .settings-actions,

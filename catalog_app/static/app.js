@@ -769,6 +769,7 @@ const els = {
   cacheLimitInput: document.getElementById("cacheLimitInput"),
   cacheLimitSave: document.getElementById("cacheLimitSave"),
   cacheLimitMessage: document.getElementById("cacheLimitMessage"),
+  allPageSizeInput: document.getElementById("allPageSizeInput"),
   photoPageSizeInput: document.getElementById("photoPageSizeInput"),
   videoPageSizeInput: document.getElementById("videoPageSizeInput"),
   gifPageSizeInput: document.getElementById("gifPageSizeInput"),
@@ -2636,6 +2637,7 @@ function renderCacheSettingsStatus(payload, options = {}) {
   }
 
   const pageSizeInputs = [
+    [els.allPageSizeInput, pageSizes.all_page_size],
     [els.photoPageSizeInput, pageSizes.photo_page_size],
     [els.videoPageSizeInput, pageSizes.video_page_size],
     [els.gifPageSizeInput, pageSizes.gif_page_size],
@@ -2761,6 +2763,7 @@ async function savePageSizeSettings(options = {}) {
   const quietStatus = options.quietStatus === true;
 
   const values = {
+    all_page_size: positiveIntegerInputValue(els.allPageSizeInput),
     photo_page_size: positiveIntegerInputValue(els.photoPageSizeInput),
     video_page_size: positiveIntegerInputValue(els.videoPageSizeInput),
     gif_page_size: positiveIntegerInputValue(els.gifPageSizeInput),
@@ -2769,7 +2772,7 @@ async function savePageSizeSettings(options = {}) {
     gallery_density: normalizeGalleryDensity(els.galleryDensitySelect ? els.galleryDensitySelect.value : "comfortable"),
   };
 
-  if ([values.photo_page_size, values.video_page_size, values.gif_page_size, values.other_page_size, values.folder_page_size].some(value => value === null)) {
+  if ([values.all_page_size, values.photo_page_size, values.video_page_size, values.gif_page_size, values.other_page_size, values.folder_page_size].some(value => value === null)) {
     if (els.pageSizeMessage) {
       els.pageSizeMessage.textContent = text("settings.pageSizeInvalid");
       els.pageSizeMessage.classList.add("error");
@@ -2787,6 +2790,11 @@ async function savePageSizeSettings(options = {}) {
   try {
     const payload = await postJson("/api/settings/runtime/page-sizes", values);
     renderCacheSettingsStatus(payload);
+    if (state.view !== "search") {
+      state.mediaPage = 1;
+      state.childPage = 1;
+      await reloadSafely(loadCurrentFolder);
+    }
     if (els.pageSizeMessage) {
       els.pageSizeMessage.textContent = quietStatus ? "" : text("settings.pageSizeSaved");
       els.pageSizeMessage.classList.remove("error");
@@ -8768,6 +8776,7 @@ if (els.thumbnailParamsReset) {
 }
 
 for (const input of [
+  els.allPageSizeInput,
   els.photoPageSizeInput,
   els.videoPageSizeInput,
   els.gifPageSizeInput,

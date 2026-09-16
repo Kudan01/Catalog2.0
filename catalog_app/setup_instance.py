@@ -39,6 +39,7 @@ DEFAULT_INSTANCE_CONFIG: dict[str, Any] = {
     "output_root": ".",
     "server_port": 8765,
     "thumbnail_cache_limit_gb": 20,
+    "all_page_size": 24,
     "photo_page_size": 24,
     "video_page_size": 48,
     "gif_page_size": 48,

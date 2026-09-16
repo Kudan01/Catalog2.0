@@ -14,6 +14,7 @@ from .paths import is_path_within, same_path
 SUPPORTED_CONFIG_VERSION = 1
 SUPPORTED_RUNTIME_SETTINGS_VERSION = 1
 PAGE_SIZE_KEYS = (
+    "all_page_size",
     "photo_page_size",
     "video_page_size",
     "gif_page_size",
@@ -77,6 +78,7 @@ class Config:
     gallery_density: str
     gallery_density_source: str
 
+    all_page_size: int
     photo_page_size: int
     video_page_size: int
     gif_page_size: int
@@ -194,6 +196,7 @@ def load_config(config_path: Path) -> Config:
     thumbnail_cache_limit_gb = _thumbnail_cache_limit_gb(raw, 20)
     thumbnail_cache_limit_source = _thumbnail_cache_limit_source(raw)
 
+    all_page_size_configured = "all_page_size" in raw
     page_sizes = {
         "photo_page_size": _positive_int(raw, "photo_page_size", 24),
         "video_page_size": _positive_int(raw, "video_page_size", 48),
@@ -201,6 +204,11 @@ def load_config(config_path: Path) -> Config:
         "other_page_size": _positive_int(raw, "other_page_size", 100),
         "folder_page_size": _positive_int(raw, "folder_page_size", 60),
     }
+    page_sizes["all_page_size"] = _positive_int(
+        raw,
+        "all_page_size",
+        page_sizes["photo_page_size"],
+    )
     page_size_sources = {key: "config.json" for key in PAGE_SIZE_KEYS}
 
     image_thumb_size = _size_pair(raw, "image_thumb_size", (300, 400))
@@ -250,6 +258,10 @@ def load_config(config_path: Path) -> Config:
             page_sizes[key] = _positive_int(runtime_settings, key, page_sizes[key])
             page_size_sources[key] = f"settings.json:{key}"
 
+    if not all_page_size_configured and "all_page_size" not in runtime_settings:
+        page_sizes["all_page_size"] = page_sizes["photo_page_size"]
+        page_size_sources["all_page_size"] = page_size_sources["photo_page_size"]
+
     if "image_thumb_size" in runtime_settings:
         image_thumb_size = _size_pair(runtime_settings, "image_thumb_size", image_thumb_size)
         thumbnail_video_param_sources["image_thumb_size"] = "settings.json:image_thumb_size"
@@ -291,6 +303,7 @@ def load_config(config_path: Path) -> Config:
         catalog_title_source=catalog_title_source,
         gallery_density=gallery_density,
         gallery_density_source=gallery_density_source,
+        all_page_size=page_sizes["all_page_size"],
         photo_page_size=page_sizes["photo_page_size"],
         video_page_size=page_sizes["video_page_size"],
         gif_page_size=page_sizes["gif_page_size"],
@@ -388,6 +401,7 @@ def config_summary_lines(config: Config) -> list[str]:
         f"- video_frame_cache_dir: {config.video_frame_cache_dir}",
         "",
         "Paging:",
+        f"- all_page_size: {config.all_page_size}",
         f"- photo_page_size: {config.photo_page_size}",
         f"- video_page_size: {config.video_page_size}",
         f"- gif_page_size: {config.gif_page_size}",

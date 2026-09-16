@@ -903,6 +903,7 @@
   "settings.open": "Settings",
   "settings.pageSizeEditorNote": "",
   "settings.pageSizeEditorTitle": "Browsing",
+  "settings.pageSizeAll": "All",
   "settings.pageSizeFolder": "Folders",
   "settings.pageSizeGif": "GIFs",
   "settings.pageSizeInvalid": "All item counts must be integers greater than 0.",

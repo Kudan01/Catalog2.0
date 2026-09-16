@@ -535,6 +535,7 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
 
             if path == "/api/settings/runtime/page-sizes":
                 raw_page_sizes = {
+                    "all_page_size": self._request_text_value(parsed=parsed, name="all_page_size"),
                     "photo_page_size": self._request_text_value(parsed=parsed, name="photo_page_size"),
                     "video_page_size": self._request_text_value(parsed=parsed, name="video_page_size"),
                     "gif_page_size": self._request_text_value(parsed=parsed, name="gif_page_size"),

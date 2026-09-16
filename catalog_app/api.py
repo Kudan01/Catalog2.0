@@ -425,6 +425,7 @@ def thumbnail_cache_status(config: Config) -> dict[str, Any]:
             "config_version": config.config_version,
             "source_root": source_root_settings_status(config),
             "page_sizes": {
+                "all_page_size": config.all_page_size,
                 "photo_page_size": config.photo_page_size,
                 "video_page_size": config.video_page_size,
                 "gif_page_size": config.gif_page_size,
@@ -5260,6 +5261,8 @@ def _escape_like(value: str) -> str:
 
 
 def _default_page_size(config: Config, media_type: str) -> int:
+    if media_type == "all":
+        return config.all_page_size
     if media_type == "image":
         return config.photo_page_size
     if media_type == "gif":
@@ -5268,7 +5271,7 @@ def _default_page_size(config: Config, media_type: str) -> int:
         return config.video_page_size
     if media_type == "other":
         return config.other_page_size
-    return min(config.photo_page_size, 200)
+    return config.all_page_size
 
 
 def _positive_int(value: str, *, field_name: str) -> int:

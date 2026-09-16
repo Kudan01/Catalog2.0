@@ -361,3 +361,37 @@ This technical log records completed and approved development steps: what change
 - Added a targeted static contract test for shared state, event binding, synchronized controls, visibility, and unique HTML IDs.
 - The Docker environment does not provide a Python interpreter, so the unittest could not be executed here.
 - Static duplicate-ID inspection and `git diff --check` passed.
+
+## 2026-09-16 — Independent All gallery pagination
+
+### Changes
+
+- Added a separate `all_page_size` setting for the All gallery.
+- Existing instances without this value retain a compatible fallback to the effective `photo_page_size`; once saved, `all_page_size` is persisted independently.
+- Search keeps its separate fixed pagination of 50 results.
+- Settings → Browsing now presents six page-size values in a two-column desktop layout that collapses safely to one column on narrow viewports.
+- Saving page-size settings applies the change immediately and safely returns the relevant gallery to its first page.
+
+### Reason
+
+- Allow the mixed All gallery to use an independent page size while preserving existing instance behavior and the Search contract.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/config.py`
+- `catalog_app/server.py`
+- `catalog_app/setup_instance.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/index.html`
+- `catalog_app/static/style.css`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_all_page_size.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Focused `tests.test_all_page_size` tests passed.
+- The full automated test suite passed.
+- A real Windows instance validated independent All and Photos values, immediate application after Save, safe return to the first page, persistence after restart, and the final Settings layout.

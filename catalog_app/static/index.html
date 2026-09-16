@@ -193,27 +193,35 @@
             </div>
 
             <h3 class="settings-section-title settings-subsection-title" data-text="settings.pageSizeEditorTitle"></h3>
-            <div class="settings-form settings-form--numbers">
-              <label class="settings-form-row settings-form-row--number" for="photoPageSizeInput">
-                <span class="settings-row-label" data-text="settings.pageSizePhoto"></span>
-                <input id="photoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
-              </label>
-              <label class="settings-form-row settings-form-row--number" for="videoPageSizeInput">
-                <span class="settings-row-label" data-text="settings.pageSizeVideo"></span>
-                <input id="videoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
-              </label>
-              <label class="settings-form-row settings-form-row--number" for="gifPageSizeInput">
-                <span class="settings-row-label" data-text="settings.pageSizeGif"></span>
-                <input id="gifPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
-              </label>
-              <label class="settings-form-row settings-form-row--number" for="otherPageSizeInput">
-                <span class="settings-row-label" data-text="settings.pageSizeOther"></span>
-                <input id="otherPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
-              </label>
-              <label class="settings-form-row settings-form-row--number" for="folderPageSizeInput">
-                <span class="settings-row-label" data-text="settings.pageSizeFolder"></span>
-                <input id="folderPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
-              </label>
+            <div class="settings-form settings-form--numbers settings-form--page-sizes">
+              <div class="settings-page-size-column">
+                <label class="settings-form-row settings-form-row--number" for="allPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizeAll"></span>
+                  <input id="allPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+                <label class="settings-form-row settings-form-row--number" for="photoPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizePhoto"></span>
+                  <input id="photoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+                <label class="settings-form-row settings-form-row--number" for="videoPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizeVideo"></span>
+                  <input id="videoPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+              </div>
+              <div class="settings-page-size-column">
+                <label class="settings-form-row settings-form-row--number" for="gifPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizeGif"></span>
+                  <input id="gifPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+                <label class="settings-form-row settings-form-row--number" for="otherPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizeOther"></span>
+                  <input id="otherPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+                <label class="settings-form-row settings-form-row--number" for="folderPageSizeInput">
+                  <span class="settings-row-label" data-text="settings.pageSizeFolder"></span>
+                  <input id="folderPageSizeInput" class="settings-number-control" type="number" min="1" step="1" inputmode="numeric">
+                </label>
+              </div>
             </div>
             <div class="settings-actions">
               <button id="pageSizeSave" type="button" class="write-action" data-text="settings.pageSizeSave"></button>

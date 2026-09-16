@@ -903,6 +903,7 @@
   "settings.open": "Nastavení",
   "settings.pageSizeEditorNote": "",
   "settings.pageSizeEditorTitle": "Procházení",
+  "settings.pageSizeAll": "Vše",
   "settings.pageSizeFolder": "Složky",
   "settings.pageSizeGif": "GIFy",
   "settings.pageSizeInvalid": "Všechny počty položek musí být celá čísla větší než 0.",
