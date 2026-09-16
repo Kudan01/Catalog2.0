@@ -420,3 +420,28 @@ This technical log records completed and approved development steps: what change
 - The focused test passed.
 - The full automated test suite passed.
 - A real Windows instance validated Search with media results and without media results; the technical error is no longer displayed.
+
+## 2026-09-16 — Search media-type filtering
+
+### Changes
+
+- Search type `all` continues to return folders and media in the combined result set.
+- Search types `image`, `gif`, `video`, and `other` now return only media of the selected type.
+- Typed Search excludes folders from `results`, `counts`, `total`, and pagination.
+- Search page size remains fixed at 50, and no frontend change was required.
+
+### Reason
+
+- Make the existing Search media filters control the complete result type rather than filtering only the media portion of a mixed folder/media result set.
+
+### Files
+
+- `catalog_app/api.py`
+- `tests/test_search_media_type_filter.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused test passed.
+- The full automated test suite passed.
+- A real Windows instance validated combined folder/media results for All, media-only results for Photos, GIFs, Videos, and Other, error-free filter switching, and the correct empty state for typed Search.

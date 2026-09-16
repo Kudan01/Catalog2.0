@@ -4011,13 +4011,21 @@ def search_page(
                 params={"path": params.folder_rel_path or "/"},
             )
 
-        folder_where, folder_values = _search_folder_where(params)
+        include_folders = params.media_type == "all"
+        if include_folders:
+            folder_where, folder_values = _search_folder_where(params)
+        else:
+            folder_where, folder_values = "0", []
         media_where, media_values = _search_media_where(params)
 
-        folder_total = _count(
-            connection,
-            f"SELECT COUNT(*) FROM folders WHERE {folder_where}",
-            folder_values,
+        folder_total = (
+            _count(
+                connection,
+                f"SELECT COUNT(*) FROM folders WHERE {folder_where}",
+                folder_values,
+            )
+            if include_folders
+            else 0
         )
         media_total = _count(
             connection,
