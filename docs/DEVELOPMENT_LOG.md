@@ -395,3 +395,28 @@ This technical log records completed and approved development steps: what change
 - Focused `tests.test_all_page_size` tests passed.
 - The full automated test suite passed.
 - A real Windows instance validated independent All and Photos values, immediate application after Save, safe return to the first page, persistence after restart, and the final Settings layout.
+
+## 2026-09-16 — Search rendering diagnostics fix
+
+### Changes
+
+- `renderSearchResults()` no longer fails with `Operation is not defined` after rendering results.
+- The diagnostic operation is now created and completed correctly for both populated and empty media-result branches.
+- The rendered-media count uses `mediaResults.length` instead of the nonexistent `data.media` value.
+- Added a regression test for the Search rendering diagnostic contract.
+
+### Reason
+
+- Prevent diagnostic bookkeeping from sending an otherwise successful Search render into the general error handler.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `tests/test_search_render_diagnostics.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused test passed.
+- The full automated test suite passed.
+- A real Windows instance validated Search with media results and without media results; the technical error is no longer displayed.

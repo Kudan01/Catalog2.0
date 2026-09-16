@@ -7238,6 +7238,11 @@ function renderSearchHeader(data) {
 function renderSearchResults(data) {
   const folderResults = data.results.filter((item) => item.kind === "folder");
   const mediaResults = data.results.filter((item) => item.kind === "media");
+  const operation = diagnosticOperationStart("frontend.render.media", {
+    count: mediaResults.length,
+    page: data.page,
+    type: data.type,
+  });
 
   els.childFolders.replaceChildren();
   resetChildFoldersCollapseUi();
@@ -7264,6 +7269,10 @@ function renderSearchResults(data) {
 
   if (mediaResults.length === 0) {
     els.mediaList.appendChild(emptyText(data.total === 0 ? text("empty.search") : text("empty.searchMedia")));
+    diagnosticOperationEnd("frontend.render.media", operation, {
+      rendered: 0,
+      media_cards: els.mediaList.children.length,
+    });
     return;
   }
 
@@ -7275,7 +7284,7 @@ function renderSearchResults(data) {
   }
   bindMediaThumbnailLazyLoading(els.mediaList);
   diagnosticOperationEnd("frontend.render.media", operation, {
-    rendered: data.media.length,
+    rendered: mediaResults.length,
     media_cards: els.mediaList.children.length,
   });
 }
