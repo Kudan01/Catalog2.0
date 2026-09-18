@@ -21,7 +21,7 @@ class SearchRenderDiagnosticsContractTests(unittest.TestCase):
             'diagnosticOperationEnd("frontend.render.media", operation'
         )
         self.assertLess(start, first_end)
-        self.assertEqual(2, self.render.count(
+        self.assertEqual(3, self.render.count(
             'diagnosticOperationEnd("frontend.render.media", operation'
         ))
 

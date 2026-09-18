@@ -89,7 +89,7 @@ class AllPageSizeConfigTests(unittest.TestCase):
         params = _search_page_params(
             raw_query="example",
             raw_folder="",
-            raw_media_type="all",
+            raw_content_filter="all",
             raw_page=None,
             raw_page_size=None,
         )

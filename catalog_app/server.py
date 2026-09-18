@@ -1092,7 +1092,11 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                 self.config,
                 raw_query=_single_query_value(query, "q", default=""),
                 raw_folder=_single_query_value(query, "folder", default=""),
-                raw_media_type=_single_query_value(query, "type", default="all"),
+                raw_content_filter=_single_query_value(
+                    query,
+                    "filter",
+                    default=_single_query_value(query, "type", default="all"),
+                ),
                 raw_page=_optional_query_value(query, "page"),
                 raw_page_size=_optional_query_value(query, "page_size"),
             ), HTTPStatus.OK

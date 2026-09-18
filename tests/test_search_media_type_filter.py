@@ -107,12 +107,12 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
             ),
         )
 
-    def _search(self, media_type: str, *, page: int = 1) -> dict[str, object]:
+    def _search(self, content_filter: str, *, page: int = 1) -> dict[str, object]:
         return search_page(
             self.config,
             raw_query="matching",
             raw_folder="",
-            raw_media_type=media_type,
+            raw_content_filter=content_filter,
             raw_page=str(page),
             raw_page_size=None,
         )
@@ -135,6 +135,15 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
                 self.assertTrue(result["results"])
                 self.assertTrue(all(item["kind"] == "media" for item in result["results"]))
                 self.assertTrue(all(item["media_type"] == media_type for item in result["results"]))
+
+    def test_folders_search_returns_only_folders(self) -> None:
+        result = self._search("folders")
+        self.assertEqual("folders", result["type"])
+        self.assertEqual(1, result["counts"]["folders"])
+        self.assertEqual(0, result["counts"]["media"])
+        self.assertEqual(1, result["total"])
+        self.assertEqual(1, result["pages"])
+        self.assertEqual(["folder"], [item["kind"] for item in result["results"]])
 
     def test_typed_search_paginates_media_only_with_fixed_page_size(self) -> None:
         result = self._search("image", page=2)

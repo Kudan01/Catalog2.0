@@ -445,3 +445,38 @@ This technical log records completed and approved development steps: what change
 - The focused test passed.
 - The full automated test suite passed.
 - A real Windows instance validated combined folder/media results for All, media-only results for Photos, GIFs, Videos, and Other, error-free filter switching, and the correct empty state for typed Search.
+
+## 2026-09-18 — Unified content filter
+
+### Changes
+
+- The main content filter now consistently represents All, Folders, Photos, GIFs, Videos, and Other.
+- The frontend uses a dedicated `contentFilter` state; `folders` is not passed or represented as a media type.
+- In normal folder browsing, All shows child folders and all media, Folders shows only child folders, and the remaining filters show only matching media.
+- Search uses the same filter semantics. Its Folders mode returns and paginates folders only, while Search page size remains fixed at 50.
+- Favorites still supports media only. Entering Favorites from the Folders filter safely selects All, and the unsupported Folders option is hidden in that view.
+- Added Czech and English Folders labels and updated the filter's ARIA description.
+
+### Reason
+
+- Give the shared top-level filter one consistent content-kind meaning without extending the media API or Favorites data model with a synthetic folder media type.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/index.html`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_all_page_size.py`
+- `tests/test_content_filter.py`
+- `tests/test_search_media_type_filter.py`
+- `tests/test_search_render_diagnostics.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The relevant focused tests passed.
+- The full automated test suite passed.
+- A real Windows instance validated filter switching in normal folder browsing and Search, correct hiding of unneeded sections, and safe Favorites behavior.

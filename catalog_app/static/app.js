@@ -575,7 +575,7 @@ const state = {
   view: "folder",
   folder: "",
   currentFolder: null,
-  mediaType: "all",
+  contentFilter: "all",
   mediaPage: 1,
   mediaPages: 0,
   childPage: 1,
@@ -3909,6 +3909,7 @@ function closeMediaModal() {
 
 function updateViewButtons() {
   els.favoritesView.classList.toggle("active", state.view === "favorites");
+  syncContentFilterTabs();
   updateJobActionButtons();
 }
 
@@ -6708,15 +6709,21 @@ function usesIndependentContentScroll() {
     && !document.body.classList.contains("layout-compact");
 }
 
-function syncMediaTypeTabs() {
+function contentFilterMediaType(contentFilter) {
+  return contentFilter === "folders" ? null : contentFilter;
+}
+
+function syncContentFilterTabs() {
   document.querySelectorAll(".tab").forEach((item) => {
-    item.classList.toggle("active", item.dataset.type === state.mediaType);
+    const contentFilter = item.dataset.contentFilter;
+    item.hidden = state.view === "favorites" && contentFilter === "folders";
+    item.classList.toggle("active", contentFilter === state.contentFilter);
   });
 }
 
-function setMediaType(type) {
-  state.mediaType = type || "all";
-  syncMediaTypeTabs();
+function setContentFilter(contentFilter) {
+  state.contentFilter = contentFilter || "all";
+  syncContentFilterTabs();
 }
 
 function beginViewLoadRequest() {
@@ -6728,7 +6735,8 @@ function currentViewLoadSnapshot() {
   return {
     view: state.view,
     folder: state.folder,
-    mediaType: state.mediaType,
+    contentFilter: state.contentFilter,
+    mediaType: contentFilterMediaType(state.contentFilter),
     mediaPage: state.mediaPage,
     childPage: state.childPage,
     searchQuery: state.searchQuery,
@@ -6740,7 +6748,7 @@ function viewLoadIsCurrent(requestId, snapshot) {
   return requestId === state.viewLoadRequestId
     && snapshot.view === state.view
     && snapshot.folder === state.folder
-    && snapshot.mediaType === state.mediaType
+    && snapshot.contentFilter === state.contentFilter
     && snapshot.mediaPage === state.mediaPage
     && snapshot.childPage === state.childPage
     && snapshot.searchQuery === state.searchQuery
@@ -6772,8 +6780,8 @@ async function openFolder(path) {
   const folderChanged = state.view !== "folder" || state.folder !== nextFolder;
   state.view = "folder";
   state.folder = nextFolder;
-  if (folderChanged && state.mediaType !== "all") {
-    setMediaType("all");
+  if (folderChanged && state.contentFilter !== "all") {
+    setContentFilter("all");
   }
   state.mediaPage = 1;
   state.childPage = 1;
@@ -6795,6 +6803,9 @@ async function openFolder(path) {
 }
 
 async function openFavorites() {
+  if (state.contentFilter === "folders") {
+    setContentFilter("all");
+  }
   state.view = "favorites";
   state.mediaPage = 1;
   state.childPage = 1;
@@ -6835,12 +6846,17 @@ async function loadCurrentFolder(options = {}) {
     return rendered;
   }
 
-  recordChildPageApiRequest(options.childPageMeasurement, "/api/folders");
-  let childrenPromise = fetchJson("/api/folders", {
-    parent: snapshot.folder,
-    page: snapshot.childPage,
-  });
-  if (options.childPageMeasurement) {
+  const loadFolders = snapshot.contentFilter === "all" || snapshot.contentFilter === "folders";
+  const loadMedia = snapshot.mediaType !== null;
+  let childrenPromise = Promise.resolve(null);
+  if (loadFolders) {
+    recordChildPageApiRequest(options.childPageMeasurement, "/api/folders");
+    childrenPromise = fetchJson("/api/folders", {
+      parent: snapshot.folder,
+      page: snapshot.childPage,
+    });
+  }
+  if (loadFolders && options.childPageMeasurement) {
     childrenPromise = childrenPromise.then(data => {
       if (diagnosticState.childPageChange === options.childPageMeasurement) {
         options.childPageMeasurement.foldersResponseMs = childPageElapsed(
@@ -6855,22 +6871,28 @@ async function loadCurrentFolder(options = {}) {
     page: snapshot.childPage,
     promise: childrenPromise,
   };
-  state.currentFolderChildrenRequest = childrenRequest;
+  if (loadFolders) {
+    state.currentFolderChildrenRequest = childrenRequest;
+  }
 
   let folderData;
   let childrenData;
   let mediaData;
   try {
     recordChildPageApiRequest(options.childPageMeasurement, "/api/folder");
-    recordChildPageApiRequest(options.childPageMeasurement, "/api/media");
+    if (loadMedia) {
+      recordChildPageApiRequest(options.childPageMeasurement, "/api/media");
+    }
     [folderData, childrenData, mediaData] = await Promise.all([
       fetchJson("/api/folder", { path: snapshot.folder }),
       childrenPromise,
-      fetchJson("/api/media", {
-        folder: snapshot.folder,
-        type: snapshot.mediaType,
-        page: snapshot.mediaPage,
-      }),
+      loadMedia
+        ? fetchJson("/api/media", {
+            folder: snapshot.folder,
+            type: snapshot.mediaType,
+            page: snapshot.mediaPage,
+          })
+        : Promise.resolve(null),
     ]);
   } catch (error) {
     if (options.folderPreviewMeasurement) {
@@ -6906,19 +6928,35 @@ async function loadCurrentFolder(options = {}) {
     return false;
   }
 
-  hydrateTreeBranchFromChildrenData(snapshot.folder, childrenData);
   renderFolder(folderData.folder, folderData.breadcrumb);
-  renderChildFolders(childrenData);
-  if (options.childPageMeasurement && diagnosticState.childPageChange === options.childPageMeasurement) {
-    options.childPageMeasurement.cardsRenderedMs = childPageElapsed(options.childPageMeasurement);
+  if (childrenData) {
+    hydrateTreeBranchFromChildrenData(snapshot.folder, childrenData);
+    renderChildFolders(childrenData);
+    if (snapshot.contentFilter === "folders") {
+      resetChildFoldersCollapseUi();
+    }
+    if (options.childPageMeasurement && diagnosticState.childPageChange === options.childPageMeasurement) {
+      options.childPageMeasurement.cardsRenderedMs = childPageElapsed(options.childPageMeasurement);
+    }
+  } else {
+    els.childFolders.replaceChildren();
+    resetChildPager();
+    resetChildFoldersCollapseUi();
+    setChildFoldersSectionVisible(false);
   }
-  renderMedia(mediaData);
-  scheduleFolderPreviewNavigationSnapshot(options.folderPreviewMeasurement, childrenData);
+  if (mediaData) {
+    renderMedia(mediaData);
+  } else {
+    resetAndHideMediaSection();
+  }
+  if (childrenData) {
+    scheduleFolderPreviewNavigationSnapshot(options.folderPreviewMeasurement, childrenData);
+  }
   diagnosticOperationEnd("frontend.folder.load_current", operation, {
     resolved_view: "folder",
     result: "ok",
-    child_count: childrenData.folders.length,
-    media_count: mediaData.media.length,
+    child_count: childrenData?.folders.length || 0,
+    media_count: mediaData?.media.length || 0,
     breadcrumb_count: folderData.breadcrumb.length,
   });
   return true;
@@ -6931,6 +6969,11 @@ async function loadCurrentFolderMediaPage() {
 
   if (snapshot.view !== "folder") {
     await loadCurrentFolder({ requestId });
+    return;
+  }
+
+  if (snapshot.mediaType === null) {
+    resetAndHideMediaSection();
     return;
   }
 
@@ -6978,8 +7021,8 @@ async function loadSearchView({ requestId, snapshot }) {
   const data = await fetchJson("/api/search", {
     q: snapshot.searchQuery,
     folder: snapshot.searchFolder,
-    type: snapshot.mediaType,
-    page: snapshot.mediaPage,
+    filter: snapshot.contentFilter,
+    page: snapshot.contentFilter === "folders" ? snapshot.childPage : snapshot.mediaPage,
     page_size: 50,
   });
 
@@ -7189,6 +7232,11 @@ async function goToChildPage(page) {
   }
 
   state.childPage = targetPage;
+  if (state.view === "search" && state.contentFilter === "folders") {
+    scrollToCatalogTop();
+    await reloadSafely(loadCurrentFolder);
+    return;
+  }
   const childPageMeasurement = beginChildPageMeasurement(state.folder, targetPage);
   const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
     state.folder,
@@ -7246,18 +7294,38 @@ function renderSearchResults(data) {
 
   els.childFolders.replaceChildren();
   resetChildFoldersCollapseUi();
+  const foldersOnly = data.type === "folders";
 
   if (folderResults.length === 0) {
     els.childPageInfo.textContent = "";
     setChildPagerVisible(false);
-    setChildFoldersSectionVisible(false);
+    if (foldersOnly) {
+      els.childFolders.appendChild(emptyText(text("empty.search")));
+      setChildFoldersSectionVisible(true);
+    } else {
+      setChildFoldersSectionVisible(false);
+    }
   } else {
     els.childPageInfo.textContent = text("search.childFolders");
-    setChildPagerVisible(false);
     setChildFoldersSectionVisible(true);
     for (const folder of folderResults) {
       els.childFolders.appendChild(folderResultCard(folder));
     }
+    if (foldersOnly) {
+      updateChildPager(data);
+      resetChildFoldersCollapseUi();
+    } else {
+      setChildPagerVisible(false);
+    }
+  }
+
+  if (foldersOnly) {
+    resetAndHideMediaSection();
+    diagnosticOperationEnd("frontend.render.media", operation, {
+      rendered: 0,
+      media_cards: 0,
+    });
+    return;
   }
 
   setMediaSectionVisible(true);
@@ -7415,6 +7483,15 @@ function setMediaSectionVisible(visible) {
   if (section) {
     section.hidden = !visible;
   }
+}
+
+function resetAndHideMediaSection() {
+  resetMediaThumbnailLazyLoading();
+  els.mediaList.replaceChildren();
+  els.mediaTitle.textContent = "";
+  updateMediaPager({ page: 1, pages: 0, total: 0 });
+  setMediaSectionVisible(false);
+  scheduleResponsiveLayoutUpdate();
 }
 
 function folderDirectMediaCount(folder) {
@@ -8641,8 +8718,9 @@ els.searchForm.addEventListener("submit", async (event) => {
 
 for (const button of document.querySelectorAll(".tab")) {
   button.addEventListener("click", async () => {
-    setMediaType(button.dataset.type);
+    setContentFilter(button.dataset.contentFilter);
     state.mediaPage = 1;
+    state.childPage = 1;
     await reloadSafely(loadCurrentFolder);
   });
 }

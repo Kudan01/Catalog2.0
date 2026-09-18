@@ -332,7 +332,8 @@ class SearchPageParams:
     query: str
     query_pattern: str
     folder_rel_path: str
-    media_type: str
+    content_filter: str
+    media_type: str | None
     page: int
     page_size: int
     offset: int
@@ -3989,7 +3990,7 @@ def search_page(
     *,
     raw_query: str,
     raw_folder: str,
-    raw_media_type: str,
+    raw_content_filter: str,
     raw_page: str | None,
     raw_page_size: str | None,
 ) -> dict[str, Any]:
@@ -3997,7 +3998,7 @@ def search_page(
     params = _search_page_params(
         raw_query=raw_query,
         raw_folder=raw_folder,
-        raw_media_type=raw_media_type,
+        raw_content_filter=raw_content_filter,
         raw_page=raw_page,
         raw_page_size=raw_page_size,
     )
@@ -4011,12 +4012,16 @@ def search_page(
                 params={"path": params.folder_rel_path or "/"},
             )
 
-        include_folders = params.media_type == "all"
+        include_folders = params.content_filter in {"all", "folders"}
+        include_media = params.content_filter != "folders"
         if include_folders:
             folder_where, folder_values = _search_folder_where(params)
         else:
             folder_where, folder_values = "0", []
-        media_where, media_values = _search_media_where(params)
+        if include_media:
+            media_where, media_values = _search_media_where(params)
+        else:
+            media_where, media_values = "0", []
 
         folder_total = (
             _count(
@@ -4027,15 +4032,19 @@ def search_page(
             if include_folders
             else 0
         )
-        media_total = _count(
-            connection,
-            f"""
-            SELECT COUNT(*)
-            FROM media_files AS media
-            JOIN folders AS parent ON parent.id = media.folder_id
-            WHERE {media_where}
-            """,
-            media_values,
+        media_total = (
+            _count(
+                connection,
+                f"""
+                SELECT COUNT(*)
+                FROM media_files AS media
+                JOIN folders AS parent ON parent.id = media.folder_id
+                WHERE {media_where}
+                """,
+                media_values,
+            )
+            if include_media
+            else 0
         )
         total = folder_total + media_total
 
@@ -4122,7 +4131,7 @@ def search_page(
             "ok": True,
             "query": params.query,
             "folder": params.folder_rel_path,
-            "type": params.media_type,
+            "type": params.content_filter,
             "page": params.page,
             "page_size": params.page_size,
             "total": total,
@@ -4148,7 +4157,7 @@ def search_media_page(
     params = _search_page_params(
         raw_query=raw_query,
         raw_folder=raw_folder,
-        raw_media_type=raw_media_type,
+        raw_content_filter=raw_media_type,
         raw_page=raw_page,
         raw_page_size=raw_page_size,
     )
@@ -4234,7 +4243,7 @@ def search_page_anchor(
     params = _search_page_params(
         raw_query=raw_query,
         raw_folder=raw_folder,
-        raw_media_type=raw_media_type,
+        raw_content_filter=raw_media_type,
         raw_page="1",
         raw_page_size=raw_page_size,
     )
@@ -5164,7 +5173,7 @@ def _search_page_params(
     *,
     raw_query: str,
     raw_folder: str,
-    raw_media_type: str,
+    raw_content_filter: str,
     raw_page: str | None,
     raw_page_size: str | None,
 ) -> SearchPageParams:
@@ -5182,13 +5191,13 @@ def _search_page_params(
         )
 
     folder_rel_path = _normalize_api_path(raw_folder, allow_root=True)
-    media_type = (raw_media_type or "all").strip().lower()
+    content_filter = (raw_content_filter or "all").strip().lower()
 
-    if media_type not in {"all", "image", "gif", "video", "other"}:
+    if content_filter not in {"all", "folders", "image", "gif", "video", "other"}:
         raise ApiError.from_message(
             400,
             "navigation.media_type.invalid",
-            params={"allowed": "all, image, gif, video, other"},
+            params={"allowed": "all, folders, image, gif, video, other"},
         )
 
     page = _positive_int(raw_page or "1", field_name="page")
@@ -5209,7 +5218,8 @@ def _search_page_params(
         query=query,
         query_pattern=_like_contains_pattern(catalog_path_key(query)),
         folder_rel_path=folder_rel_path,
-        media_type=media_type,
+        content_filter=content_filter,
+        media_type=None if content_filter == "folders" else content_filter,
         page=page,
         page_size=page_size,
         offset=(page - 1) * page_size,
