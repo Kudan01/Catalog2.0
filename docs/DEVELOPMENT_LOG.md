@@ -512,3 +512,38 @@ This technical log records completed and approved development steps: what change
 - The relevant focused tests passed.
 - The full automated test suite passed.
 - A real Windows instance validated folder previews, statistical insight, Search collapse and its reset on a new search, plus busy feedback during filter/page changes and when leaving Search.
+
+## 2026-09-18 — Folder Favorites state and controls
+
+### Changes
+
+- `favorites.json` now uses version 2 with an explicit `kind: media|folder`. Legacy version 1 entries without `kind` are read as media and retain their original `added_at`; favorite identity is defined by item kind and path.
+- Folders can be added to or removed from Favorites from normal folder cards, Search folder cards, and the header of the currently open non-root folder. All three surfaces share one folder-favorite mechanism and the existing media-favorite interaction pattern.
+- Folder favorite state is persistent and synchronized across browse, Search, and the open-folder header. The current media-only Favorites view and media modal intentionally ignore folder entries until the follow-up folder Favorites view change.
+- Media rename updates only media favorites. Folder branch rename and missing-branch delete include the exact folder favorite, descendant folder favorites, and media favorites while preserving `kind` and `added_at`; scan purge does not remove valid folder favorites.
+- Open Folder moved into the existing More menu on normal folder cards and in the open-folder header. Folder-card favorite controls retain stable compact sizing.
+- The media-modal favorite control retains standard modal button styling and uses both localized labels for intrinsic sizing, preventing layout movement when its state changes.
+
+### Reason
+
+- Establish kind-safe persistent folder favorite state and consistent controls before folder entries are introduced into the Favorites view itself.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/scan_activate.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/index.html`
+- `catalog_app/static/style.css`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_folder_favorites.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused folder Favorites tests passed.
+- The full automated test suite passed.
+- A real Windows instance validated add/remove behavior, shared state across browse, Search, and the open folder, persistence after restart, the More menus, and the resulting favorite UI.
+- The final media-modal correction was functionally and visually validated.

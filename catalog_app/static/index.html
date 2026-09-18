@@ -62,10 +62,11 @@
           <p id="folderCounts"></p>
         </div>
         <div class="content-head-actions">
-          <button id="currentFolderOpen" class="current-folder-open" type="button" data-action="open-folder" data-text="actions.openCurrentFolder" hidden></button>
+          <button id="currentFolderFavorite" class="favorite-action" type="button" data-action="favorite-folder" data-text="actions.addFavorite" hidden></button>
           <details id="currentFolderMore" class="folder-more-menu current-folder-more" hidden>
             <summary data-text="actions.more"></summary>
             <div class="folder-more-menu-panel">
+              <button id="currentFolderOpen" class="current-folder-open" type="button" data-action="open-folder" data-text="actions.openCurrentFolder" hidden></button>
               <button id="currentFolderUpdate" type="button" data-action="update-folder" data-long-job-action data-text="actions.updateCurrentFolder"></button>
               <button id="currentFolderGeneratePreviews" type="button" data-long-job-action data-text="actions.generatePreviews"></button>
             </div>

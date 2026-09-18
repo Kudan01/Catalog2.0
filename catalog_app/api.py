@@ -1540,7 +1540,12 @@ def _build_safe_media_rename_plan(
     add_check("no_catalog_collision", database_collision is None)
 
     favorite_entries = _read_favorite_entries(config)
-    favorite_matches = [entry for entry in favorite_entries if catalog_path_key(entry["path"]) == old_path_key]
+    favorite_matches = [
+        entry
+        for entry in favorite_entries
+        if entry.get("kind") == "media"
+        and catalog_path_key(entry["path"]) == old_path_key
+    ]
     thumbnail_count = _count(connection, "SELECT COUNT(*) FROM thumbnails WHERE media_id = ?", (media_id,))
     video_preview_count = _count(connection, "SELECT COUNT(*) FROM video_previews WHERE media_id = ?", (media_id,))
     folder_preview_rows = connection.execute(
@@ -1857,7 +1862,8 @@ def _build_safe_folder_rename_plan(
     favorite_matches = [
         entry
         for entry in favorite_entries
-        if catalog_path_key(entry["path"]).startswith(old_prefix)
+        if catalog_path_key(entry["path"]) == old_path_key
+        or catalog_path_key(entry["path"]).startswith(old_prefix)
     ]
     thumbnail_count = _count(
         connection,
@@ -2425,7 +2431,7 @@ def _count_favorites_in_branch(config: Config, branch_path_key: str) -> int:
     count = 0
     for entry in _read_favorite_entries(config):
         path_key = catalog_path_key(entry["path"])
-        if path_key.startswith(prefix):
+        if path_key == branch_path_key or path_key.startswith(prefix):
             count += 1
     return count
 
@@ -2675,6 +2681,7 @@ def folder_detail(config: Config, raw_path: str) -> dict[str, Any]:
             )
 
         folder = _folder_dict(row)
+        folder["is_favorite"] = str(row["path_key"]) in _favorite_path_key_set(config, kind="folder")
         _attach_folder_filesystem_status(config, folder)
         return {
             "ok": True,
@@ -2795,6 +2802,7 @@ def child_folders(
     )
     parent_key = catalog_path_key(params.parent_rel_path)
     include_previews = _folder_previews_requested(raw_include_previews)
+    folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder")
 
     with open_database(config.db_path, read_only=True) as connection:
         parent = _available_folder_by_key(connection, parent_key)
@@ -2806,6 +2814,7 @@ def child_folders(
                 parent=parent,
                 params=params,
                 include_previews=include_previews,
+                favorite_path_keys=folder_favorite_path_keys,
                 diagnostics=diagnostics,
             )
             if diagnostics is not None:
@@ -2879,6 +2888,7 @@ def child_folders(
             previews_by_folder = {}
         folders = [_folder_dict(row) for row in rows]
         for row, folder in zip(rows, folders, strict=True):
+            folder["is_favorite"] = str(row["path_key"]) in folder_favorite_path_keys
             if include_previews:
                 folder["folder_previews"] = previews_by_folder.get(int(row["id"]), [])
 
@@ -2908,6 +2918,7 @@ def _root_child_folders_with_disk_candidates(
     parent: sqlite3.Row | None,
     params: FolderPageParams,
     include_previews: bool,
+    favorite_path_keys: set[str],
     diagnostics: _FolderBrowseDiagnostics | None = None,
 ) -> dict[str, Any]:
     """Return root children plus disk-only top-level folders.
@@ -2950,6 +2961,8 @@ def _root_child_folders_with_disk_candidates(
         active_path_keys = {str(row["path_key"]) for row in active_rows}
 
     active_folders = [_folder_dict(row) for row in active_rows]
+    for row, folder in zip(active_rows, active_folders, strict=True):
+        folder["is_favorite"] = str(row["path_key"]) in favorite_path_keys
     snapshot = _attach_folder_filesystem_status_batch(
         config,
         "",
@@ -4124,8 +4137,12 @@ def search_page(
         ).fetchall()
 
         pages = math.ceil(total / params.page_size) if total else 0
-        favorite_path_keys = _favorite_path_key_set(config)
-        results = [_search_result_dict(row, favorite_path_keys) for row in rows]
+        media_favorite_path_keys = _favorite_path_key_set(config, kind="media")
+        folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder")
+        results = [
+            _search_result_dict(row, media_favorite_path_keys, folder_favorite_path_keys)
+            for row in rows
+        ]
         folder_results = [item for item in results if item["kind"] == "folder"]
         if folder_results:
             previews_by_folder = _folder_preview_items_by_folder(
@@ -4386,20 +4403,38 @@ def search_page_anchor(
         }
 
 
-def favorite_add_action(config: Config, raw_path: str) -> dict[str, Any]:
-    """Add one catalog media path to favorites.json."""
+def favorite_add_action(
+    config: Config,
+    raw_path: str,
+    raw_kind: str | None = None,
+) -> dict[str, Any]:
+    """Add one catalog media or folder path to favorites.json."""
     rel_path = _normalize_api_path(raw_path, allow_root=False)
     path_key = catalog_path_key(rel_path)
+    kind = _favorite_kind(raw_kind)
 
     with open_database(config.db_path, read_only=True) as connection:
-        row = connection.execute(
-            """
-            SELECT rel_path
-            FROM media_files
-            WHERE path_key = ?
-            """,
-            (path_key,),
-        ).fetchone()
+        if kind == "folder":
+            row = connection.execute(
+                """
+                SELECT rel_path
+                FROM folders
+                WHERE path_key = ?
+                  AND is_available = 1
+                  AND depth > 0
+                """,
+                (path_key,),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                """
+                SELECT rel_path
+                FROM media_files
+                WHERE path_key = ?
+                  AND is_available = 1
+                """,
+                (path_key,),
+            ).fetchone()
 
     if row is None:
         raise ApiError.from_message(
@@ -4412,10 +4447,12 @@ def favorite_add_action(config: Config, raw_path: str) -> dict[str, Any]:
     entries = _favorite_entries_without_path_key(
         _read_favorite_entries(config),
         path_key,
+        kind=kind,
     )
     entries.insert(
         0,
         {
+            "kind": kind,
             "path": normalized_rel_path,
             "added_at": _utc_timestamp(),
         },
@@ -4425,23 +4462,30 @@ def favorite_add_action(config: Config, raw_path: str) -> dict[str, Any]:
     return {
         "ok": True,
         "action": "favorite-add",
+        "kind": kind,
         "path": normalized_rel_path,
         "is_favorite": True,
     }
 
 
-def favorite_remove_action(config: Config, raw_path: str) -> dict[str, Any]:
+def favorite_remove_action(
+    config: Config,
+    raw_path: str,
+    raw_kind: str | None = None,
+) -> dict[str, Any]:
     """Remove one catalog path from favorites.json."""
     rel_path = _normalize_api_path(raw_path, allow_root=False)
     path_key = catalog_path_key(rel_path)
+    kind = _favorite_kind(raw_kind)
     entries = _read_favorite_entries(config)
-    kept_entries = _favorite_entries_without_path_key(entries, path_key)
+    kept_entries = _favorite_entries_without_path_key(entries, path_key, kind=kind)
     removed = len(kept_entries) != len(entries)
     _write_favorite_entries(config, kept_entries)
 
     return {
         "ok": True,
         "action": "favorite-remove",
+        "kind": kind,
         "path": rel_path,
         "removed": removed,
         "is_favorite": False,
@@ -5417,6 +5461,7 @@ def _folder_dict(row: sqlite3.Row) -> dict[str, Any]:
         "last_successful_scan_id": int(row["last_successful_scan_id"]),
         "is_active_catalog_folder": True,
         "is_disk_candidate": False,
+        "is_favorite": False,
         "direct": {
             "folders": int(row["direct_child_count"]),
             "images": int(row["direct_image_count"]),
@@ -5457,19 +5502,21 @@ def _media_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 def _search_result_dict(
     row: sqlite3.Row,
-    favorite_path_keys: set[str],
+    media_favorite_path_keys: set[str],
+    folder_favorite_path_keys: set[str],
 ) -> dict[str, Any]:
     kind = str(row["kind"])
 
     if kind == "folder":
         item = _folder_dict(row)
         item["kind"] = "folder"
+        item["is_favorite"] = str(row["path_key"]) in folder_favorite_path_keys
         return item
 
     if kind == "media":
         item = _media_dict(row)
         item["kind"] = "media"
-        item["is_favorite"] = str(row["path_key"]) in favorite_path_keys
+        item["is_favorite"] = str(row["path_key"]) in media_favorite_path_keys
         return item
 
     raise ApiError.from_message(
@@ -5513,8 +5560,9 @@ def _read_favorite_entries(config: Config) -> list[dict[str, str]]:
             "favorites.storage.entries_not_list",
         )
 
+    version = payload.get("version", 1)
     entries: list[dict[str, str]] = []
-    seen_path_keys: set[str] = set()
+    seen_identities: set[tuple[str, str]] = set()
 
     for raw_entry in raw_entries:
         if not isinstance(raw_entry, dict):
@@ -5532,15 +5580,20 @@ def _read_favorite_entries(config: Config) -> list[dict[str, str]]:
 
         rel_path = _normalize_api_path(raw_path, allow_root=False)
         path_key = catalog_path_key(rel_path)
-        if path_key in seen_path_keys:
+        raw_kind = raw_entry.get("kind", "media" if version == 1 else None)
+        if raw_kind not in {"media", "folder"}:
+            raise ApiError.from_message(500, "favorites.storage.entry_invalid")
+        kind = str(raw_kind)
+        identity = (kind, path_key)
+        if identity in seen_identities:
             continue
 
         added_at = raw_entry.get("added_at")
         if not isinstance(added_at, str) or not added_at:
             added_at = ""
 
-        entries.append({"path": rel_path, "added_at": added_at})
-        seen_path_keys.add(path_key)
+        entries.append({"kind": kind, "path": rel_path, "added_at": added_at})
+        seen_identities.add(identity)
 
     return entries
 
@@ -5553,18 +5606,20 @@ def _favorite_entries_with_media_path_renamed(
 ) -> list[dict[str, str]]:
     """Return favorites entries with one media path renamed and duplicates removed."""
     result: list[dict[str, str]] = []
-    seen_path_keys: set[str] = set()
+    seen_identities: set[tuple[str, str]] = set()
 
     for entry in entries:
         path = str(entry.get("path") or "")
+        kind = str(entry.get("kind") or "media")
         added_at = str(entry.get("added_at") or "")
         path_key = catalog_path_key(path)
-        next_path = new_rel_path if path_key == old_path_key else path
+        next_path = new_rel_path if kind == "media" and path_key == old_path_key else path
         next_key = catalog_path_key(next_path)
-        if next_key in seen_path_keys:
+        identity = (kind, next_key)
+        if identity in seen_identities:
             continue
-        result.append({"path": next_path, "added_at": added_at})
-        seen_path_keys.add(next_key)
+        result.append({"kind": kind, "path": next_path, "added_at": added_at})
+        seen_identities.add(identity)
 
     return result
 
@@ -5582,14 +5637,17 @@ def _favorite_entries_with_folder_branch_renamed(
     new_prefix_text = new_rel_path + "/"
     old_part_count = len(PurePosixPath(old_rel_path).parts)
     result: list[dict[str, str]] = []
-    seen_path_keys: set[str] = set()
+    seen_identities: set[tuple[str, str]] = set()
 
     for entry in entries:
         path = str(entry.get("path") or "")
+        kind = str(entry.get("kind") or "media")
         added_at = str(entry.get("added_at") or "")
         path_key = catalog_path_key(path)
 
-        if path_key.startswith(old_prefix_key):
+        if path_key == old_path_key:
+            next_path = new_rel_path
+        elif path_key.startswith(old_prefix_key):
             if path.startswith(old_prefix_text):
                 suffix = path[len(old_prefix_text):]
             else:
@@ -5600,18 +5658,26 @@ def _favorite_entries_with_folder_branch_renamed(
             next_path = path
 
         next_key = catalog_path_key(next_path)
-        if next_key in seen_path_keys:
+        identity = (kind, next_key)
+        if identity in seen_identities:
             continue
-        result.append({"path": next_path, "added_at": added_at})
-        seen_path_keys.add(next_key)
+        result.append({"kind": kind, "path": next_path, "added_at": added_at})
+        seen_identities.add(identity)
 
     return result
 
 
 def _write_favorite_entries(config: Config, entries: list[dict[str, str]]) -> None:
     payload = {
-        "version": 1,
-        "favorites": entries,
+        "version": 2,
+        "favorites": [
+            {
+                "kind": str(entry.get("kind") or "media"),
+                "path": entry["path"],
+                "added_at": str(entry.get("added_at") or ""),
+            }
+            for entry in entries
+        ],
     }
     target_path = config.favorites_json
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5640,6 +5706,7 @@ def _favorite_media_items(
     config: Config,
     entries: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
+    entries = [entry for entry in entries if entry.get("kind") == "media"]
     if not entries:
         return []
 
@@ -5720,18 +5787,34 @@ def _favorite_modal_media_items(
     ]
 
 
-def _favorite_path_key_set(config: Config) -> set[str]:
-    return {catalog_path_key(entry["path"]) for entry in _read_favorite_entries(config)}
+def _favorite_kind(raw_kind: str | None) -> str:
+    kind = str(raw_kind or "media").strip()
+    if kind not in {"media", "folder"}:
+        raise ApiError.from_message(400, "favorites.kind.invalid", params={"kind": kind})
+    return kind
+
+
+def _favorite_path_key_set(config: Config, *, kind: str) -> set[str]:
+    return {
+        catalog_path_key(entry["path"])
+        for entry in _read_favorite_entries(config)
+        if entry.get("kind") == kind
+    }
 
 
 def _favorite_entries_without_path_key(
     entries: list[dict[str, str]],
     path_key: str,
+    *,
+    kind: str,
 ) -> list[dict[str, str]]:
     return [
         entry
         for entry in entries
-        if catalog_path_key(entry["path"]) != path_key
+        if not (
+            entry.get("kind") == kind
+            and catalog_path_key(entry["path"]) == path_key
+        )
     ]
 
 
@@ -5743,7 +5826,8 @@ def _favorite_entries_without_branch_path_key(
     return [
         entry
         for entry in entries
-        if not catalog_path_key(entry["path"]).startswith(prefix)
+        if catalog_path_key(entry["path"]) != branch_path_key
+        and not catalog_path_key(entry["path"]).startswith(prefix)
     ]
 
 
@@ -5751,7 +5835,7 @@ def _annotate_favorite_media(
     config: Config,
     media: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    favorite_path_keys = _favorite_path_key_set(config)
+    favorite_path_keys = _favorite_path_key_set(config, kind="media")
     for item in media:
         item["is_favorite"] = catalog_path_key(item["rel_path"]) in favorite_path_keys
     return media

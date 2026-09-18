@@ -740,6 +740,7 @@ const els = {
   folderTitle: document.getElementById("folderTitle"),
   folderCounts: document.getElementById("folderCounts"),
   currentFolderOpen: document.getElementById("currentFolderOpen"),
+  currentFolderFavorite: document.getElementById("currentFolderFavorite"),
   currentFolderRename: document.getElementById("currentFolderRename"),
   currentFolderUpdate: document.getElementById("currentFolderUpdate"),
   currentFolderMore: document.getElementById("currentFolderMore"),
@@ -3142,12 +3143,20 @@ function updateModalControls(modal, mode) {
   const favorite = modal.querySelector("#mediaModalFavorite");
   const canToggleFavorite = (isImageMode || isVideoMode) && modalFavoriteEligible(currentItem);
   if (favorite) {
+    const isFavorite = Boolean(currentItem && currentItem.isFavorite);
+    const addLabel = favorite.querySelector('[data-favorite-label="add"]');
+    const removeLabel = favorite.querySelector('[data-favorite-label="remove"]');
     favorite.hidden = !canToggleFavorite;
     favorite.disabled = !canToggleFavorite;
-    favorite.textContent = currentItem && currentItem.isFavorite
-      ? text("actions.removeFavorite")
-      : text("actions.addFavorite");
-    favorite.classList.toggle("is-favorite", Boolean(currentItem && currentItem.isFavorite));
+    if (addLabel) {
+      addLabel.textContent = text("actions.addFavorite");
+      addLabel.setAttribute("aria-hidden", isFavorite ? "true" : "false");
+    }
+    if (removeLabel) {
+      removeLabel.textContent = text("actions.removeFavorite");
+      removeLabel.setAttribute("aria-hidden", isFavorite ? "false" : "true");
+    }
+    favorite.classList.toggle("is-favorite", isFavorite);
   }
 
   const openOriginal = modal.querySelector("#mediaModalOpenOriginal");
@@ -3223,7 +3232,10 @@ function ensureMediaModal() {
         <div id="mediaModalControls" class="media-modal-controls" hidden>
           <button id="mediaModalPrev" type="button">${escapeHtml(text("actions.previous"))}</button>
           <button id="mediaModalNext" type="button">${escapeHtml(text("actions.next"))}</button>
-          <button id="mediaModalFavorite" type="button" class="favorite-action" hidden>${escapeHtml(text("actions.addFavorite"))}</button>
+          <button id="mediaModalFavorite" type="button" class="favorite-action" hidden>
+            <span data-favorite-label="add" aria-hidden="false">${escapeHtml(text("actions.addFavorite"))}</span>
+            <span data-favorite-label="remove" aria-hidden="true">${escapeHtml(text("actions.removeFavorite"))}</span>
+          </button>
           <button id="mediaModalOpenOriginal" type="button" hidden>${escapeHtml(text("actions.openOriginal"))}</button>
           <button id="mediaModalZoomOut" type="button">${escapeHtml(text("modal.zoomOut"))}</button>
           <button id="mediaModalZoomIn" type="button">${escapeHtml(text("modal.zoomIn"))}</button>
@@ -3608,6 +3620,18 @@ function updateVisibleFavoriteState(path, isFavorite) {
     for (const trigger of card.querySelectorAll("[data-image-modal-path]")) {
       trigger.dataset.imageModalFavorite = isFavorite ? "1" : "0";
     }
+  }
+}
+
+function updateVisibleFolderFavoriteState(path, isFavorite) {
+  if (state.currentFolder && sameCatalogPath(state.currentFolder.rel_path, path)) {
+    state.currentFolder.is_favorite = isFavorite;
+  }
+  for (const button of document.querySelectorAll('[data-action="favorite-folder"]')) {
+    if (!sameCatalogPath(button.dataset.folderPath, path)) continue;
+    button.dataset.isFavorite = isFavorite ? "1" : "0";
+    button.textContent = isFavorite ? text("actions.removeFavorite") : text("actions.addFavorite");
+    button.classList.toggle("is-favorite", isFavorite);
   }
 }
 
@@ -4240,20 +4264,32 @@ function setManagementActionAvailability(button, available, isRunning) {
 
 function updateCurrentFolderAction(isRunning = state.jobRunning) {
   const openButton = els.currentFolderOpen;
+  const favoriteButton = els.currentFolderFavorite;
   const updateButton = els.currentFolderUpdate;
   const more = els.currentFolderMore;
   const generateButton = els.currentFolderGeneratePreviews;
-  if (!openButton && !updateButton && !more) return;
+  if (!openButton && !favoriteButton && !updateButton && !more) return;
 
   const visible = state.view === "folder" && Boolean(state.folder) && Boolean(state.currentFolder);
   const updateVisible = visible;
   const previewsVisible = visible && folderCanGeneratePreviews(state.currentFolder);
-  const menuVisible = updateVisible || previewsVisible;
+  const menuVisible = visible || updateVisible || previewsVisible;
   const longJobDisabled = Boolean(isRunning) || state.jobStartPending || !visible;
 
   if (openButton) {
     openButton.hidden = !visible;
     openButton.disabled = !visible || !currentFolderFilesystemIsUsable();
+  }
+
+  if (favoriteButton) {
+    favoriteButton.hidden = !visible;
+    favoriteButton.disabled = !visible;
+    favoriteButton.dataset.folderPath = visible ? String(state.currentFolder.rel_path || "") : "";
+    favoriteButton.dataset.isFavorite = visible && state.currentFolder.is_favorite ? "1" : "0";
+    favoriteButton.textContent = visible && state.currentFolder.is_favorite
+      ? text("actions.removeFavorite")
+      : text("actions.addFavorite");
+    favoriteButton.classList.toggle("is-favorite", Boolean(visible && state.currentFolder.is_favorite));
   }
 
   if (updateButton) {
@@ -5987,9 +6023,10 @@ function prepareFolderMoreMenu(details) {
 
 function folderMoreMenu(branch, folder = null, options = {}) {
   const includeUpdate = options.includeUpdate === true;
+  const includeOpen = options.includeOpen === true;
   const includeGenerate = folderCanGeneratePreviews(folder);
 
-  if (!includeUpdate && !includeGenerate) return null;
+  if (!includeOpen && !includeUpdate && !includeGenerate) return null;
 
   const details = document.createElement("details");
   details.className = "folder-more-menu";
@@ -6000,6 +6037,14 @@ function folderMoreMenu(branch, folder = null, options = {}) {
 
   const menu = document.createElement("div");
   menu.className = "folder-more-menu-panel";
+
+  if (includeOpen) {
+    const openButton = folderSystemOpenButton(branch, folder);
+    openButton.addEventListener("click", () => {
+      details.open = false;
+    });
+    menu.appendChild(openButton);
+  }
 
   if (includeUpdate) {
     const updateButton = folderUpdateButton(branch, folder);
@@ -7397,11 +7442,13 @@ function folderResultCard(folder) {
         <div class="row-path">${escapeHtml(folder.rel_path)}</div>
         <div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>
         <div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>
+        <div class="folder-card-actions"></div>
       </div>
       ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
       ${folderInsightMarkup(folder)}
     </div>
   `;
+  card.querySelector(".folder-card-actions").appendChild(folderFavoriteButton(folder));
   bindFolderPreviewImageErrors(card);
   card.addEventListener("click", () => openFolder(folder.rel_path));
   return card;
@@ -7627,8 +7674,10 @@ function renderChildFolders(data) {
       </div>
     `;
     const actions = card.querySelector(".folder-card-actions");
-    actions.appendChild(folderSystemOpenButton(folder.rel_path, folder));
-    const moreMenu = folderMoreMenu(folder.rel_path, folder, { includeUpdate: true });
+    if (folder.is_active_catalog_folder !== false) {
+      actions.appendChild(folderFavoriteButton(folder));
+    }
+    const moreMenu = folderMoreMenu(folder.rel_path, folder, { includeOpen: true, includeUpdate: true });
     if (moreMenu) {
       actions.appendChild(moreMenu);
     }
@@ -8657,10 +8706,10 @@ function mediaCard(media, renderContext = {}) {
   return card;
 }
 
-async function setFavoritePath(path, shouldBeFavorite) {
+async function setFavoritePath(path, shouldBeFavorite, kind = "media") {
   const result = await postJson(
     shouldBeFavorite ? "/api/favorites/add" : "/api/favorites/remove",
-    { path },
+    { path, kind },
   );
   const resultPath = result.path || path;
 
@@ -8669,6 +8718,39 @@ async function setFavoritePath(path, shouldBeFavorite) {
   }
 
   return { ...result, path: resultPath };
+}
+
+function folderFavoriteButton(folder) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.action = "favorite-folder";
+  button.dataset.folderPath = String(folder.rel_path || "");
+  button.dataset.isFavorite = folder.is_favorite ? "1" : "0";
+  button.className = folder.is_favorite ? "favorite-action is-favorite" : "favorite-action";
+  button.textContent = folder.is_favorite ? text("actions.removeFavorite") : text("actions.addFavorite");
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void toggleFolderFavorite(folder, button);
+  });
+  return button;
+}
+
+async function toggleFolderFavorite(folder, button) {
+  const shouldBeFavorite = button.dataset.isFavorite !== "1";
+  button.disabled = true;
+  try {
+    const result = await setFavoritePath(folder.rel_path, shouldBeFavorite, "folder");
+    folder.is_favorite = shouldBeFavorite;
+    updateVisibleFolderFavoriteState(result.path || folder.rel_path, shouldBeFavorite);
+    setMessage(shouldBeFavorite
+      ? text("message.favoriteAdded", { path: result.path || folder.rel_path })
+      : text("message.favoriteRemoved", { path: result.path || folder.rel_path }));
+  } catch (error) {
+    setMessage(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function setFavorite(media, shouldBeFavorite) {
@@ -8990,7 +9072,19 @@ if (els.currentFolderOpen) {
       showFolderFilesystemProblem(state.currentFolder, "jobs.unavailableCurrent");
       return;
     }
+    if (els.currentFolderMore) {
+      els.currentFolderMore.open = false;
+    }
     openSystemFolder(state.folder);
+  });
+}
+
+if (els.currentFolderFavorite) {
+  els.currentFolderFavorite.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (state.view !== "folder" || !state.folder || !state.currentFolder) return;
+    void toggleFolderFavorite(state.currentFolder, els.currentFolderFavorite);
   });
 }
 

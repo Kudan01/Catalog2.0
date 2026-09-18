@@ -2247,8 +2247,9 @@ def _read_favorite_entries_from_path(path: Path) -> list[dict[str, str]]:
     if not isinstance(raw_entries, list):
         raise ScanActivationError("favorites.json položka favorites musí být seznam.")
 
+    version = payload.get("version", 1)
     entries: list[dict[str, str]] = []
-    seen_path_keys: set[str] = set()
+    seen_identities: set[tuple[str, str]] = set()
     for raw_entry in raw_entries:
         if not isinstance(raw_entry, dict):
             raise ScanActivationError("favorites.json obsahuje neplatnou položku.")
@@ -2259,15 +2260,20 @@ def _read_favorite_entries_from_path(path: Path) -> list[dict[str, str]]:
 
         rel_path = normalize_catalog_relative_path(raw_path, allow_root=False)
         path_key = catalog_path_key(rel_path)
-        if path_key in seen_path_keys:
+        raw_kind = raw_entry.get("kind", "media" if version == 1 else None)
+        if raw_kind not in {"media", "folder"}:
+            raise ScanActivationError("favorites.json obsahuje neplatný druh položky.")
+        kind = str(raw_kind)
+        identity = (kind, path_key)
+        if identity in seen_identities:
             continue
 
         added_at = raw_entry.get("added_at")
         if not isinstance(added_at, str) or not added_at:
             added_at = ""
 
-        entries.append({"path": rel_path, "added_at": added_at})
-        seen_path_keys.add(path_key)
+        entries.append({"kind": kind, "path": rel_path, "added_at": added_at})
+        seen_identities.add(identity)
 
     return entries
 
@@ -2281,14 +2287,22 @@ def _favorite_entries_without_media_path_keys(
     return [
         entry
         for entry in entries
-        if catalog_path_key(entry["path"]) not in media_path_keys
+        if entry.get("kind") != "media"
+        or catalog_path_key(entry["path"]) not in media_path_keys
     ]
 
 
 def _write_favorite_entries_to_path(path: Path, entries: list[dict[str, str]]) -> None:
     payload = {
-        "version": 1,
-        "favorites": entries,
+        "version": 2,
+        "favorites": [
+            {
+                "kind": str(entry.get("kind") or "media"),
+                "path": entry["path"],
+                "added_at": str(entry.get("added_at") or ""),
+            }
+            for entry in entries
+        ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_name(path.name + ".tmp")

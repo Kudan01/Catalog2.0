@@ -340,12 +340,14 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
 
             if path == "/api/favorites/add":
                 raw_path = self._request_path_value(parsed=parsed, allow_missing=False)
-                self._send_json(favorite_add_action(self.config, raw_path), HTTPStatus.OK)
+                raw_kind = self._request_text_value(parsed=parsed, name="kind", default="media")
+                self._send_json(favorite_add_action(self.config, raw_path, raw_kind), HTTPStatus.OK)
                 return
 
             if path == "/api/favorites/remove":
                 raw_path = self._request_path_value(parsed=parsed, allow_missing=False)
-                self._send_json(favorite_remove_action(self.config, raw_path), HTTPStatus.OK)
+                raw_kind = self._request_text_value(parsed=parsed, name="kind", default="media")
+                self._send_json(favorite_remove_action(self.config, raw_path, raw_kind), HTTPStatus.OK)
                 return
 
             if path == "/api/folder/missing-delete-execute":

@@ -1479,6 +1479,19 @@ body.modal-open {
   border-color: rgba(240, 109, 50, .8);
 }
 
+#mediaModalFavorite {
+  display: inline-grid;
+  place-items: center;
+}
+
+#mediaModalFavorite [data-favorite-label] {
+  grid-area: 1 / 1;
+}
+
+#mediaModalFavorite [data-favorite-label][aria-hidden="true"] {
+  visibility: hidden;
+}
+
 .media-modal-stage {
   min-width: 0;
   min-height: 0;
@@ -1772,12 +1785,18 @@ body.modal-open {
   padding-top: 12px;
 }
 
+.folder-card-actions .favorite-action,
 .folder-open-action,
 .folder-update-action {
   flex: 0 0 auto;
   font-size: 12px;
   padding: 6px 8px;
   white-space: nowrap;
+}
+
+.folder-card-actions .favorite-action {
+  width: 88px;
+  text-align: center;
 }
 
 .folder-more-menu {
