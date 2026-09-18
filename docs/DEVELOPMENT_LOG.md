@@ -547,3 +547,37 @@ This technical log records completed and approved development steps: what change
 - The full automated test suite passed.
 - A real Windows instance validated add/remove behavior, shared state across browse, Search, and the open folder, persistence after restart, the More menus, and the resulting favorite UI.
 - The final media-modal correction was functionally and visually validated.
+
+## 2026-09-18 — Independent Search folder and media pagination
+
+### Changes
+
+- Search All now returns two independently paginated sections: folders with the folder pager and media with the media pager.
+- The frontend uses `state.childPage` and `state.mediaPage` independently, so changing either page preserves the other section's current page.
+- Search Folders renders only the folder section, while Photos, GIFs, Videos, and Other render only the matching media section.
+- Search page size remains fixed at 50 for both folder and media pagination.
+- In Search All, the folder section retains its temporary collapse state and uses the same top/bottom pager visibility rules as normal folder browsing.
+- A new search resets both page states to page 1 and starts with folders expanded.
+- Search media cards and modal navigation use pagination metadata from the media section, independently of folder pagination.
+
+### Reason
+
+- Align Search with the normal catalog layout and prevent folder and media results from competing for one mixed result page.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `tests/test_all_page_size.py`
+- `tests/test_content_filter.py`
+- `tests/test_folder_favorites.py`
+- `tests/test_search_media_type_filter.py`
+- `tests/test_search_render_diagnostics.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The relevant focused tests passed.
+- The full automated test suite passed.
+- A real Windows instance validated independent folder and media paging, folder collapse, each content filter, reset behavior for a new search, and media-modal navigation.

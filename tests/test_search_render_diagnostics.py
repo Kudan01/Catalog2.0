@@ -28,7 +28,7 @@ class SearchRenderDiagnosticsContractTests(unittest.TestCase):
     def test_search_render_uses_filtered_media_result_count(self) -> None:
         self.assertIn("count: mediaResults.length", self.render)
         self.assertIn("rendered: mediaResults.length", self.render)
-        self.assertNotIn("data.media", self.render)
+        self.assertIn("const mediaData = data.media", self.render)
 
     def test_empty_media_branch_ends_diagnostics_before_return(self) -> None:
         branch_start = self.render.index("if (mediaResults.length === 0)")

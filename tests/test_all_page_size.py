@@ -90,10 +90,14 @@ class AllPageSizeConfigTests(unittest.TestCase):
             raw_query="example",
             raw_folder="",
             raw_content_filter="all",
-            raw_page=None,
+            raw_folder_page=None,
+            raw_media_page=None,
             raw_page_size=None,
         )
-        self.assertEqual(50, params.page_size)
+        folder_page_size = params.page_size
+        media_page_size = params.page_size
+        self.assertEqual(50, folder_page_size)
+        self.assertEqual(50, media_page_size)
 
 
 class AllPageSizeFrontendContractTests(unittest.TestCase):

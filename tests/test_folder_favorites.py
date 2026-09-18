@@ -160,11 +160,12 @@ class FolderFavoritesTests(unittest.TestCase):
             raw_query="child_folder",
             raw_folder="",
             raw_content_filter="folders",
-            raw_page="1",
+            raw_folder_page="1",
+            raw_media_page="1",
             raw_page_size=None,
         )
         self.assertTrue(browse["folders"][0]["is_favorite"])
-        self.assertTrue(search["results"][0]["is_favorite"])
+        self.assertTrue(search["folders"]["items"][0]["is_favorite"])
         with patch("catalog_app.api._attach_folder_filesystem_status"):
             detail = folder_detail(self.config, "parent_folder/child_folder")
         self.assertTrue(detail["folder"]["is_favorite"])

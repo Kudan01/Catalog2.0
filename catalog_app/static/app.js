@@ -7091,7 +7091,8 @@ async function loadSearchView({ requestId, snapshot }) {
       q: snapshot.searchQuery,
       folder: snapshot.searchFolder,
       filter: snapshot.contentFilter,
-      page: snapshot.contentFilter === "folders" ? snapshot.childPage : snapshot.mediaPage,
+      folder_page: snapshot.childPage,
+      media_page: snapshot.mediaPage,
       page_size: 50,
     });
 
@@ -7238,7 +7239,7 @@ function setChildPagerVisible(visible) {
     const isBottom = pager.dataset.childPagerPosition === "bottom";
     pager.hidden = !visible || (isBottom && (
       state.childPages <= 1
-      || areChildFoldersCollapsed()
+      || (state.view === "search" ? state.searchFoldersCollapsed : areChildFoldersCollapsed())
       || els.childFolders.children.length === 0
     ));
   }
@@ -7304,7 +7305,7 @@ async function goToChildPage(page) {
   }
 
   state.childPage = targetPage;
-  if (state.view === "search" && state.contentFilter === "folders") {
+  if (state.view === "search") {
     scrollToCatalogTop();
     await reloadSafely(loadCurrentFolder);
     return;
@@ -7356,21 +7357,28 @@ function renderSearchHeader(data) {
 }
 
 function renderSearchResults(data) {
-  const folderResults = data.results.filter((item) => item.kind === "folder");
-  const mediaResults = data.results.filter((item) => item.kind === "media");
+  const folderData = data.folders;
+  const mediaData = data.media;
+  const folderResults = folderData.items;
+  const mediaResults = mediaData.items;
   const operation = diagnosticOperationStart("frontend.render.media", {
     count: mediaResults.length,
-    page: data.page,
+    page: mediaData.page,
     type: data.type,
   });
 
   els.childFolders.replaceChildren();
   resetChildFoldersCollapseUi();
   const foldersOnly = data.type === "folders";
+  const includesFolders = data.type === "all" || foldersOnly;
+
+  if (includesFolders) {
+    updateChildPager(folderData);
+  } else {
+    resetChildPager();
+  }
 
   if (folderResults.length === 0) {
-    els.childPageInfo.textContent = "";
-    setChildPagerVisible(false);
     if (foldersOnly) {
       els.childFolders.appendChild(emptyText(text("empty.search")));
       setChildFoldersSectionVisible(true);
@@ -7378,13 +7386,11 @@ function renderSearchResults(data) {
       setChildFoldersSectionVisible(false);
     }
   } else {
-    els.childPageInfo.textContent = text("search.childFolders");
     setChildFoldersSectionVisible(true);
     for (const folder of folderResults) {
       els.childFolders.appendChild(folderResultCard(folder));
     }
     if (foldersOnly) {
-      updateChildPager(data);
       resetChildFoldersCollapseUi();
     } else if (data.type === "all") {
       updateSearchFoldersCollapseState();
@@ -7407,7 +7413,7 @@ function renderSearchResults(data) {
   els.mediaList.replaceChildren();
   const sectionTitle = mediaSectionTitle(data.type);
   els.mediaTitle.textContent = text("search.title", { query: data.query }) + " – " + sectionTitle;
-  updateMediaPager(data);
+  updateMediaPager(mediaData);
 
   if (mediaResults.length === 0) {
     els.mediaList.appendChild(emptyText(data.total === 0 ? text("empty.search") : text("empty.searchMedia")));
@@ -7421,7 +7427,7 @@ function renderSearchResults(data) {
   for (const media of mediaResults) {
     els.mediaList.appendChild(mediaCard(
       media,
-      { view: "search", query: data.query, searchFolder: data.folder, type: data.type, page: data.page, pageSize: data.page_size, pages: data.pages, total: data.total },
+      { view: "search", query: data.query, searchFolder: data.folder, type: data.type, page: mediaData.page, pageSize: mediaData.page_size, pages: mediaData.pages, total: mediaData.total },
     ));
   }
   bindMediaThumbnailLazyLoading(els.mediaList);

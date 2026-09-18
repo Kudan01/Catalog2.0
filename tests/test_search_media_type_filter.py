@@ -55,6 +55,24 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
             )
             folder_id = int(cursor.lastrowid)
 
+            for index in range(54):
+                connection.execute(
+                    """
+                    INSERT INTO folders (
+                        rel_path, path_key, parent_id, name, depth, sort_key,
+                        last_successful_scan_id, is_available
+                    ) VALUES (?, ?, ?, ?, 1, ?, ?, 1)
+                    """,
+                    (
+                        f"matching_folder_{index:02d}",
+                        f"matching_folder_{index:02d}",
+                        root_id,
+                        f"matching_folder_{index:02d}",
+                        f"matching_folder_{index:02d}",
+                        scan_id,
+                    ),
+                )
+
             for index in range(55):
                 self._insert_media(
                     connection,
@@ -108,36 +126,54 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
             ),
         )
 
-    def _search(self, content_filter: str, *, page: int = 1) -> dict[str, object]:
+    def _search(
+        self,
+        content_filter: str,
+        *,
+        folder_page: int = 1,
+        media_page: int = 1,
+    ) -> dict[str, object]:
         return search_page(
             self.config,
             raw_query="matching",
             raw_folder="",
             raw_content_filter=content_filter,
-            raw_page=str(page),
+            raw_folder_page=str(folder_page),
+            raw_media_page=str(media_page),
             raw_page_size=None,
         )
 
-    def test_all_keeps_folders_and_media_in_combined_results(self) -> None:
+    def test_all_returns_independent_folder_and_media_pages(self) -> None:
         result = self._search("all")
-        kinds = {item["kind"] for item in result["results"]}
-        self.assertEqual({"folder", "media"}, kinds)
-        self.assertEqual(1, result["counts"]["folders"])
-        self.assertEqual(59, result["total"])
-        self.assertEqual(50, result["page_size"])
+        self.assertEqual(55, result["counts"]["folders"])
+        self.assertEqual(58, result["counts"]["media"])
+        self.assertEqual(113, result["total"])
+        self.assertEqual(50, result["folders"]["page_size"])
+        self.assertEqual(50, result["media"]["page_size"])
+        self.assertEqual(50, len(result["folders"]["items"]))
+        self.assertEqual(50, len(result["media"]["items"]))
+
+    def test_folder_and_media_pages_change_independently(self) -> None:
+        baseline = self._search("all")
+        folder_page = self._search("all", folder_page=2)
+        media_page = self._search("all", media_page=2)
+        self.assertEqual(baseline["media"]["items"], folder_page["media"]["items"])
+        self.assertNotEqual(baseline["folders"]["items"], folder_page["folders"]["items"])
+        self.assertEqual(baseline["folders"]["items"], media_page["folders"]["items"])
+        self.assertNotEqual(baseline["media"]["items"], media_page["media"]["items"])
 
     def test_folder_previews_are_loaded_once_for_current_page_folder_ids(self) -> None:
-        preview = {"position": 1, "thumbnail_cache_path": "cache/example.webp"}
         with patch(
             "catalog_app.api._folder_preview_items_by_folder",
-            return_value={2: [preview]},
+            return_value={},
         ) as preview_lookup:
-            result = self._search("all")
+            result = self._search("all", folder_page=2)
 
-        folders = [item for item in result["results"] if item["kind"] == "folder"]
-        self.assertEqual([preview], folders[0]["folder_previews"])
+        folders = result["folders"]["items"]
+        self.assertTrue(all(item["folder_previews"] == [] for item in folders))
         preview_lookup.assert_called_once()
-        self.assertEqual([2], preview_lookup.call_args.args[2])
+        self.assertEqual(5, len(preview_lookup.call_args.args[2]))
+        self.assertEqual([item["id"] for item in folders], preview_lookup.call_args.args[2])
 
     def test_typed_searches_return_only_matching_media(self) -> None:
         expected_totals = {"image": 55, "gif": 1, "video": 1, "other": 1}
@@ -145,35 +181,49 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
             with self.subTest(media_type=media_type):
                 result = self._search(media_type)
                 self.assertEqual(0, result["counts"]["folders"])
-                self.assertEqual(expected_total, result["total"])
-                self.assertTrue(result["results"])
-                self.assertTrue(all(item["kind"] == "media" for item in result["results"]))
-                self.assertTrue(all(item["media_type"] == media_type for item in result["results"]))
+                self.assertEqual(expected_total, result["media"]["total"])
+                self.assertEqual([], result["folders"]["items"])
+                self.assertTrue(result["media"]["items"])
+                self.assertTrue(all(item["media_type"] == media_type for item in result["media"]["items"]))
 
     def test_media_only_search_skips_folder_preview_lookup(self) -> None:
         with patch("catalog_app.api._folder_preview_items_by_folder") as preview_lookup:
             result = self._search("image")
 
-        self.assertTrue(result["results"])
+        self.assertTrue(result["media"]["items"])
         preview_lookup.assert_not_called()
 
     def test_folders_search_returns_only_folders(self) -> None:
         result = self._search("folders")
         self.assertEqual("folders", result["type"])
-        self.assertEqual(1, result["counts"]["folders"])
+        self.assertEqual(55, result["counts"]["folders"])
         self.assertEqual(0, result["counts"]["media"])
-        self.assertEqual(1, result["total"])
-        self.assertEqual(1, result["pages"])
-        self.assertEqual(["folder"], [item["kind"] for item in result["results"]])
+        self.assertEqual(55, result["total"])
+        self.assertEqual(2, result["folders"]["pages"])
+        self.assertEqual([], result["media"]["items"])
+        self.assertTrue(all(item["kind"] == "folder" for item in result["folders"]["items"]))
 
     def test_typed_search_paginates_media_only_with_fixed_page_size(self) -> None:
-        result = self._search("image", page=2)
-        self.assertEqual(50, result["page_size"])
-        self.assertEqual(55, result["total"])
-        self.assertEqual(2, result["pages"])
+        result = self._search("image", media_page=2)
+        self.assertEqual(50, result["media"]["page_size"])
+        self.assertEqual(55, result["media"]["total"])
+        self.assertEqual(2, result["media"]["pages"])
         self.assertEqual(0, result["counts"]["folders"])
-        self.assertEqual(5, len(result["results"]))
-        self.assertTrue(all(item["kind"] == "media" for item in result["results"]))
+        self.assertEqual(5, len(result["media"]["items"]))
+        self.assertEqual([], result["folders"]["items"])
+
+    def test_search_page_size_is_fixed_for_both_sections(self) -> None:
+        result = search_page(
+            self.config,
+            raw_query="matching",
+            raw_folder="",
+            raw_content_filter="all",
+            raw_folder_page="1",
+            raw_media_page="1",
+            raw_page_size="10",
+        )
+        self.assertEqual(50, result["folders"]["page_size"])
+        self.assertEqual(50, result["media"]["page_size"])
 
 
 if __name__ == "__main__":

@@ -1099,7 +1099,8 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                     "filter",
                     default=_single_query_value(query, "type", default="all"),
                 ),
-                raw_page=_optional_query_value(query, "page"),
+                raw_folder_page=_optional_query_value(query, "folder_page"),
+                raw_media_page=_optional_query_value(query, "media_page"),
                 raw_page_size=_optional_query_value(query, "page_size"),
             ), HTTPStatus.OK
 

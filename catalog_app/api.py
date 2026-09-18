@@ -334,9 +334,11 @@ class SearchPageParams:
     folder_rel_path: str
     content_filter: str
     media_type: str | None
-    page: int
     page_size: int
-    offset: int
+    folder_page: int
+    folder_offset: int
+    media_page: int
+    media_offset: int
 
 
 
@@ -4004,15 +4006,17 @@ def search_page(
     raw_query: str,
     raw_folder: str,
     raw_content_filter: str,
-    raw_page: str | None,
+    raw_folder_page: str | None,
+    raw_media_page: str | None,
     raw_page_size: str | None,
 ) -> dict[str, Any]:
-    """Return one read-only page of folder and media search results."""
+    """Return independently paginated folder and media search results."""
     params = _search_page_params(
         raw_query=raw_query,
         raw_folder=raw_folder,
         raw_content_filter=raw_content_filter,
-        raw_page=raw_page,
+        raw_folder_page=raw_folder_page,
+        raw_media_page=raw_media_page,
         raw_page_size=raw_page_size,
     )
 
@@ -4059,91 +4063,48 @@ def search_page(
             if include_media
             else 0
         )
-        total = folder_total + media_total
-
-        rows = connection.execute(
+        folder_rows = connection.execute(
             f"""
-            SELECT *
-            FROM (
-                SELECT
-                    'folder' AS kind,
-                    0 AS sort_group,
-                    id,
-                    rel_path,
-                    path_key,
-                    parent_id,
-                    name,
-                    depth,
-                    NULL AS folder_id,
-                    NULL AS file_name,
-                    NULL AS extension,
-                    NULL AS media_type,
-                    NULL AS size_bytes,
-                    NULL AS modified_time,
-                    last_successful_scan_id,
-                    is_available,
-                    direct_child_count,
-                    direct_image_count,
-                    direct_gif_count,
-                    direct_video_count,
-                    direct_other_count,
-                    recursive_folder_count,
-                    recursive_image_count,
-                    recursive_gif_count,
-                    recursive_video_count,
-                    recursive_other_count,
-                    sort_key
-                FROM folders
-                WHERE {folder_where}
-
-                UNION ALL
-
-                SELECT
-                    'media' AS kind,
-                    1 AS sort_group,
-                    media.id,
-                    media.rel_path,
-                    media.path_key,
-                    NULL AS parent_id,
-                    media.file_name AS name,
-                    NULL AS depth,
-                    media.folder_id,
-                    media.file_name,
-                    media.extension,
-                    media.media_type,
-                    media.size_bytes,
-                    media.modified_time,
-                    media.last_successful_scan_id,
-                    media.is_available,
-                    NULL AS direct_child_count,
-                    NULL AS direct_image_count,
-                    NULL AS direct_gif_count,
-                    NULL AS direct_video_count,
-                    NULL AS direct_other_count,
-                    NULL AS recursive_folder_count,
-                    NULL AS recursive_image_count,
-                    NULL AS recursive_gif_count,
-                    NULL AS recursive_video_count,
-                    NULL AS recursive_other_count,
-                    media.sort_key
-                FROM media_files AS media
-                JOIN folders AS parent ON parent.id = media.folder_id
-                WHERE {media_where}
-            ) AS result
-            ORDER BY sort_group, sort_key, name, id
+            SELECT
+                id, rel_path, path_key, parent_id, name, depth,
+                last_successful_scan_id, is_available,
+                direct_child_count, direct_image_count, direct_gif_count,
+                direct_video_count, direct_other_count,
+                recursive_folder_count, recursive_image_count, recursive_gif_count,
+                recursive_video_count, recursive_other_count
+            FROM folders
+            WHERE {folder_where}
+            ORDER BY sort_key, name, id
             LIMIT ? OFFSET ?
             """,
-            (*folder_values, *media_values, params.page_size, params.offset),
-        ).fetchall()
+            (*folder_values, params.page_size, params.folder_offset),
+        ).fetchall() if include_folders else []
+        media_rows = connection.execute(
+            f"""
+            SELECT
+                media.id, media.rel_path, media.path_key, media.folder_id,
+                media.file_name, media.extension, media.media_type,
+                media.size_bytes, media.modified_time,
+                media.last_successful_scan_id, media.is_available
+            FROM media_files AS media
+            JOIN folders AS parent ON parent.id = media.folder_id
+            WHERE {media_where}
+            ORDER BY media.sort_key, media.file_name, media.id
+            LIMIT ? OFFSET ?
+            """,
+            (*media_values, params.page_size, params.media_offset),
+        ).fetchall() if include_media else []
 
-        pages = math.ceil(total / params.page_size) if total else 0
-        media_favorite_path_keys = _favorite_path_key_set(config, kind="media")
-        folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder")
-        results = [
-            _search_result_dict(row, media_favorite_path_keys, folder_favorite_path_keys)
-            for row in rows
-        ]
-        folder_results = [item for item in results if item["kind"] == "folder"]
+        folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder") if folder_rows else set()
+        media_favorite_path_keys = _favorite_path_key_set(config, kind="media") if media_rows else set()
+        folder_results = [_folder_dict(row) for row in folder_rows]
+        for row, item in zip(folder_rows, folder_results, strict=True):
+            item["kind"] = "folder"
+            item["is_favorite"] = str(row["path_key"]) in folder_favorite_path_keys
+        media_results = [_media_dict(row) for row in media_rows]
+        for row, item in zip(media_rows, media_results, strict=True):
+            item["kind"] = "media"
+            item["is_favorite"] = str(row["path_key"]) in media_favorite_path_keys
         if folder_results:
             previews_by_folder = _folder_preview_items_by_folder(
                 config,
@@ -4158,15 +4119,25 @@ def search_page(
             "query": params.query,
             "folder": params.folder_rel_path,
             "type": params.content_filter,
-            "page": params.page,
-            "page_size": params.page_size,
-            "total": total,
-            "pages": pages,
+            "total": folder_total + media_total,
             "counts": {
                 "folders": folder_total,
                 "media": media_total,
             },
-            "results": results,
+            "folders": {
+                "page": params.folder_page,
+                "page_size": params.page_size,
+                "total": folder_total,
+                "pages": math.ceil(folder_total / params.page_size) if folder_total else 0,
+                "items": folder_results,
+            },
+            "media": {
+                "page": params.media_page,
+                "page_size": params.page_size,
+                "total": media_total,
+                "pages": math.ceil(media_total / params.page_size) if media_total else 0,
+                "items": media_results,
+            },
         }
 
 
@@ -4184,7 +4155,8 @@ def search_media_page(
         raw_query=raw_query,
         raw_folder=raw_folder,
         raw_content_filter=raw_media_type,
-        raw_page=raw_page,
+        raw_folder_page="1",
+        raw_media_page=raw_page,
         raw_page_size=raw_page_size,
     )
 
@@ -4237,7 +4209,7 @@ def search_media_page(
             ORDER BY media.sort_key, media.file_name, media.id
             LIMIT ? OFFSET ?
             """,
-            (*media_values, params.page_size, params.offset),
+            (*media_values, params.page_size, params.media_offset),
         ).fetchall()
 
         pages = math.ceil(total / params.page_size) if total else 0
@@ -4248,7 +4220,7 @@ def search_media_page(
             "query": params.query,
             "folder": params.folder_rel_path,
             "type": params.media_type,
-            "page": params.page,
+            "page": params.media_page,
             "page_size": params.page_size,
             "total": total,
             "pages": pages,
@@ -4270,7 +4242,8 @@ def search_page_anchor(
         raw_query=raw_query,
         raw_folder=raw_folder,
         raw_content_filter=raw_media_type,
-        raw_page="1",
+        raw_folder_page="1",
+        raw_media_page="1",
         raw_page_size=raw_page_size,
     )
 
@@ -5227,7 +5200,8 @@ def _search_page_params(
     raw_query: str,
     raw_folder: str,
     raw_content_filter: str,
-    raw_page: str | None,
+    raw_folder_page: str | None,
+    raw_media_page: str | None,
     raw_page_size: str | None,
 ) -> SearchPageParams:
     query = (raw_query or "").strip()
@@ -5253,19 +5227,11 @@ def _search_page_params(
             params={"allowed": "all, folders, image, gif, video, other"},
         )
 
-    page = _positive_int(raw_page or "1", field_name="page")
+    folder_page = _positive_int(raw_folder_page or "1", field_name="folder_page")
+    media_page = _positive_int(raw_media_page or "1", field_name="media_page")
 
-    if raw_page_size is None or raw_page_size == "":
-        page_size = 50
-    else:
-        page_size = _positive_int(raw_page_size, field_name="page_size")
-
-    if page_size > 200:
-        raise ApiError.from_message(
-            400,
-            "pagination.page_size.too_large",
-            params={"max": 200},
-        )
+    # Search has one stable page-size contract for both independent sections.
+    page_size = 50
 
     return SearchPageParams(
         query=query,
@@ -5273,9 +5239,11 @@ def _search_page_params(
         folder_rel_path=folder_rel_path,
         content_filter=content_filter,
         media_type=None if content_filter == "folders" else content_filter,
-        page=page,
         page_size=page_size,
-        offset=(page - 1) * page_size,
+        folder_page=folder_page,
+        folder_offset=(folder_page - 1) * page_size,
+        media_page=media_page,
+        media_offset=(media_page - 1) * page_size,
     )
 
 
