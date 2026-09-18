@@ -62,6 +62,28 @@ class ContentFilterFrontendContractTests(unittest.TestCase):
         self.assertIn("resetAndHideMediaSection()", search_render)
         self.assertIn('state.view === "search" && state.contentFilter === "folders"', child_page)
 
+    def test_search_folder_cards_reuse_existing_preview_renderer(self) -> None:
+        card = self._function_body("function folderResultCard(folder)")
+        self.assertIn("folderPreviewMarkup(folder)", card)
+        self.assertIn("bindFolderPreviewImageErrors(card)", card)
+        self.assertIn("folderInsightMarkup(folder)", card)
+        self.assertIn("folder.rel_path", card)
+
+    def test_search_collapse_is_temporary_and_only_available_for_all(self) -> None:
+        start_search = self._function_body("async function startSearch()")
+        render = self._function_body("function renderSearchResults(data)")
+        search_collapse = self._function_body("function updateSearchFoldersCollapseState()")
+        listener_start = self.app.rindex("if (els.childFoldersToggle)")
+        listener = self.app[listener_start:self.app.index("\n}\n", listener_start) + 2]
+
+        self.assertIn("state.searchFoldersCollapsed = false", start_search)
+        self.assertIn('data.type === "all"', render)
+        self.assertIn("updateSearchFoldersCollapseState()", render)
+        self.assertIn("state.searchFoldersCollapsed", search_collapse)
+        self.assertNotIn("collapsedChildFoldersByFolder", search_collapse)
+        self.assertIn('state.view === "search" && state.contentFilter === "all"', listener)
+        self.assertIn("resetChildFoldersCollapseUi()", render)
+
     def test_favorites_resets_and_hides_unsupported_folder_filter(self) -> None:
         favorites = self._function_body("async function openFavorites()")
         sync_tabs = self._function_body("function syncContentFilterTabs()")

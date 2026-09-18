@@ -798,6 +798,7 @@
   "search.emptyQuery": "Enter a search term.",
   "search.inputPlaceholder": "Search name or path…",
   "search.scopeCurrentFolder": "Current folder only",
+  "search.searching": "Searching…",
   "search.submit": "Search",
   "search.summary": "{total} results · {folders} folders · {media} media files",
   "search.title": "Search: {query}",

@@ -480,3 +480,35 @@ This technical log records completed and approved development steps: what change
 - The relevant focused tests passed.
 - The full automated test suite passed.
 - A real Windows instance validated filter switching in normal folder browsing and Search, correct hiding of unneeded sections, and safe Favorites behavior.
+
+## 2026-09-18 — Search folder UX and request feedback
+
+### Changes
+
+- Search folder results now use the existing stored folder previews. Preview metadata is loaded in one batch only for folder results on the current Search page; media-only Search performs no folder-preview lookup.
+- Search folder cards preserve the folder name and path while reusing `folderPreviewMarkup()` and `folderInsightMarkup()`.
+- In the All filter, the Search folder section can be collapsed and expanded using a dedicated temporary state. Each new search starts expanded, and the toggle remains hidden in the Folders-only filter.
+- While a Search request is running, the search form shows `Vyhledávám…` / `Searching…` and exposes `aria-busy`.
+- Busy-state ownership is tied to the active request, so stale completion cannot clear a newer request's state. The state is also cleared after success, failure, or leaving Search.
+
+### Reason
+
+- Bring Search folder cards to parity with normal folder cards and provide immediate, race-safe feedback while Search results are loading.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/index.html`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_content_filter.py`
+- `tests/test_search_busy_state.py`
+- `tests/test_search_media_type_filter.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The relevant focused tests passed.
+- The full automated test suite passed.
+- A real Windows instance validated folder previews, statistical insight, Search collapse and its reset on a new search, plus busy feedback during filter/page changes and when leaving Search.

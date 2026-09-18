@@ -582,6 +582,7 @@ const state = {
   childPages: 0,
   childPageSize: 0,
   collapsedChildFoldersByFolder: {},
+  searchFoldersCollapsed: false,
   rootPage: 1,
   rootPages: 0,
   rootTotal: 0,
@@ -593,6 +594,7 @@ const state = {
   viewLoadRequestId: 0,
   searchQuery: "",
   searchFolder: "",
+  searchBusyRequestId: null,
   jobPollTimer: null,
   latestScan: null,
   jobStatusPayload: null,
@@ -720,6 +722,7 @@ const els = {
   catalogHome: document.getElementById("catalogHome"),
   searchForm: document.getElementById("searchForm"),
   searchInput: document.getElementById("searchInput"),
+  searchSubmit: document.getElementById("searchSubmit"),
   searchInCurrentFolder: document.getElementById("searchInCurrentFolder"),
   favoritesView: document.getElementById("favoritesView"),
   catalogManagementOpen: document.getElementById("catalogManagementOpen"),
@@ -6726,8 +6729,26 @@ function setContentFilter(contentFilter) {
   syncContentFilterTabs();
 }
 
+function setSearchBusy(requestId) {
+  state.searchBusyRequestId = requestId;
+  els.searchForm.setAttribute("aria-busy", "true");
+  els.searchSubmit.setAttribute("data-text", "search.searching");
+  els.searchSubmit.textContent = text("search.searching");
+}
+
+function clearSearchBusy(requestId = null) {
+  if (requestId !== null && state.searchBusyRequestId !== requestId) return;
+  state.searchBusyRequestId = null;
+  els.searchForm.removeAttribute("aria-busy");
+  els.searchSubmit.setAttribute("data-text", "search.submit");
+  els.searchSubmit.textContent = text("search.submit");
+}
+
 function beginViewLoadRequest() {
   state.viewLoadRequestId += 1;
+  if (state.view !== "search") {
+    clearSearchBusy();
+  }
   return state.viewLoadRequestId;
 }
 
@@ -7008,6 +7029,7 @@ async function startSearch() {
   state.view = "search";
   state.searchQuery = query;
   state.searchFolder = els.searchInCurrentFolder.checked ? state.folder : "";
+  state.searchFoldersCollapsed = false;
   state.mediaPage = 1;
   state.childPage = 1;
   const requestId = beginViewLoadRequest();
@@ -7018,18 +7040,23 @@ async function startSearch() {
 }
 
 async function loadSearchView({ requestId, snapshot }) {
-  const data = await fetchJson("/api/search", {
-    q: snapshot.searchQuery,
-    folder: snapshot.searchFolder,
-    filter: snapshot.contentFilter,
-    page: snapshot.contentFilter === "folders" ? snapshot.childPage : snapshot.mediaPage,
-    page_size: 50,
-  });
+  setSearchBusy(requestId);
+  try {
+    const data = await fetchJson("/api/search", {
+      q: snapshot.searchQuery,
+      folder: snapshot.searchFolder,
+      filter: snapshot.contentFilter,
+      page: snapshot.contentFilter === "folders" ? snapshot.childPage : snapshot.mediaPage,
+      page_size: 50,
+    });
 
-  if (!viewLoadIsCurrent(requestId, snapshot)) return false;
-  renderSearchHeader(data);
-  renderSearchResults(data);
-  return true;
+    if (!viewLoadIsCurrent(requestId, snapshot)) return false;
+    renderSearchHeader(data);
+    renderSearchResults(data);
+    return true;
+  } finally {
+    clearSearchBusy(requestId);
+  }
 }
 
 function folderDisplayName(folder) {
@@ -7314,6 +7341,8 @@ function renderSearchResults(data) {
     if (foldersOnly) {
       updateChildPager(data);
       resetChildFoldersCollapseUi();
+    } else if (data.type === "all") {
+      updateSearchFoldersCollapseState();
     } else {
       setChildPagerVisible(false);
     }
@@ -7359,13 +7388,21 @@ function renderSearchResults(data) {
 
 function folderResultCard(folder) {
   const card = document.createElement("article");
-  card.className = "card";
+  const previewHtml = folderPreviewMarkup(folder);
+  card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}`;
   card.innerHTML = `
-    <div class="row-title">${escapeHtml(folder.name)}</div>
-    <div class="row-path">${escapeHtml(folder.rel_path)}</div>
-    <div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>
-    <div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>
+    <div class="folder-card-layout">
+      <div class="folder-card-main">
+        <div class="row-title">${escapeHtml(folder.name)}</div>
+        <div class="row-path">${escapeHtml(folder.rel_path)}</div>
+        <div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>
+        <div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>
+      </div>
+      ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
+      ${folderInsightMarkup(folder)}
+    </div>
   `;
+  bindFolderPreviewImageErrors(card);
   card.addEventListener("click", () => openFolder(folder.rel_path));
   return card;
 }
@@ -7454,6 +7491,11 @@ function updateChildFoldersCollapseState() {
 
   setChildFoldersExpandedInDom(!collapsed);
 
+  syncChildFoldersCollapseToggle(collapsed);
+}
+
+function syncChildFoldersCollapseToggle(collapsed) {
+
   if (!els.childFoldersToggle) return;
 
   els.childFoldersToggle.textContent = collapsed ? "▸" : "▾";
@@ -7465,6 +7507,19 @@ function updateChildFoldersCollapseState() {
   els.childFoldersToggle.title = collapsed
     ? text("actions.expandSubfolders")
     : text("actions.collapseSubfolders");
+}
+
+function updateSearchFoldersCollapseState() {
+  const collapsed = state.searchFoldersCollapsed === true;
+  setChildFoldersExpandedInDom(!collapsed);
+  setChildFoldersToggleVisible(true);
+  syncChildFoldersCollapseToggle(collapsed);
+}
+
+function setSearchFoldersCollapsed(collapsed) {
+  state.searchFoldersCollapsed = collapsed === true;
+  updateSearchFoldersCollapseState();
+  scheduleResponsiveLayoutUpdate();
 }
 
 function setChildFoldersCollapsed(collapsed) {
@@ -8740,7 +8795,11 @@ els.lastPage.addEventListener("click", () => goToMediaPage(state.mediaPages));
 
 if (els.childFoldersToggle) {
   els.childFoldersToggle.addEventListener("click", () => {
-    setChildFoldersCollapsed(!areChildFoldersCollapsed());
+    if (state.view === "search" && state.contentFilter === "all") {
+      setSearchFoldersCollapsed(!state.searchFoldersCollapsed);
+    } else {
+      setChildFoldersCollapsed(!areChildFoldersCollapsed());
+    }
   });
 }
 

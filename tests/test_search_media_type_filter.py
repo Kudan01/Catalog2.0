@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from catalog_app.api import search_page
 from catalog_app.database import initialize_database
@@ -125,6 +126,19 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
         self.assertEqual(59, result["total"])
         self.assertEqual(50, result["page_size"])
 
+    def test_folder_previews_are_loaded_once_for_current_page_folder_ids(self) -> None:
+        preview = {"position": 1, "thumbnail_cache_path": "cache/example.webp"}
+        with patch(
+            "catalog_app.api._folder_preview_items_by_folder",
+            return_value={2: [preview]},
+        ) as preview_lookup:
+            result = self._search("all")
+
+        folders = [item for item in result["results"] if item["kind"] == "folder"]
+        self.assertEqual([preview], folders[0]["folder_previews"])
+        preview_lookup.assert_called_once()
+        self.assertEqual([2], preview_lookup.call_args.args[2])
+
     def test_typed_searches_return_only_matching_media(self) -> None:
         expected_totals = {"image": 55, "gif": 1, "video": 1, "other": 1}
         for media_type, expected_total in expected_totals.items():
@@ -135,6 +149,13 @@ class SearchMediaTypeFilterTests(unittest.TestCase):
                 self.assertTrue(result["results"])
                 self.assertTrue(all(item["kind"] == "media" for item in result["results"]))
                 self.assertTrue(all(item["media_type"] == media_type for item in result["results"]))
+
+    def test_media_only_search_skips_folder_preview_lookup(self) -> None:
+        with patch("catalog_app.api._folder_preview_items_by_folder") as preview_lookup:
+            result = self._search("image")
+
+        self.assertTrue(result["results"])
+        preview_lookup.assert_not_called()
 
     def test_folders_search_returns_only_folders(self) -> None:
         result = self._search("folders")

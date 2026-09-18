@@ -798,6 +798,7 @@
   "search.emptyQuery": "Zadej hledaný text.",
   "search.inputPlaceholder": "Hledat název nebo cestu…",
   "search.scopeCurrentFolder": "Jen aktuální složka",
+  "search.searching": "Vyhledávám…",
   "search.submit": "Hledat",
   "search.summary": "{total} výsledků · {folders} složek · {media} médií",
   "search.title": "Hledání: {query}",

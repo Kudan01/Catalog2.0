@@ -4126,6 +4126,15 @@ def search_page(
         pages = math.ceil(total / params.page_size) if total else 0
         favorite_path_keys = _favorite_path_key_set(config)
         results = [_search_result_dict(row, favorite_path_keys) for row in rows]
+        folder_results = [item for item in results if item["kind"] == "folder"]
+        if folder_results:
+            previews_by_folder = _folder_preview_items_by_folder(
+                config,
+                connection,
+                [int(item["id"]) for item in folder_results],
+            )
+            for item in folder_results:
+                item["folder_previews"] = previews_by_folder.get(int(item["id"]), [])
 
         return {
             "ok": True,
