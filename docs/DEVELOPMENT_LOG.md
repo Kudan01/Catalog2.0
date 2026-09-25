@@ -581,3 +581,33 @@ This technical log records completed and approved development steps: what change
 - The relevant focused tests passed.
 - The full automated test suite passed.
 - A real Windows instance validated independent folder and media paging, folder collapse, each content filter, reset behavior for a new search, and media-modal navigation.
+
+## 2026-09-25 — Folder Favorites view
+
+### Changes
+
+- Favorites now uses the shared All, Folders, Photos, GIFs, Videos, and Other content-filter contract.
+- All renders favorite folders above favorite media. The sections use independent `childPage` and `mediaPage` pagination; folders use `folder_page_size`, while media uses the page size configured for the active media filter.
+- Folders renders only favorite folders without a collapse toggle, while media filters render only matching favorite media.
+- In All, the folder section has a temporary collapse state that resets to expanded on each new entry into Favorites.
+- Active favorite folders reuse the existing card previews, insight, path, and favorite action. Unavailable favorite folders remain removable but cannot be opened and expose no previews or unavailable statistics.
+- Removing a folder favorite reloads the folder section, removes the stale card, and corrects an invalid final folder page without resetting media pagination.
+- Entering Favorites now resets the content scroll to the top, matching normal folder navigation. Existing media Favorites and media-modal behavior remain unchanged.
+
+### Reason
+
+- Complete folder Favorites presentation while keeping folder and media navigation independent and preserving unavailable favorites for explicit user removal.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `tests/test_content_filter.py`
+- `tests/test_folder_favorites.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused regression tests and full automated test suite passed.
+- A real Windows instance validated independent pagination, collapse behavior, every content filter, folder cards, folder-favorite removal, the media modal, and scroll reset when entering Favorites.

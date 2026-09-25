@@ -328,6 +328,17 @@ class FavoritePageParams:
 
 
 @dataclass(frozen=True)
+class FavoritesViewPageParams:
+    content_filter: str
+    folder_page: int
+    folder_page_size: int
+    folder_offset: int
+    media_page: int
+    media_page_size: int
+    media_offset: int
+
+
+@dataclass(frozen=True)
 class SearchPageParams:
     query: str
     query_pattern: str
@@ -3867,36 +3878,102 @@ def media_page_anchor(
 def favorites_page(
     config: Config,
     *,
-    raw_media_type: str,
-    raw_page: str | None,
-    raw_page_size: str | None,
+    raw_content_filter: str,
+    raw_folder_page: str | None,
+    raw_media_page: str | None,
 ) -> dict[str, Any]:
-    """Return one page of favorite media resolved against the active catalog."""
-    params = _favorite_page_params(
+    """Return independently paginated favorite folders and media."""
+    params = _favorites_view_page_params(
         config,
-        raw_media_type=raw_media_type,
-        raw_page=raw_page,
-        raw_page_size=raw_page_size,
+        raw_content_filter=raw_content_filter,
+        raw_folder_page=raw_folder_page,
+        raw_media_page=raw_media_page,
     )
     entries = _read_favorite_entries(config)
-    media = _favorite_media_items(config, entries)
+    include_folders = params.content_filter in {"all", "folders"}
+    include_media = params.content_filter != "folders"
 
-    if params.media_type != "all":
-        media = [item for item in media if item["media_type"] == params.media_type]
+    folder_entries = [entry for entry in entries if entry.get("kind") == "folder"] if include_folders else []
+    folder_total = len(folder_entries)
+    folder_page_entries = folder_entries[
+        params.folder_offset : params.folder_offset + params.folder_page_size
+    ]
+    folder_items: list[dict[str, Any]] = []
 
-    total = len(media)
-    pages = math.ceil(total / params.page_size) if total else 0
-    page_items = media[params.offset : params.offset + params.page_size]
+    if folder_page_entries:
+        path_keys = [catalog_path_key(entry["path"]) for entry in folder_page_entries]
+        placeholders = ", ".join("?" for _ in path_keys)
+        with open_database(config.db_path, read_only=True) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    id, rel_path, path_key, parent_id, name, depth,
+                    last_successful_scan_id, is_available,
+                    direct_child_count, direct_image_count, direct_gif_count,
+                    direct_video_count, direct_other_count,
+                    recursive_folder_count, recursive_image_count, recursive_gif_count,
+                    recursive_video_count, recursive_other_count
+                FROM folders
+                WHERE is_available = 1
+                  AND path_key IN ({placeholders})
+                """,
+                path_keys,
+            ).fetchall()
+            rows_by_path_key = {str(row["path_key"]): row for row in rows}
+            active_folder_ids: list[int] = []
+            for entry in folder_page_entries:
+                row = rows_by_path_key.get(catalog_path_key(entry["path"]))
+                if row is None:
+                    folder_items.append(_missing_favorite_folder_dict(entry))
+                    continue
+                item = _folder_dict(row)
+                item["kind"] = "folder"
+                item["is_available"] = True
+                item["is_favorite"] = True
+                item["favorite_added_at"] = entry.get("added_at") or None
+                folder_items.append(item)
+                active_folder_ids.append(int(row["id"]))
+
+            previews_by_folder = _folder_preview_items_by_folder(
+                config,
+                connection,
+                active_folder_ids,
+            ) if active_folder_ids else {}
+            for item in folder_items:
+                if item.get("is_available") is not False:
+                    item["folder_previews"] = previews_by_folder.get(int(item["id"]), [])
+
+    media = _favorite_media_items(config, entries) if include_media else []
+
+    if include_media and params.content_filter != "all":
+        media = [item for item in media if item["media_type"] == params.content_filter]
+
+    media_total = len(media)
+    media_items = media[params.media_offset : params.media_offset + params.media_page_size]
 
     return {
         "ok": True,
         "view": "favorites",
-        "type": params.media_type,
-        "page": params.page,
-        "page_size": params.page_size,
-        "total": total,
-        "pages": pages,
-        "media": page_items,
+        "type": params.content_filter,
+        "total": folder_total + media_total,
+        "counts": {
+            "folders": folder_total,
+            "media": media_total,
+        },
+        "folders": {
+            "page": params.folder_page,
+            "page_size": params.folder_page_size,
+            "total": folder_total,
+            "pages": math.ceil(folder_total / params.folder_page_size) if folder_total else 0,
+            "items": folder_items,
+        },
+        "media": {
+            "page": params.media_page,
+            "page_size": params.media_page_size,
+            "total": media_total,
+            "pages": math.ceil(media_total / params.media_page_size) if media_total else 0,
+            "items": media_items,
+        },
     }
 
 
@@ -5195,6 +5272,39 @@ def _favorite_page_params(
     )
 
 
+def _favorites_view_page_params(
+    config: Config,
+    *,
+    raw_content_filter: str,
+    raw_folder_page: str | None,
+    raw_media_page: str | None,
+) -> FavoritesViewPageParams:
+    content_filter = (raw_content_filter or "all").strip().lower()
+    if content_filter not in {"all", "folders", "image", "gif", "video", "other"}:
+        raise ApiError.from_message(
+            400,
+            "navigation.media_type.invalid",
+            params={"allowed": "all, folders, image, gif, video, other"},
+        )
+
+    folder_page = _positive_int(raw_folder_page or "1", field_name="folder_page")
+    media_page = _positive_int(raw_media_page or "1", field_name="media_page")
+    folder_page_size = config.folder_page_size
+    media_page_size = _default_page_size(
+        config,
+        "all" if content_filter == "folders" else content_filter,
+    )
+    return FavoritesViewPageParams(
+        content_filter=content_filter,
+        folder_page=folder_page,
+        folder_page_size=folder_page_size,
+        folder_offset=(folder_page - 1) * folder_page_size,
+        media_page=media_page,
+        media_page_size=media_page_size,
+        media_offset=(media_page - 1) * media_page_size,
+    )
+
+
 def _search_page_params(
     *,
     raw_query: str,
@@ -5719,6 +5829,22 @@ def _favorite_media_items(
         result.append(item)
 
     return result
+
+
+def _missing_favorite_folder_dict(entry: dict[str, str]) -> dict[str, Any]:
+    rel_path = entry["path"]
+    return {
+        "id": None,
+        "kind": "folder",
+        "rel_path": rel_path,
+        "name": Path(rel_path).name or rel_path,
+        "is_active_catalog_folder": False,
+        "is_disk_candidate": False,
+        "is_available": False,
+        "is_favorite": True,
+        "favorite_added_at": entry.get("added_at") or None,
+        "folder_previews": [],
+    }
 
 
 def _missing_favorite_media_dict(rel_path: str) -> dict[str, Any]:

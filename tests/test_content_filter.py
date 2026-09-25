@@ -75,7 +75,13 @@ class ContentFilterFrontendContractTests(unittest.TestCase):
         self.assertIn("updateChildPager(folderData)", render)
         self.assertIn("updateMediaPager(mediaData)", render)
         self.assertIn("page: mediaData.page", render)
-        self.assertIn('state.view === "search" ? state.searchFoldersCollapsed', pager_visibility)
+        self.assertIn('state.view === "search"', pager_visibility)
+        self.assertIn("state.searchFoldersCollapsed", pager_visibility)
+        self.assertIn('state.view === "favorites"', pager_visibility)
+        self.assertIn("state.favoritesFoldersCollapsed", pager_visibility)
+        self.assertIn("areChildFoldersCollapsed()", pager_visibility)
+        self.assertIn("state.childPages <= 1", pager_visibility)
+        self.assertIn("els.childFolders.children.length === 0", pager_visibility)
 
     def test_search_folder_cards_reuse_existing_preview_renderer(self) -> None:
         card = self._function_body("function folderResultCard(folder)")
@@ -99,12 +105,13 @@ class ContentFilterFrontendContractTests(unittest.TestCase):
         self.assertIn('state.view === "search" && state.contentFilter === "all"', listener)
         self.assertIn("resetChildFoldersCollapseUi()", render)
 
-    def test_favorites_resets_and_hides_unsupported_folder_filter(self) -> None:
+    def test_favorites_supports_folder_filter_without_coercing_it_to_media(self) -> None:
         favorites = self._function_body("async function openFavorites()")
+        loader = self._function_body("async function loadFavoritesView({ requestId, snapshot })")
         sync_tabs = self._function_body("function syncContentFilterTabs()")
-        self.assertIn('state.contentFilter === "folders"', favorites)
-        self.assertIn('setContentFilter("all")', favorites)
-        self.assertIn('state.view === "favorites" && contentFilter === "folders"', sync_tabs)
+        self.assertNotIn('setContentFilter("all")', favorites)
+        self.assertIn("filter: snapshot.contentFilter", loader)
+        self.assertIn("item.hidden = false", sync_tabs)
 
     @classmethod
     def _function_body(cls, signature: str) -> str:

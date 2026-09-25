@@ -1064,9 +1064,13 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/favorites":
             return favorites_page(
                 self.config,
-                raw_media_type=_single_query_value(query, "type", default="all"),
-                raw_page=_optional_query_value(query, "page"),
-                raw_page_size=_optional_query_value(query, "page_size"),
+                raw_content_filter=_single_query_value(
+                    query,
+                    "filter",
+                    default=_single_query_value(query, "type", default="all"),
+                ),
+                raw_folder_page=_optional_query_value(query, "folder_page"),
+                raw_media_page=_optional_query_value(query, "media_page"),
             ), HTTPStatus.OK
 
         if path == "/api/search/media":

@@ -583,6 +583,7 @@ const state = {
   childPageSize: 0,
   collapsedChildFoldersByFolder: {},
   searchFoldersCollapsed: false,
+  favoritesFoldersCollapsed: false,
   rootPage: 1,
   rootPages: 0,
   rootTotal: 0,
@@ -6764,7 +6765,7 @@ function contentFilterMediaType(contentFilter) {
 function syncContentFilterTabs() {
   document.querySelectorAll(".tab").forEach((item) => {
     const contentFilter = item.dataset.contentFilter;
-    item.hidden = state.view === "favorites" && contentFilter === "folders";
+    item.hidden = false;
     item.classList.toggle("active", contentFilter === state.contentFilter);
   });
 }
@@ -6869,13 +6870,12 @@ async function openFolder(path) {
 }
 
 async function openFavorites() {
-  if (state.contentFilter === "folders") {
-    setContentFilter("all");
-  }
   state.view = "favorites";
   state.mediaPage = 1;
   state.childPage = 1;
+  state.favoritesFoldersCollapsed = false;
   const requestId = beginViewLoadRequest();
+  scrollToCatalogTop();
   setMessage("");
   updateViewButtons();
   setTreeActiveFolder();
@@ -7053,14 +7053,15 @@ async function loadCurrentFolderMediaPage() {
 }
 
 async function loadFavoritesView({ requestId, snapshot }) {
-  const mediaData = await fetchJson("/api/favorites", {
-    type: snapshot.mediaType,
-    page: snapshot.mediaPage,
+  const data = await fetchJson("/api/favorites", {
+    filter: snapshot.contentFilter,
+    folder_page: snapshot.childPage,
+    media_page: snapshot.mediaPage,
   });
 
   if (!viewLoadIsCurrent(requestId, snapshot)) return false;
-  renderFavoritesHeader(mediaData);
-  renderMedia(mediaData);
+  renderFavoritesHeader(data);
+  renderFavoritesResults(data);
   return true;
 }
 
@@ -7159,12 +7160,12 @@ function renderFolder(folder, breadcrumb) {
   });
 }
 
-function renderFavoritesHeader(mediaData) {
+function renderFavoritesHeader(data) {
   state.currentFolder = null;
   if (els.currentFolderRename) els.currentFolderRename.hidden = true;
   els.folderTitle.textContent = text("app.favorites");
   els.folderCounts.replaceChildren();
-  els.folderCounts.appendChild(countLine(text("count.recursiveLabel"), text("count.favoritesTotal", { total: mediaData.total })));
+  els.folderCounts.appendChild(countLine(text("count.recursiveLabel"), text("count.favoritesTotal", { total: data.total })));
 
   els.breadcrumb.replaceChildren();
   const rootButton = document.createElement("button");
@@ -7184,6 +7185,46 @@ function renderFavoritesHeader(mediaData) {
   resetChildFoldersCollapseUi();
   setChildFoldersSectionVisible(false);
   updateJobActionButtons(state.jobRunning);
+}
+
+function renderFavoritesResults(data) {
+  const folderData = data.folders;
+  const mediaData = data.media;
+  const foldersOnly = data.type === "folders";
+  const includesFolders = data.type === "all" || foldersOnly;
+
+  els.childFolders.replaceChildren();
+  resetChildFoldersCollapseUi();
+  if (includesFolders && (foldersOnly || folderData.total > 0)) {
+    updateChildPager(folderData);
+    setChildFoldersSectionVisible(true);
+    for (const folder of folderData.items) {
+      els.childFolders.appendChild(folderResultCard(folder));
+    }
+    if (foldersOnly && folderData.items.length === 0) {
+      els.childFolders.appendChild(emptyText(text("empty.favorites")));
+    }
+    if (foldersOnly) {
+      resetChildFoldersCollapseUi();
+    } else {
+      updateFavoritesFoldersCollapseState();
+    }
+  } else {
+    resetChildPager();
+    resetChildFoldersCollapseUi();
+    setChildFoldersSectionVisible(false);
+  }
+
+  if (foldersOnly) {
+    resetAndHideMediaSection();
+    return;
+  }
+
+  renderMedia({
+    ...mediaData,
+    type: data.type,
+    media: mediaData.items,
+  });
 }
 
 
@@ -7239,7 +7280,13 @@ function setChildPagerVisible(visible) {
     const isBottom = pager.dataset.childPagerPosition === "bottom";
     pager.hidden = !visible || (isBottom && (
       state.childPages <= 1
-      || (state.view === "search" ? state.searchFoldersCollapsed : areChildFoldersCollapsed())
+      || (
+        state.view === "search"
+          ? state.searchFoldersCollapsed
+          : state.view === "favorites"
+            ? state.favoritesFoldersCollapsed
+            : areChildFoldersCollapsed()
+      )
       || els.childFolders.children.length === 0
     ));
   }
@@ -7305,7 +7352,7 @@ async function goToChildPage(page) {
   }
 
   state.childPage = targetPage;
-  if (state.view === "search") {
+  if (state.view === "search" || state.view === "favorites") {
     scrollToCatalogTop();
     await reloadSafely(loadCurrentFolder);
     return;
@@ -7439,24 +7486,27 @@ function renderSearchResults(data) {
 
 function folderResultCard(folder) {
   const card = document.createElement("article");
-  const previewHtml = folderPreviewMarkup(folder);
-  card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}`;
+  const isAvailable = folder.is_available !== false;
+  const previewHtml = isAvailable ? folderPreviewMarkup(folder) : "";
+  card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}${isAvailable ? "" : " folder-missing"}`;
   card.innerHTML = `
     <div class="folder-card-layout">
       <div class="folder-card-main">
-        <div class="row-title">${escapeHtml(folder.name)}</div>
+        <div class="row-title folder-card-title">${escapeHtml(folder.name)}</div>
         <div class="row-path">${escapeHtml(folder.rel_path)}</div>
-        <div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>
-        <div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>
+        ${isAvailable ? `<div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>` : `<div class="row-meta">${escapeHtml(text("meta.unavailable"))}</div>`}
+        ${isAvailable ? `<div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>` : ""}
         <div class="folder-card-actions"></div>
       </div>
       ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
-      ${folderInsightMarkup(folder)}
+      ${isAvailable ? folderInsightMarkup(folder) : ""}
     </div>
   `;
   card.querySelector(".folder-card-actions").appendChild(folderFavoriteButton(folder));
   bindFolderPreviewImageErrors(card);
-  card.addEventListener("click", () => openFolder(folder.rel_path));
+  if (isAvailable) {
+    card.addEventListener("click", () => openFolder(folder.rel_path));
+  }
   return card;
 }
 
@@ -7567,6 +7617,19 @@ function updateSearchFoldersCollapseState() {
   setChildFoldersExpandedInDom(!collapsed);
   setChildFoldersToggleVisible(true);
   syncChildFoldersCollapseToggle(collapsed);
+}
+
+function updateFavoritesFoldersCollapseState() {
+  const collapsed = state.favoritesFoldersCollapsed === true;
+  setChildFoldersExpandedInDom(!collapsed);
+  setChildFoldersToggleVisible(true);
+  syncChildFoldersCollapseToggle(collapsed);
+}
+
+function setFavoritesFoldersCollapsed(collapsed) {
+  state.favoritesFoldersCollapsed = collapsed === true;
+  updateFavoritesFoldersCollapseState();
+  scheduleResponsiveLayoutUpdate();
 }
 
 function setSearchFoldersCollapsed(collapsed) {
@@ -8752,6 +8815,13 @@ async function toggleFolderFavorite(folder, button) {
     setMessage(shouldBeFavorite
       ? text("message.favoriteAdded", { path: result.path || folder.rel_path })
       : text("message.favoriteRemoved", { path: result.path || folder.rel_path }));
+    if (state.view === "favorites" && !shouldBeFavorite) {
+      const remainingPageCards = els.childFolders.querySelectorAll(".folder-card").length - 1;
+      if (remainingPageCards <= 0 && state.childPage > 1) {
+        state.childPage -= 1;
+      }
+      await loadCurrentFolder();
+    }
   } catch (error) {
     setMessage(error.message, true);
   } finally {
@@ -8885,6 +8955,8 @@ if (els.childFoldersToggle) {
   els.childFoldersToggle.addEventListener("click", () => {
     if (state.view === "search" && state.contentFilter === "all") {
       setSearchFoldersCollapsed(!state.searchFoldersCollapsed);
+    } else if (state.view === "favorites" && state.contentFilter === "all") {
+      setFavoritesFoldersCollapsed(!state.favoritesFoldersCollapsed);
     } else {
       setChildFoldersCollapsed(!areChildFoldersCollapsed());
     }

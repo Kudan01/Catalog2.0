@@ -32,7 +32,12 @@ class FolderFavoritesTests(unittest.TestCase):
         self.config = SimpleNamespace(
             db_path=root / "catalog.db",
             favorites_json=root / "favorites.json",
-            folder_page_size=60,
+            folder_page_size=1,
+            all_page_size=1,
+            photo_page_size=2,
+            gif_page_size=3,
+            video_page_size=4,
+            other_page_size=5,
         )
         initialize_database(self.config.db_path)
         connection = sqlite3.connect(self.config.db_path)
@@ -52,6 +57,9 @@ class FolderFavoritesTests(unittest.TestCase):
             self.child_id = self._insert_folder(
                 connection, scan_id, parent_id, "parent_folder/child_folder", "child_folder", 2,
             )
+            self.second_child_id = self._insert_folder(
+                connection, scan_id, parent_id, "parent_folder/second_folder", "second_folder", 2,
+            )
             self._insert_folder(
                 connection, scan_id, parent_id, "parent_folder/inactive_folder", "inactive_folder", 2,
                 available=0,
@@ -70,6 +78,23 @@ class FolderFavoritesTests(unittest.TestCase):
                     parent_id,
                     "example.jpg",
                     "example.jpg",
+                    scan_id,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO media_files (
+                    rel_path, path_key, folder_id, file_name, extension, media_type,
+                    size_bytes, modified_time, sort_key, last_successful_scan_id,
+                    is_available
+                ) VALUES (?, ?, ?, ?, 'jpg', 'image', 1, 1, ?, ?, 1)
+                """,
+                (
+                    "parent_folder/second.jpg",
+                    "parent_folder/second.jpg",
+                    parent_id,
+                    "second.jpg",
+                    "second.jpg",
                     scan_id,
                 ),
             )
@@ -170,17 +195,117 @@ class FolderFavoritesTests(unittest.TestCase):
             detail = folder_detail(self.config, "parent_folder/child_folder")
         self.assertTrue(detail["folder"]["is_favorite"])
 
-    def test_media_favorites_view_ignores_folder_entries(self) -> None:
+    def test_media_filter_returns_only_media_section(self) -> None:
         favorite_add_action(self.config, "parent_folder/example.jpg", "media")
         favorite_add_action(self.config, "parent_folder/child_folder", "folder")
         result = favorites_page(
             self.config,
-            raw_media_type="all",
-            raw_page="1",
-            raw_page_size="50",
+            raw_content_filter="image",
+            raw_folder_page="1",
+            raw_media_page="1",
         )
         self.assertEqual(1, result["total"])
-        self.assertEqual("parent_folder/example.jpg", result["media"][0]["rel_path"])
+        self.assertEqual([], result["folders"]["items"])
+        self.assertEqual("parent_folder/example.jpg", result["media"]["items"][0]["rel_path"])
+
+    def test_each_media_filter_excludes_folder_favorites(self) -> None:
+        _write_favorite_entries(self.config, [
+            {"kind": "folder", "path": "parent_folder/child_folder", "added_at": "folder"},
+            {"kind": "media", "path": "missing_image.jpg", "added_at": "image"},
+            {"kind": "media", "path": "missing_animation.gif", "added_at": "gif"},
+            {"kind": "media", "path": "missing_video.mp4", "added_at": "video"},
+            {"kind": "media", "path": "missing_document.txt", "added_at": "other"},
+        ])
+
+        for content_filter in ("image", "gif", "video", "other"):
+            with self.subTest(content_filter=content_filter):
+                result = self._favorites(content_filter)
+                self.assertEqual(0, result["counts"]["folders"])
+                self.assertEqual([], result["folders"]["items"])
+                self.assertEqual(
+                    [content_filter],
+                    [item["media_type"] for item in result["media"]["items"]],
+                )
+
+    def test_favorites_all_has_independent_folder_and_media_pages(self) -> None:
+        favorite_add_action(self.config, "parent_folder/child_folder", "folder")
+        favorite_add_action(self.config, "parent_folder/second_folder", "folder")
+        favorite_add_action(self.config, "parent_folder/example.jpg", "media")
+        favorite_add_action(self.config, "parent_folder/second.jpg", "media")
+
+        baseline = self._favorites("all")
+        folder_page = self._favorites("all", folder_page=2)
+        media_page = self._favorites("all", media_page=2)
+
+        self.assertEqual(1, baseline["folders"]["page_size"])
+        self.assertEqual(1, baseline["media"]["page_size"])
+        self.assertEqual(baseline["media"]["items"], folder_page["media"]["items"])
+        self.assertNotEqual(baseline["folders"]["items"], folder_page["folders"]["items"])
+        self.assertEqual(baseline["folders"]["items"], media_page["folders"]["items"])
+        self.assertNotEqual(baseline["media"]["items"], media_page["media"]["items"])
+
+    def test_favorites_page_sizes_follow_folder_and_media_settings(self) -> None:
+        favorite_add_action(self.config, "parent_folder/child_folder", "folder")
+        favorite_add_action(self.config, "parent_folder/example.jpg", "media")
+        all_result = self._favorites("all")
+        image_result = self._favorites("image")
+        self.assertEqual(1, all_result["folders"]["page_size"])
+        self.assertEqual(1, all_result["media"]["page_size"])
+        self.assertEqual(2, image_result["media"]["page_size"])
+
+    def test_folders_filter_loads_only_folders_and_batches_current_page_previews(self) -> None:
+        favorite_add_action(self.config, "parent_folder/child_folder", "folder")
+        favorite_add_action(self.config, "parent_folder/second_folder", "folder")
+        with patch(
+            "catalog_app.api._folder_preview_items_by_folder",
+            return_value={self.second_child_id: [{"thumbnail_cache_path": "cache/example.webp"}]},
+        ) as preview_lookup:
+            result = self._favorites("folders")
+
+        self.assertEqual([], result["media"]["items"])
+        self.assertEqual(1, len(result["folders"]["items"]))
+        active = result["folders"]["items"][0]
+        self.assertIn("direct", active)
+        self.assertIn("recursive", active)
+        preview_lookup.assert_called_once()
+        self.assertEqual([active["id"]], preview_lookup.call_args.args[2])
+
+    def test_media_filter_skips_folder_preview_lookup(self) -> None:
+        favorite_add_action(self.config, "parent_folder/child_folder", "folder")
+        favorite_add_action(self.config, "parent_folder/example.jpg", "media")
+        with patch("catalog_app.api._folder_preview_items_by_folder") as preview_lookup:
+            result = self._favorites("image")
+        self.assertEqual([], result["folders"]["items"])
+        self.assertTrue(result["media"]["items"])
+        preview_lookup.assert_not_called()
+
+    def test_unavailable_folder_favorite_remains_visible_and_removable(self) -> None:
+        _write_favorite_entries(self.config, [{
+            "kind": "folder",
+            "path": "missing_folder",
+            "added_at": "kept",
+        }])
+        result = self._favorites("folders")
+        item = result["folders"]["items"][0]
+        self.assertFalse(item["is_available"])
+        self.assertEqual([], item["folder_previews"])
+        self.assertNotIn("direct", item)
+        removed = favorite_remove_action(self.config, "missing_folder", "folder")
+        self.assertTrue(removed["removed"])
+
+    def _favorites(
+        self,
+        content_filter: str,
+        *,
+        folder_page: int = 1,
+        media_page: int = 1,
+    ) -> dict[str, object]:
+        return favorites_page(
+            self.config,
+            raw_content_filter=content_filter,
+            raw_folder_page=str(folder_page),
+            raw_media_page=str(media_page),
+        )
 
     def test_rename_and_delete_preserve_kind_added_at_and_branch_scope(self) -> None:
         entries = [
@@ -273,6 +398,32 @@ class FolderFavoriteFrontendContractTests(unittest.TestCase):
         self.assertIn('data-favorite-label="add"', modal)
         self.assertIn('data-favorite-label="remove"', modal)
         self.assertIn("setAttribute(\"aria-hidden\"", controls)
+
+    def test_favorites_uses_shared_folder_cards_and_independent_pagers(self) -> None:
+        open_favorites = self._function_body("async function openFavorites()")
+        loader = self._function_body("async function loadFavoritesView({ requestId, snapshot })")
+        render = self._function_body("function renderFavoritesResults(data)")
+        card = self._function_body("function folderResultCard(folder)")
+        toggle = self._function_body("async function toggleFolderFavorite(folder, button)")
+        self.assertIn("state.childPage = 1", open_favorites)
+        self.assertIn("state.mediaPage = 1", open_favorites)
+        self.assertIn("state.favoritesFoldersCollapsed = false", open_favorites)
+        self.assertIn("scrollToCatalogTop()", open_favorites)
+        self.assertIn("folder_page: snapshot.childPage", loader)
+        self.assertIn("media_page: snapshot.mediaPage", loader)
+        self.assertIn("folderResultCard(folder)", render)
+        self.assertIn("updateChildPager(folderData)", render)
+        self.assertIn("media: mediaData.items", render)
+        self.assertIn("if (isAvailable)", card)
+        self.assertIn('state.view === "favorites" && !shouldBeFavorite', toggle)
+
+    def test_favorites_collapse_is_temporary_and_only_used_for_all(self) -> None:
+        render = self._function_body("function renderFavoritesResults(data)")
+        collapse = self._function_body("function updateFavoritesFoldersCollapseState()")
+        self.assertIn('data.type === "folders"', render)
+        self.assertIn("resetChildFoldersCollapseUi()", render)
+        self.assertIn("updateFavoritesFoldersCollapseState()", render)
+        self.assertIn("state.favoritesFoldersCollapsed", collapse)
 
     @classmethod
     def _function_body(cls, signature: str) -> str:
