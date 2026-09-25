@@ -140,15 +140,39 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn('historyMode === "replace"', open_folder)
         self.assertIn("replaceFolderHistoryEntry(nextFolder)", open_folder)
         self.assertIn('historyMode === "push"', open_folder)
-        self.assertIn("pushFolderHistoryEntry(nextFolder)", open_folder)
+        self.assertIn("pushFolderHistoryEntry(nextFolder, targetEntryAnchor)", open_folder)
         self.assertIn('await openFolder("", { historyMode: "replace" })', self.source)
 
     def test_child_card_records_parent_return_anchor(self) -> None:
         open_folder = self._function_body("async function openFolder(path, options = {})")
         render = self._function_body("function renderChildFolders(data)")
-        self.assertIn("replaceFolderHistoryEntry(state.folder, returnAnchor)", open_folder)
+        self.assertIn("replaceFolderHistoryEntry(state.folder, sourceEntryAnchor)", open_folder)
         self.assertIn("card.dataset.folderPath = folder.rel_path", render)
-        self.assertIn("returnAnchor: folder.rel_path", render)
+        self.assertIn("sourceEntryAnchor: folder.rel_path", render)
+
+    def test_breadcrumb_uses_next_item_as_target_entry_anchor(self) -> None:
+        render = self._function_body("function renderFolder(folder, breadcrumb)")
+        open_folder = self._function_body("async function openFolder(path, options = {})")
+        push_entry = self._function_body(
+            "function pushFolderHistoryEntry(folder, returnAnchor = null)"
+        )
+        self.assertIn("breadcrumb[index + 1]?.rel_path || null", render)
+        self.assertIn("openFolder(item.rel_path, {", render)
+        self.assertIn("targetEntryAnchor", render)
+        self.assertIn(
+            'resolveChildFolderAnchorPage(nextFolder, targetEntryAnchor)',
+            open_folder,
+        )
+        self.assertIn("pushFolderHistoryEntry(nextFolder, targetEntryAnchor)", open_folder)
+        self.assertIn("folderHistoryState(folder, returnAnchor)", push_entry)
+        self.assertIn(
+            "state.childPage = anchorResolution.found ? anchorResolution.page : 1",
+            open_folder,
+        )
+        self.assertNotIn(
+            "replaceFolderHistoryEntry(state.folder, targetEntryAnchor)",
+            open_folder,
+        )
 
     def test_popstate_restores_without_pushing_and_centers_anchor(self) -> None:
         open_folder = self._function_body("async function openFolder(path, options = {})")
@@ -157,8 +181,9 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         popstate_end = self.source.index("\n});", popstate_start) + len("\n});")
         popstate = self.source[popstate_start:popstate_end]
         self.assertIn('historyMode: "restore"', popstate)
+        self.assertIn("targetEntryAnchor: entry.returnAnchor", popstate)
         self.assertNotIn("pushState", popstate)
-        self.assertEqual(1, open_folder.count("pushFolderHistoryEntry(nextFolder)"))
+        self.assertEqual(1, open_folder.count("pushFolderHistoryEntry(nextFolder, targetEntryAnchor)"))
         self.assertIn('else if (historyMode === "push")', open_folder)
         self.assertIn("setChildFoldersCollapsed(false)", restore)
         self.assertIn('candidate.dataset.folderPath === anchor', restore)

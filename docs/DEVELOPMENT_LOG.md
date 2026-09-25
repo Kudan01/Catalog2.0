@@ -642,3 +642,29 @@ This technical log records completed and approved development steps: what change
 - The focused tests and full automated test suite passed on Windows.
 - A real instance validated A → B → C → Back → Back → Forward without a history loop.
 - Return to an anchor outside the first page, recalculation after changing `folder_page_size`, and top-level return to the root with the correct centered card were validated.
+
+## 2026-09-25 — Breadcrumb folder anchors
+
+### Changes
+
+- Hierarchical breadcrumb navigation now uses the same current-page anchor resolution as the folder History API.
+- Clicking an ancestor uses the immediately following breadcrumb item as the target anchor. `sourceEntryAnchor` remains responsible for updating the parent entry during child-card navigation, while `targetEntryAnchor` is stored in the newly pushed breadcrumb target entry.
+- The target anchor is resolved through the existing `/api/folders/anchor` endpoint before rendering. Its current page is loaded and the card is centered afterward; an unavailable anchor safely falls back to the first folder page.
+- Breadcrumb navigation creates a normal history step. Back restores the original folder, Forward restores the breadcrumb target and its anchor, and `popstate` continues without creating another `pushState`.
+- A breadcrumb jump from a media-only filter opens the target in All so the folder anchor is visible. Search and Favorites history remain outside this step.
+
+### Reason
+
+- Make ancestor and root breadcrumb jumps retain spatial context while preserving the source-entry semantics already used by child-folder cards.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `tests/test_folder_history.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused tests and full automated test suite passed on Windows.
+- A real instance validated ancestor and root breadcrumb jumps, centering of the immediate child anchor, and Back/Forward restoration.
+- The original child-card History API behavior from the preceding step was regression-tested successfully.

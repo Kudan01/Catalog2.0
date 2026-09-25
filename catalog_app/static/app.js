@@ -658,8 +658,8 @@ function replaceFolderHistoryEntry(folder, returnAnchor = null) {
   window.history.replaceState(folderHistoryState(folder, returnAnchor), "");
 }
 
-function pushFolderHistoryEntry(folder) {
-  window.history.pushState(folderHistoryState(folder), "");
+function pushFolderHistoryEntry(folder, returnAnchor = null) {
+  window.history.pushState(folderHistoryState(folder, returnAnchor), "");
 }
 
 const THEMES = {
@@ -6896,19 +6896,23 @@ function restoreChildFolderAnchor(anchor) {
 async function openFolder(path, options = {}) {
   const nextFolder = path || "";
   const historyMode = options.historyMode || "push";
-  const returnAnchor = options.returnAnchor || null;
+  const sourceEntryAnchor = options.sourceEntryAnchor || null;
+  const targetEntryAnchor = options.targetEntryAnchor || null;
   const operation = diagnosticOperationStart("frontend.navigation.folder", {
     from_folder: state.folder,
     to_folder: nextFolder,
     from_view: state.view,
   });
   const folderChanged = state.view !== "folder" || state.folder !== nextFolder;
-  if (historyMode === "push" && returnAnchor && state.view === "folder") {
-    replaceFolderHistoryEntry(state.folder, returnAnchor);
+  if (historyMode === "push" && sourceEntryAnchor && state.view === "folder") {
+    replaceFolderHistoryEntry(state.folder, sourceEntryAnchor);
   }
   state.view = "folder";
   state.folder = nextFolder;
-  if ((folderChanged || historyMode === "restore") && state.contentFilter !== "all") {
+  if (
+    (folderChanged || historyMode === "restore" || targetEntryAnchor)
+    && state.contentFilter !== "all"
+  ) {
     setContentFilter("all");
   }
   state.mediaPage = 1;
@@ -6921,8 +6925,8 @@ async function openFolder(path, options = {}) {
   setTreeActiveFolder(nextFolder);
 
   let anchorResolution = null;
-  if (historyMode === "restore" && returnAnchor) {
-    anchorResolution = await resolveChildFolderAnchorPage(nextFolder, returnAnchor);
+  if (targetEntryAnchor) {
+    anchorResolution = await resolveChildFolderAnchorPage(nextFolder, targetEntryAnchor);
     if (
       requestId !== state.viewLoadRequestId
       || state.view !== "folder"
@@ -6948,19 +6952,18 @@ async function openFolder(path, options = {}) {
     if (historyMode === "replace") {
       replaceFolderHistoryEntry(nextFolder);
     } else if (historyMode === "push") {
-      pushFolderHistoryEntry(nextFolder);
+      pushFolderHistoryEntry(nextFolder, targetEntryAnchor);
     }
   }
   await loadRootFolders({ requestId });
   if (
     contentRendered !== false
-    && historyMode === "restore"
     && anchorResolution?.found
     && requestId === state.viewLoadRequestId
     && state.view === "folder"
     && state.folder === nextFolder
   ) {
-    restoreChildFolderAnchor(returnAnchor);
+    restoreChildFolderAnchor(targetEntryAnchor);
   }
   diagnosticOperationEnd("frontend.navigation.folder", operation, {
     to_folder: state.folder,
@@ -7247,13 +7250,16 @@ function renderFolder(folder, breadcrumb) {
 
   els.breadcrumb.replaceChildren();
 
-  for (const item of breadcrumb) {
+  breadcrumb.forEach((item, index) => {
+    const targetEntryAnchor = breadcrumb[index + 1]?.rel_path || null;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = breadcrumbDisplayName(item);
-    button.addEventListener("click", () => openFolder(item.rel_path));
+    button.addEventListener("click", () => openFolder(item.rel_path, {
+      targetEntryAnchor,
+    }));
     els.breadcrumb.appendChild(button);
-  }
+  });
 
   updateJobActionButtons(state.jobRunning);
   diagnosticOperationEnd("frontend.render.folder", operation, {
@@ -7862,7 +7868,7 @@ function renderChildFolders(data) {
     }
     bindFolderPreviewImageErrors(card);
     card.addEventListener("click", () => openFolder(folder.rel_path, {
-      returnAnchor: folder.rel_path,
+      sourceEntryAnchor: folder.rel_path,
     }));
     els.childFolders.appendChild(card);
   }
@@ -9410,7 +9416,7 @@ window.addEventListener("popstate", (event) => {
   if (!entry) return;
   void reloadSafely(() => openFolder(entry.folder, {
     historyMode: "restore",
-    returnAnchor: entry.returnAnchor,
+    targetEntryAnchor: entry.returnAnchor,
   }));
 });
 
