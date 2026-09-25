@@ -611,3 +611,34 @@ This technical log records completed and approved development steps: what change
 
 - The focused regression tests and full automated test suite passed.
 - A real Windows instance validated independent pagination, collapse behavior, every content filter, folder cards, folder-favorite removal, the media modal, and scroll reset when entering Favorites.
+
+## 2026-09-25 — Folder navigation History API
+
+### Changes
+
+- Added the versioned `catalog2.folder-view` history-state contract, version 1, containing the target folder and an optional `returnAnchor`.
+- The initial folder view establishes its browser entry with `replaceState`; normal child-folder navigation uses `pushState` and stores the opened child's `rel_path` as the return anchor in the parent entry.
+- `popstate` restores folder views without creating another history entry. Search, Favorites, and breadcrumb-specific history behavior remain outside this step.
+- `/api/folders/anchor` resolves an anchor's current page from the current ordering and current `folder_page_size`, rather than treating a historical page number as authoritative.
+- Root anchor resolution uses the same combined ordering of active folders and disk candidates as the normal root listing.
+- A successful return expands the folder section and centers the anchor card with `scrollIntoView()`; a missing anchor safely falls back to the first folder page.
+
+### Reason
+
+- Support native browser Back/Forward through folder-card navigation while remaining correct after folder ordering or page-size changes.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `tests/test_folder_history.py`
+- `tests/test_folder_preview_readiness_diagnostics.py`
+- `tests/test_folder_tree_orchestration.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused tests and full automated test suite passed on Windows.
+- A real instance validated A → B → C → Back → Back → Forward without a history loop.
+- Return to an anchor outside the first page, recalculation after changing `folder_page_size`, and top-level return to the root with the correct centered card were validated.

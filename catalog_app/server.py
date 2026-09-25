@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from .api import (
     ApiError,
     catalog_status,
+    child_folder_page_anchor,
     child_folders,
     favorite_add_action,
     favorite_remove_action,
@@ -1025,6 +1026,13 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                 raw_page=_optional_query_value(query, "page"),
                 raw_page_size=_optional_query_value(query, "page_size"),
                 raw_include_previews=_optional_query_value(query, "include_previews"),
+            ), HTTPStatus.OK
+
+        if path == "/api/folders/anchor":
+            return child_folder_page_anchor(
+                self.config,
+                raw_parent=_single_query_value(query, "parent", default=""),
+                raw_anchor=_single_query_value(query, "anchor", default=""),
             ), HTTPStatus.OK
 
         if path == "/api/media":

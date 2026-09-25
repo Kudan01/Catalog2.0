@@ -2924,6 +2924,79 @@ def child_folders(
         return result
 
 
+def child_folder_page_anchor(
+    config: Config,
+    *,
+    raw_parent: str,
+    raw_anchor: str,
+) -> dict[str, Any]:
+    """Resolve a direct child to its current folder page without client page walking."""
+    parent_rel_path = _normalize_api_path(raw_parent, allow_root=True)
+    anchor_rel_path = _normalize_api_path(raw_anchor, allow_root=False)
+    page_size = config.folder_page_size
+    anchor_path_key = catalog_path_key(anchor_rel_path)
+
+    with open_database(config.db_path, read_only=True) as connection:
+        parent = _available_folder_by_key(connection, catalog_path_key(parent_rel_path))
+        if parent_rel_path == "":
+            listing = _root_child_folders_with_disk_candidates(
+                config=config,
+                connection=connection,
+                parent=parent,
+                params=FolderPageParams(
+                    parent_rel_path="",
+                    page=1,
+                    page_size=sys.maxsize,
+                    offset=0,
+                ),
+                include_previews=False,
+                favorite_path_keys=_favorite_path_key_set(config, kind="folder"),
+            )
+            ordered_path_keys = [
+                catalog_path_key(str(folder["rel_path"]))
+                for folder in listing["folders"]
+            ]
+        else:
+            if parent is None:
+                raise ApiError.from_message(
+                    404,
+                    "navigation.parent_folder.unavailable",
+                    params={"path": parent_rel_path},
+                )
+            rows = connection.execute(
+                """
+                SELECT path_key
+                FROM folders
+                WHERE parent_id = ?
+                  AND is_available = 1
+                ORDER BY sort_key, name
+                """,
+                (int(parent["id"]),),
+            ).fetchall()
+            ordered_path_keys = [str(row["path_key"]) for row in rows]
+
+    try:
+        anchor_index = ordered_path_keys.index(anchor_path_key)
+    except ValueError:
+        return {
+            "ok": True,
+            "found": False,
+            "parent": parent_rel_path,
+            "anchor": anchor_rel_path,
+            "page": 1,
+            "page_size": page_size,
+        }
+
+    return {
+        "ok": True,
+        "found": True,
+        "parent": parent_rel_path,
+        "anchor": anchor_rel_path,
+        "page": (anchor_index // page_size) + 1,
+        "page_size": page_size,
+    }
+
+
 def _root_child_folders_with_disk_candidates(
     *,
     config: Config,

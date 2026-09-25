@@ -21,7 +21,7 @@ class FolderTreeOrchestrationContractTests(unittest.TestCase):
         self.assertIn("renderChildFolders(childrenData)", body)
 
     def test_startup_navigation_waits_for_main_data_before_tree_sync(self) -> None:
-        body = self._function_body("async function openFolder(path)")
+        body = self._function_body("async function openFolder(path, options = {})")
 
         self.assertLess(
             body.index("await loadCurrentFolder({ requestId, folderPreviewMeasurement })"),

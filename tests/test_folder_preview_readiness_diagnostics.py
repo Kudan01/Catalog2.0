@@ -13,7 +13,7 @@ class FolderPreviewReadinessDiagnosticContractTests(unittest.TestCase):
         cls.source = APP_JS.read_text(encoding="utf-8")
 
     def test_navigation_measurement_spans_load_and_rendered_images(self) -> None:
-        open_folder = self._function_body("async function openFolder(path)")
+        open_folder = self._function_body("async function openFolder(path, options = {})")
         load_current = self._function_body("async function loadCurrentFolder(options = {})")
 
         self.assertIn("beginFolderPreviewNavigationMeasurement", open_folder)

@@ -621,6 +621,47 @@ const state = {
   catalogStatus: null,
 };
 
+const CATALOG_HISTORY_STATE_TAG = "catalog2.folder-view";
+const CATALOG_HISTORY_STATE_VERSION = 1;
+
+function folderHistoryState(folder, returnAnchor = null) {
+  return {
+    catalog: {
+      tag: CATALOG_HISTORY_STATE_TAG,
+      version: CATALOG_HISTORY_STATE_VERSION,
+      view: "folder",
+      folder: String(folder || ""),
+      returnAnchor: returnAnchor ? String(returnAnchor) : null,
+    },
+  };
+}
+
+function catalogFolderHistoryEntry(value = window.history.state) {
+  const entry = value?.catalog;
+  if (
+    entry?.tag !== CATALOG_HISTORY_STATE_TAG
+    || entry?.version !== CATALOG_HISTORY_STATE_VERSION
+    || entry?.view !== "folder"
+    || typeof entry.folder !== "string"
+  ) {
+    return null;
+  }
+  return {
+    folder: entry.folder,
+    returnAnchor: typeof entry.returnAnchor === "string" && entry.returnAnchor
+      ? entry.returnAnchor
+      : null,
+  };
+}
+
+function replaceFolderHistoryEntry(folder, returnAnchor = null) {
+  window.history.replaceState(folderHistoryState(folder, returnAnchor), "");
+}
+
+function pushFolderHistoryEntry(folder) {
+  window.history.pushState(folderHistoryState(folder), "");
+}
+
 const THEMES = {
   original: { labelKey: "theme.original" },
   "serious-light": { labelKey: "theme.seriousLight" },
@@ -1777,7 +1818,7 @@ async function saveSourceRootSetting() {
     }
     state.sourceRootVerification = null;
     await loadStatus();
-    await reloadSafely(() => openFolder(state.folder || ""));
+    await reloadSafely(() => openFolder(state.folder || "", { historyMode: "none" }));
   } catch (error) {
     if (els.sourceRootMessage) {
       els.sourceRootMessage.textContent = error.message || text("settings.sourceRootSaveError");
@@ -6832,22 +6873,42 @@ async function refreshCurrentViewAndTree(options = {}) {
   await loadRootFolders({ requestId });
 }
 
-async function openFolder(path) {
+async function resolveChildFolderAnchorPage(parent, anchor) {
+  try {
+    return await fetchJson("/api/folders/anchor", { parent, anchor });
+  } catch (_error) {
+    return { found: false, page: 1 };
+  }
+}
+
+function restoreChildFolderAnchor(anchor) {
+  setChildFoldersCollapsed(false);
+  const card = Array.from(els.childFolders.querySelectorAll(".folder-card"))
+    .find(candidate => candidate.dataset.folderPath === anchor);
+  if (!card) {
+    scrollToCatalogTop();
+    return false;
+  }
+  card.scrollIntoView({ block: "center", inline: "nearest" });
+  return true;
+}
+
+async function openFolder(path, options = {}) {
   const nextFolder = path || "";
-  const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
-    nextFolder,
-    1,
-    "navigation",
-  );
+  const historyMode = options.historyMode || "push";
+  const returnAnchor = options.returnAnchor || null;
   const operation = diagnosticOperationStart("frontend.navigation.folder", {
     from_folder: state.folder,
     to_folder: nextFolder,
     from_view: state.view,
   });
   const folderChanged = state.view !== "folder" || state.folder !== nextFolder;
+  if (historyMode === "push" && returnAnchor && state.view === "folder") {
+    replaceFolderHistoryEntry(state.folder, returnAnchor);
+  }
   state.view = "folder";
   state.folder = nextFolder;
-  if (folderChanged && state.contentFilter !== "all") {
+  if ((folderChanged || historyMode === "restore") && state.contentFilter !== "all") {
     setContentFilter("all");
   }
   state.mediaPage = 1;
@@ -6859,8 +6920,48 @@ async function openFolder(path) {
   updateViewButtons();
   setTreeActiveFolder(nextFolder);
 
+  let anchorResolution = null;
+  if (historyMode === "restore" && returnAnchor) {
+    anchorResolution = await resolveChildFolderAnchorPage(nextFolder, returnAnchor);
+    if (
+      requestId !== state.viewLoadRequestId
+      || state.view !== "folder"
+      || state.folder !== nextFolder
+    ) {
+      diagnosticOperationEnd("frontend.navigation.folder", operation, {
+        to_folder: nextFolder,
+        final_view: state.view,
+        result: "stale",
+      });
+      return false;
+    }
+    state.childPage = anchorResolution.found ? anchorResolution.page : 1;
+  }
+
+  const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
+    nextFolder,
+    state.childPage,
+    "navigation",
+  );
   const contentRendered = await loadCurrentFolder({ requestId, folderPreviewMeasurement });
+  if (contentRendered !== false) {
+    if (historyMode === "replace") {
+      replaceFolderHistoryEntry(nextFolder);
+    } else if (historyMode === "push") {
+      pushFolderHistoryEntry(nextFolder);
+    }
+  }
   await loadRootFolders({ requestId });
+  if (
+    contentRendered !== false
+    && historyMode === "restore"
+    && anchorResolution?.found
+    && requestId === state.viewLoadRequestId
+    && state.view === "folder"
+    && state.folder === nextFolder
+  ) {
+    restoreChildFolderAnchor(returnAnchor);
+  }
   diagnosticOperationEnd("frontend.navigation.folder", operation, {
     to_folder: state.folder,
     final_view: state.view,
@@ -7723,6 +7824,7 @@ function renderChildFolders(data) {
     const card = document.createElement("article");
     const previewHtml = folderPreviewMarkup(folder);
     card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}${folderFilesystemIsUsable(folder) ? "" : " folder-missing"}`;
+    card.dataset.folderPath = folder.rel_path;
     card.innerHTML = `
       <div class="folder-card-layout">
         <div class="folder-card-main">
@@ -7759,7 +7861,9 @@ function renderChildFolders(data) {
       });
     }
     bindFolderPreviewImageErrors(card);
-    card.addEventListener("click", () => openFolder(folder.rel_path));
+    card.addEventListener("click", () => openFolder(folder.rel_path, {
+      returnAnchor: folder.rel_path,
+    }));
     els.childFolders.appendChild(card);
   }
 
@@ -9301,6 +9405,15 @@ window.addEventListener("resize", () => {
   scheduleResponsiveLayoutUpdate();
 });
 
+window.addEventListener("popstate", (event) => {
+  const entry = catalogFolderHistoryEntry(event.state);
+  if (!entry) return;
+  void reloadSafely(() => openFolder(entry.folder, {
+    historyMode: "restore",
+    returnAnchor: entry.returnAnchor,
+  }));
+});
+
 (async function main() {
   const operation = diagnosticOperationStart("frontend.app.main", {
     diagnostics_enabled: DIAGNOSTICS_ENABLED,
@@ -9316,7 +9429,7 @@ window.addEventListener("resize", () => {
     await loadStatus();
     const jobStatus = await loadJobStatus();
     ensureJobPollingForStatus(jobStatus);
-    await openFolder("");
+    await openFolder("", { historyMode: "replace" });
     diagnosticOperationEnd("frontend.app.main", operation, {
       result: "ok",
       active_locale: activeLocale,
