@@ -694,3 +694,37 @@ This technical log records completed and approved development steps: what change
 - The focused tests and full automated test suite passed on Windows.
 - A real instance validated folder snapshot restoration, anchor priority over an older page/scroll snapshot, and anchor removal after subsequent user interaction.
 - A → B → C → Back → Back → Forward remained functional without a history loop.
+
+## 2026-09-25 — Search and Favorites History API
+
+### Changes
+
+- Added separate version 1 history contracts for `catalog2.search-view` and `catalog2.favorites-view` while preserving the existing folder history contract and anchor behavior.
+- Search history stores its folder context, query, search folder and scope, the "search in current folder" state, content filter, independent child and media pages, folder-collapse state, and content scroll position.
+- Favorites history stores its folder context, content filter, independent child and media pages, folder-collapse state, and content scroll position.
+- Each successful new Search and the first entry into Favorites from another view creates a normal browser step with `pushState`. Reopening active Favorites does not create a duplicate entry.
+- Filter, page, collapse, and debounced scroll changes within Search or Favorites update only the matching current entry through `replaceState`.
+- `popstate` now dispatches folder, Search, and Favorites restoration. Search and Favorites restores create no new history entry and restore the complete snapshot, including controls, folder context, corrected valid pages, and scroll position.
+- Opening a folder from Search or Favorites first preserves the current view snapshot and then creates a normal folder entry without using folder `sourceEntryAnchor` semantics.
+- One shared debounced mechanism records scroll snapshots for all three views. Folder History API behavior from the preceding steps remains unchanged.
+- This completes the History API sequence: 3A added folder Back/Forward with intelligent anchors, 3B added breadcrumb anchor navigation, 3C added folder-view snapshots, and 3D added Search and Favorites history views.
+
+### Reason
+
+- Make browser Back/Forward preserve the user's complete navigation context across folder, Search, and Favorites views without introducing history loops or duplicate entries.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `tests/test_folder_history.py`
+- `tests/test_search_favorites_history.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused tests and full automated test suite passed on Windows.
+- A real instance validated Favorites → folder → Back/Forward with preserved state.
+- Search → folder → Back/Forward restored the query, scope, content filter, both pages, collapse state, and scroll position.
+- Starting a new Search from Search and returning to the preceding Search with Back was validated.
+- Reopening active Favorites created no duplicate history entry.
+- Combined navigation among Search, folder, and Favorites completed without history loops.

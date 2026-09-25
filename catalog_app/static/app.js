@@ -595,6 +595,7 @@ const state = {
   viewLoadRequestId: 0,
   searchQuery: "",
   searchFolder: "",
+  searchInCurrentFolder: false,
   searchBusyRequestId: null,
   jobPollTimer: null,
   latestScan: null,
@@ -622,13 +623,15 @@ const state = {
 };
 
 const CATALOG_HISTORY_STATE_TAG = "catalog2.folder-view";
+const CATALOG_SEARCH_HISTORY_STATE_TAG = "catalog2.search-view";
+const CATALOG_FAVORITES_HISTORY_STATE_TAG = "catalog2.favorites-view";
 const CATALOG_HISTORY_STATE_VERSION = 1;
 const FOLDER_HISTORY_CONTENT_FILTERS = new Set([
   "all", "folders", "image", "gif", "video", "other",
 ]);
-const FOLDER_HISTORY_SCROLL_DEBOUNCE_MS = 180;
-let folderHistoryScrollTimer = null;
-let folderHistoryScrollSuppressedUntil = 0;
+const CATALOG_HISTORY_SCROLL_DEBOUNCE_MS = 180;
+let catalogHistoryScrollTimer = null;
+let catalogHistoryScrollSuppressedUntil = 0;
 
 function positiveHistoryPage(value) {
   const page = Math.trunc(Number(value));
@@ -701,6 +704,7 @@ function catalogFolderHistoryEntry(value = window.history.state) {
     return null;
   }
   return {
+    view: "folder",
     folder: entry.folder,
     returnAnchor: typeof entry.returnAnchor === "string" && entry.returnAnchor
       ? entry.returnAnchor
@@ -715,12 +719,128 @@ function catalogFolderHistoryEntry(value = window.history.state) {
   };
 }
 
+function currentSearchHistorySnapshot() {
+  return {
+    folder: String(state.folder || ""),
+    searchQuery: String(state.searchQuery || ""),
+    searchFolder: String(state.searchFolder || ""),
+    searchInCurrentFolder: state.searchInCurrentFolder === true,
+    contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(state.contentFilter)
+      ? state.contentFilter
+      : "all",
+    mediaPage: positiveHistoryPage(state.mediaPage),
+    childPage: positiveHistoryPage(state.childPage),
+    searchFoldersCollapsed: state.searchFoldersCollapsed === true,
+    scrollTop: catalogContentScrollPosition(),
+  };
+}
+
+function searchHistoryState(snapshot = null) {
+  const viewSnapshot = snapshot || currentSearchHistorySnapshot();
+  return {
+    catalog: {
+      tag: CATALOG_SEARCH_HISTORY_STATE_TAG,
+      version: CATALOG_HISTORY_STATE_VERSION,
+      view: "search",
+      folder: typeof viewSnapshot.folder === "string" ? viewSnapshot.folder : "",
+      searchQuery: typeof viewSnapshot.searchQuery === "string" ? viewSnapshot.searchQuery : "",
+      searchFolder: typeof viewSnapshot.searchFolder === "string" ? viewSnapshot.searchFolder : "",
+      searchInCurrentFolder: viewSnapshot.searchInCurrentFolder === true,
+      contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(viewSnapshot.contentFilter)
+        ? viewSnapshot.contentFilter
+        : "all",
+      mediaPage: positiveHistoryPage(viewSnapshot.mediaPage),
+      childPage: positiveHistoryPage(viewSnapshot.childPage),
+      searchFoldersCollapsed: viewSnapshot.searchFoldersCollapsed === true,
+      scrollTop: nonnegativeHistoryScroll(viewSnapshot.scrollTop),
+    },
+  };
+}
+
+function catalogSearchHistoryEntry(value = window.history.state) {
+  const entry = value?.catalog;
+  if (
+    entry?.tag !== CATALOG_SEARCH_HISTORY_STATE_TAG
+    || entry?.version !== CATALOG_HISTORY_STATE_VERSION
+    || entry?.view !== "search"
+  ) {
+    return null;
+  }
+  return searchHistoryState(entry).catalog;
+}
+
+function currentFavoritesHistorySnapshot() {
+  return {
+    folder: String(state.folder || ""),
+    contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(state.contentFilter)
+      ? state.contentFilter
+      : "all",
+    mediaPage: positiveHistoryPage(state.mediaPage),
+    childPage: positiveHistoryPage(state.childPage),
+    favoritesFoldersCollapsed: state.favoritesFoldersCollapsed === true,
+    scrollTop: catalogContentScrollPosition(),
+  };
+}
+
+function favoritesHistoryState(snapshot = null) {
+  const viewSnapshot = snapshot || currentFavoritesHistorySnapshot();
+  return {
+    catalog: {
+      tag: CATALOG_FAVORITES_HISTORY_STATE_TAG,
+      version: CATALOG_HISTORY_STATE_VERSION,
+      view: "favorites",
+      folder: typeof viewSnapshot.folder === "string" ? viewSnapshot.folder : "",
+      contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(viewSnapshot.contentFilter)
+        ? viewSnapshot.contentFilter
+        : "all",
+      mediaPage: positiveHistoryPage(viewSnapshot.mediaPage),
+      childPage: positiveHistoryPage(viewSnapshot.childPage),
+      favoritesFoldersCollapsed: viewSnapshot.favoritesFoldersCollapsed === true,
+      scrollTop: nonnegativeHistoryScroll(viewSnapshot.scrollTop),
+    },
+  };
+}
+
+function catalogFavoritesHistoryEntry(value = window.history.state) {
+  const entry = value?.catalog;
+  if (
+    entry?.tag !== CATALOG_FAVORITES_HISTORY_STATE_TAG
+    || entry?.version !== CATALOG_HISTORY_STATE_VERSION
+    || entry?.view !== "favorites"
+  ) {
+    return null;
+  }
+  return favoritesHistoryState(entry).catalog;
+}
+
+function catalogHistoryEntry(value = window.history.state) {
+  return catalogFolderHistoryEntry(value)
+    || catalogSearchHistoryEntry(value)
+    || catalogFavoritesHistoryEntry(value);
+}
+
 function replaceFolderHistoryEntry(folder, returnAnchor = null) {
   window.history.replaceState(folderHistoryState(folder, returnAnchor), "");
 }
 
 function pushFolderHistoryEntry(folder, returnAnchor = null) {
   window.history.pushState(folderHistoryState(folder, returnAnchor), "");
+}
+
+function replaceSearchHistoryEntry() {
+  window.history.replaceState(searchHistoryState(), "");
+}
+
+function pushSearchHistoryEntry() {
+  window.history.pushState(searchHistoryState(), "");
+}
+
+function replaceFavoritesHistoryEntry() {
+  window.history.replaceState(favoritesHistoryState(), "");
+}
+
+function pushFavoritesHistoryEntry() {
+  window.history.pushState(favoritesHistoryState(), "");
 }
 
 function syncCurrentFolderHistorySnapshot({ clearReturnAnchor = true } = {}) {
@@ -734,26 +854,51 @@ function syncCurrentFolderHistorySnapshot({ clearReturnAnchor = true } = {}) {
   return true;
 }
 
-function suppressFolderHistoryScrollSync() {
-  folderHistoryScrollSuppressedUntil = Date.now() + 300;
-}
-
-function scheduleFolderHistoryScrollSync() {
-  if (Date.now() < folderHistoryScrollSuppressedUntil) return;
-  if (folderHistoryScrollTimer !== null) {
-    window.clearTimeout(folderHistoryScrollTimer);
+function syncCurrentCatalogHistorySnapshot() {
+  if (state.view === "folder") {
+    return syncCurrentFolderHistorySnapshot();
   }
-  folderHistoryScrollTimer = window.setTimeout(() => {
-    folderHistoryScrollTimer = null;
-    syncCurrentFolderHistorySnapshot();
-  }, FOLDER_HISTORY_SCROLL_DEBOUNCE_MS);
+  if (state.view === "search") {
+    const entry = catalogSearchHistoryEntry();
+    if (
+      !entry
+      || entry.folder !== state.folder
+      || entry.searchQuery !== state.searchQuery
+      || entry.searchFolder !== state.searchFolder
+      || entry.searchInCurrentFolder !== state.searchInCurrentFolder
+    ) return false;
+    replaceSearchHistoryEntry();
+    return true;
+  }
+  if (state.view === "favorites") {
+    const entry = catalogFavoritesHistoryEntry();
+    if (!entry || entry.folder !== state.folder) return false;
+    replaceFavoritesHistoryEntry();
+    return true;
+  }
+  return false;
 }
 
-function flushFolderHistoryScrollSync() {
-  if (folderHistoryScrollTimer === null) return;
-  window.clearTimeout(folderHistoryScrollTimer);
-  folderHistoryScrollTimer = null;
-  syncCurrentFolderHistorySnapshot();
+function suppressCatalogHistoryScrollSync() {
+  catalogHistoryScrollSuppressedUntil = Date.now() + 300;
+}
+
+function scheduleCatalogHistoryScrollSync() {
+  if (Date.now() < catalogHistoryScrollSuppressedUntil) return;
+  if (catalogHistoryScrollTimer !== null) {
+    window.clearTimeout(catalogHistoryScrollTimer);
+  }
+  catalogHistoryScrollTimer = window.setTimeout(() => {
+    catalogHistoryScrollTimer = null;
+    syncCurrentCatalogHistorySnapshot();
+  }, CATALOG_HISTORY_SCROLL_DEBOUNCE_MS);
+}
+
+function flushCatalogHistoryScrollSync() {
+  if (catalogHistoryScrollTimer === null) return;
+  window.clearTimeout(catalogHistoryScrollTimer);
+  catalogHistoryScrollTimer = null;
+  syncCurrentCatalogHistorySnapshot();
 }
 
 const THEMES = {
@@ -2934,7 +3079,7 @@ async function savePageSizeSettings(options = {}) {
       state.mediaPage = 1;
       state.childPage = 1;
       const reloaded = await reloadSafely(loadCurrentFolder);
-      if (reloaded) syncCurrentFolderHistorySnapshot();
+      if (reloaded) syncCurrentCatalogHistorySnapshot();
     }
     if (els.pageSizeMessage) {
       els.pageSizeMessage.textContent = quietStatus ? "" : text("settings.pageSizeSaved");
@@ -6977,7 +7122,7 @@ async function resolveChildFolderAnchorPage(parent, anchor) {
 }
 
 function restoreChildFolderAnchor(anchor) {
-  suppressFolderHistoryScrollSync();
+  suppressCatalogHistoryScrollSync();
   setChildFoldersCollapsed(false);
   const card = Array.from(els.childFolders.querySelectorAll(".folder-card"))
     .find(candidate => candidate.dataset.folderPath === anchor);
@@ -6990,7 +7135,7 @@ function restoreChildFolderAnchor(anchor) {
 }
 
 async function openFolder(path, options = {}) {
-  flushFolderHistoryScrollSync();
+  flushCatalogHistoryScrollSync();
   const nextFolder = path || "";
   const historyMode = options.historyMode || "push";
   const sourceEntryAnchor = options.sourceEntryAnchor || null;
@@ -7023,7 +7168,7 @@ async function openFolder(path, options = {}) {
   }
   const requestId = beginViewLoadRequest();
 
-  suppressFolderHistoryScrollSync();
+  suppressCatalogHistoryScrollSync();
   scrollToCatalogTop();
   setMessage("");
   updateViewButtons();
@@ -7104,17 +7249,27 @@ async function openFolder(path, options = {}) {
 }
 
 async function openFavorites() {
-  flushFolderHistoryScrollSync();
+  flushCatalogHistoryScrollSync();
+  const alreadyOpen = state.view === "favorites";
   state.view = "favorites";
   state.mediaPage = 1;
   state.childPage = 1;
   state.favoritesFoldersCollapsed = false;
   const requestId = beginViewLoadRequest();
+  suppressCatalogHistoryScrollSync();
   scrollToCatalogTop();
   setMessage("");
   updateViewButtons();
   setTreeActiveFolder();
-  await loadCurrentFolder({ requestId });
+  const rendered = await loadCurrentFolder({ requestId });
+  if (rendered !== false) {
+    if (alreadyOpen && catalogFavoritesHistoryEntry()) {
+      replaceFavoritesHistoryEntry();
+    } else {
+      pushFavoritesHistoryEntry();
+    }
+  }
+  return rendered;
 }
 
 async function loadCurrentFolder(options = {}) {
@@ -7307,10 +7462,12 @@ async function startSearch() {
     return;
   }
 
-  flushFolderHistoryScrollSync();
+  const searchInCurrentFolder = els.searchInCurrentFolder.checked;
+  flushCatalogHistoryScrollSync();
   state.view = "search";
   state.searchQuery = query;
-  state.searchFolder = els.searchInCurrentFolder.checked ? state.folder : "";
+  state.searchInCurrentFolder = searchInCurrentFolder;
+  state.searchFolder = searchInCurrentFolder ? state.folder : "";
   state.searchFoldersCollapsed = false;
   state.mediaPage = 1;
   state.childPage = 1;
@@ -7318,7 +7475,9 @@ async function startSearch() {
   setMessage("");
   updateViewButtons();
   setTreeActiveFolder();
-  await loadCurrentFolder({ requestId });
+  const rendered = await loadCurrentFolder({ requestId });
+  if (rendered !== false) pushSearchHistoryEntry();
+  return rendered;
 }
 
 async function loadSearchView({ requestId, snapshot }) {
@@ -7340,6 +7499,84 @@ async function loadSearchView({ requestId, snapshot }) {
   } finally {
     clearSearchBusy(requestId);
   }
+}
+
+function correctRestoredPagedViewState() {
+  const includesFolders = state.contentFilter === "all" || state.contentFilter === "folders";
+  const includesMedia = state.contentFilter !== "folders";
+  const childPage = includesFolders
+    ? clampPageNumber(state.childPage, state.childPages)
+    : state.childPage;
+  const mediaPage = includesMedia
+    ? clampPageNumber(state.mediaPage, state.mediaPages)
+    : state.mediaPage;
+  const changed = childPage !== state.childPage || mediaPage !== state.mediaPage;
+  state.childPage = childPage;
+  state.mediaPage = mediaPage;
+  return changed;
+}
+
+async function restoreSearchHistoryEntry(entry) {
+  state.view = "search";
+  state.folder = entry.folder;
+  state.searchQuery = entry.searchQuery;
+  state.searchFolder = entry.searchFolder;
+  state.searchInCurrentFolder = entry.searchInCurrentFolder;
+  state.searchFoldersCollapsed = entry.searchFoldersCollapsed;
+  setContentFilter(entry.contentFilter);
+  state.childPage = entry.childPage;
+  state.mediaPage = entry.mediaPage;
+  els.searchInput.value = entry.searchQuery;
+  els.searchInCurrentFolder.checked = entry.searchInCurrentFolder;
+  const requestId = beginViewLoadRequest();
+  suppressCatalogHistoryScrollSync();
+  scrollToCatalogTop();
+  setMessage("");
+  updateViewButtons();
+  setTreeActiveFolder();
+
+  let rendered = await loadCurrentFolder({ requestId });
+  if (rendered !== false && correctRestoredPagedViewState()) {
+    rendered = await loadCurrentFolder({ requestId });
+  }
+  if (
+    rendered !== false
+    && requestId === state.viewLoadRequestId
+    && state.view === "search"
+  ) {
+    restoreCatalogContentScroll(entry.scrollTop);
+    replaceSearchHistoryEntry();
+  }
+  return rendered;
+}
+
+async function restoreFavoritesHistoryEntry(entry) {
+  state.view = "favorites";
+  state.folder = entry.folder;
+  state.favoritesFoldersCollapsed = entry.favoritesFoldersCollapsed;
+  setContentFilter(entry.contentFilter);
+  state.childPage = entry.childPage;
+  state.mediaPage = entry.mediaPage;
+  const requestId = beginViewLoadRequest();
+  suppressCatalogHistoryScrollSync();
+  scrollToCatalogTop();
+  setMessage("");
+  updateViewButtons();
+  setTreeActiveFolder();
+
+  let rendered = await loadCurrentFolder({ requestId });
+  if (rendered !== false && correctRestoredPagedViewState()) {
+    rendered = await loadCurrentFolder({ requestId });
+  }
+  if (
+    rendered !== false
+    && requestId === state.viewLoadRequestId
+    && state.view === "favorites"
+  ) {
+    restoreCatalogContentScroll(entry.scrollTop);
+    replaceFavoritesHistoryEntry();
+  }
+  return rendered;
 }
 
 function folderDisplayName(folder) {
@@ -7514,7 +7751,7 @@ async function goToMediaPage(page) {
   const reloaded = await reloadSafely(
     state.view === "folder" ? loadCurrentFolderMediaPage : loadCurrentFolder,
   );
-  if (reloaded) syncCurrentFolderHistorySnapshot();
+  if (reloaded) syncCurrentCatalogHistorySnapshot();
 }
 
 function setChildPagerVisible(visible) {
@@ -7596,7 +7833,8 @@ async function goToChildPage(page) {
   state.childPage = targetPage;
   if (state.view === "search" || state.view === "favorites") {
     scrollToCatalogTop();
-    await reloadSafely(loadCurrentFolder);
+    const reloaded = await reloadSafely(loadCurrentFolder);
+    if (reloaded) syncCurrentCatalogHistorySnapshot();
     return;
   }
   const childPageMeasurement = beginChildPageMeasurement(state.folder, targetPage);
@@ -7613,7 +7851,7 @@ async function goToChildPage(page) {
     folderPreviewMeasurement,
     childPageMeasurement,
   }));
-  if (reloaded) syncCurrentFolderHistorySnapshot();
+  if (reloaded) syncCurrentCatalogHistorySnapshot();
 }
 
 function renderSearchHeader(data) {
@@ -9067,6 +9305,7 @@ async function toggleFolderFavorite(folder, button) {
         state.childPage -= 1;
       }
       await loadCurrentFolder();
+      syncCurrentCatalogHistorySnapshot();
     }
   } catch (error) {
     setMessage(error.message, true);
@@ -9091,6 +9330,7 @@ async function setFavorite(media, shouldBeFavorite) {
       state.mediaPage = 1;
     }
     await loadCurrentFolder();
+    if (state.view === "favorites") syncCurrentCatalogHistorySnapshot();
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -9171,7 +9411,7 @@ function scrollToCatalogTop() {
 }
 
 function restoreCatalogContentScroll(scrollTop) {
-  suppressFolderHistoryScrollSync();
+  suppressCatalogHistoryScrollSync();
   const top = nonnegativeHistoryScroll(scrollTop);
   if (usesIndependentContentScroll()) {
     const content = document.querySelector(".content");
@@ -9194,7 +9434,7 @@ for (const button of document.querySelectorAll(".tab")) {
     state.mediaPage = 1;
     state.childPage = 1;
     const reloaded = await reloadSafely(loadCurrentFolder);
-    if (reloaded) syncCurrentFolderHistorySnapshot();
+    if (reloaded) syncCurrentCatalogHistorySnapshot();
   });
 }
 
@@ -9219,8 +9459,8 @@ if (els.childFoldersToggle) {
       setFavoritesFoldersCollapsed(!state.favoritesFoldersCollapsed);
     } else {
       setChildFoldersCollapsed(!areChildFoldersCollapsed());
-      syncCurrentFolderHistorySnapshot();
     }
+    syncCurrentCatalogHistorySnapshot();
   });
 }
 
@@ -9236,12 +9476,12 @@ for (const pager of els.childPagers) {
   controls.last.addEventListener("click", () => goToChildPage(state.childPages));
 }
 
-window.addEventListener("scroll", scheduleFolderHistoryScrollSync, { passive: true });
+window.addEventListener("scroll", scheduleCatalogHistoryScrollSync, { passive: true });
 const catalogHistoryContent = document.querySelector(".content");
 if (catalogHistoryContent) {
   catalogHistoryContent.addEventListener(
     "scroll",
-    scheduleFolderHistoryScrollSync,
+    scheduleCatalogHistoryScrollSync,
     { passive: true },
   );
 }
@@ -9573,13 +9813,19 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("popstate", (event) => {
-  const entry = catalogFolderHistoryEntry(event.state);
+  const entry = catalogHistoryEntry(event.state);
   if (!entry) return;
-  void reloadSafely(() => openFolder(entry.folder, {
-    historyMode: "restore",
-    targetEntryAnchor: entry.returnAnchor,
-    historySnapshot: entry,
-  }));
+  if (entry.view === "folder") {
+    void reloadSafely(() => openFolder(entry.folder, {
+      historyMode: "restore",
+      targetEntryAnchor: entry.returnAnchor,
+      historySnapshot: entry,
+    }));
+  } else if (entry.view === "search") {
+    void reloadSafely(() => restoreSearchHistoryEntry(entry));
+  } else if (entry.view === "favorites") {
+    void reloadSafely(() => restoreFavoritesHistoryEntry(entry));
+  }
 });
 
 (async function main() {

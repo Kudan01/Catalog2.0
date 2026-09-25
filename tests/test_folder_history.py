@@ -229,7 +229,7 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn("state.childPage = targetEntryAnchor ? 1", open_folder)
         self.assertIn("if (targetEntryAnchor)", open_folder)
         self.assertIn("state.childPage = anchorResolution.found ? anchorResolution.page : 1", open_folder)
-        self.assertIn("suppressFolderHistoryScrollSync()", restore)
+        self.assertIn("suppressCatalogHistoryScrollSync()", restore)
         self.assertNotIn("syncCurrentFolderHistorySnapshot", restore)
 
     def test_user_state_changes_replace_snapshot_and_clear_return_anchor(self) -> None:
@@ -243,34 +243,33 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn("clearReturnAnchor ? null : entry.returnAnchor", sync)
         self.assertIn("replaceFolderHistoryEntry", sync)
         self.assertNotIn("pushFolderHistoryEntry", sync)
-        self.assertIn("syncCurrentFolderHistorySnapshot()", media_page)
-        self.assertIn("syncCurrentFolderHistorySnapshot()", child_page)
+        self.assertIn("syncCurrentCatalogHistorySnapshot()", media_page)
+        self.assertIn("syncCurrentCatalogHistorySnapshot()", child_page)
         tabs_start = self.source.index('for (const button of document.querySelectorAll(".tab"))')
         tabs_end = self.source.index("\nels.firstPage", tabs_start)
         tabs = self.source[tabs_start:tabs_end]
         collapse_start = self.source.index('\nif (els.childFoldersToggle)') + 1
         collapse_end = self.source.index("\nfor (const pager", collapse_start)
         collapse = self.source[collapse_start:collapse_end]
-        self.assertIn("syncCurrentFolderHistorySnapshot()", tabs)
-        self.assertIn("syncCurrentFolderHistorySnapshot()", collapse)
+        self.assertIn("syncCurrentCatalogHistorySnapshot()", tabs)
+        self.assertIn("syncCurrentCatalogHistorySnapshot()", collapse)
         self.assertNotIn("pushFolderHistoryEntry", tabs)
         self.assertNotIn("pushFolderHistoryEntry", collapse)
 
     def test_scroll_snapshot_is_debounced(self) -> None:
-        schedule = self._function_body("function scheduleFolderHistoryScrollSync()")
-        self.assertIn("folderHistoryScrollSuppressedUntil", schedule)
-        self.assertIn("window.clearTimeout(folderHistoryScrollTimer)", schedule)
+        schedule = self._function_body("function scheduleCatalogHistoryScrollSync()")
+        self.assertIn("catalogHistoryScrollSuppressedUntil", schedule)
+        self.assertIn("window.clearTimeout(catalogHistoryScrollTimer)", schedule)
         self.assertIn("window.setTimeout", schedule)
-        self.assertIn("FOLDER_HISTORY_SCROLL_DEBOUNCE_MS", schedule)
+        self.assertIn("CATALOG_HISTORY_SCROLL_DEBOUNCE_MS", schedule)
         self.assertNotIn("replaceState", schedule)
 
-    def test_history_contract_does_not_capture_search_or_favorites(self) -> None:
+    def test_search_and_favorites_do_not_use_folder_history_writers(self) -> None:
         search = self._function_body("async function startSearch()")
         favorites = self._function_body("async function openFavorites()")
         for body in (search, favorites):
             self.assertNotIn("pushFolderHistoryEntry", body)
             self.assertNotIn("replaceFolderHistoryEntry", body)
-            self.assertNotIn("syncCurrentFolderHistorySnapshot", body)
 
     @classmethod
     def _function_body(cls, signature: str) -> str:
