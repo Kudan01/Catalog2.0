@@ -623,15 +623,69 @@ const state = {
 
 const CATALOG_HISTORY_STATE_TAG = "catalog2.folder-view";
 const CATALOG_HISTORY_STATE_VERSION = 1;
+const FOLDER_HISTORY_CONTENT_FILTERS = new Set([
+  "all", "folders", "image", "gif", "video", "other",
+]);
+const FOLDER_HISTORY_SCROLL_DEBOUNCE_MS = 180;
+let folderHistoryScrollTimer = null;
+let folderHistoryScrollSuppressedUntil = 0;
 
-function folderHistoryState(folder, returnAnchor = null) {
+function positiveHistoryPage(value) {
+  const page = Math.trunc(Number(value));
+  return Number.isFinite(page) && page >= 1 ? page : 1;
+}
+
+function nonnegativeHistoryScroll(value) {
+  const scrollTop = Number(value);
+  return Number.isFinite(scrollTop) && scrollTop >= 0 ? scrollTop : 0;
+}
+
+function catalogContentScrollPosition() {
+  if (usesIndependentContentScroll()) {
+    const content = document.querySelector(".content");
+    if (content) return nonnegativeHistoryScroll(content.scrollTop);
+  }
+  return nonnegativeHistoryScroll(window.scrollY || window.pageYOffset || 0);
+}
+
+function currentFolderHistorySnapshot(folder) {
+  if (state.view !== "folder" || state.folder !== folder) {
+    return {
+      contentFilter: "all",
+      mediaPage: 1,
+      childPage: 1,
+      childFoldersCollapsed: false,
+      scrollTop: 0,
+    };
+  }
+  return {
+    contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(state.contentFilter)
+      ? state.contentFilter
+      : "all",
+    mediaPage: positiveHistoryPage(state.mediaPage),
+    childPage: positiveHistoryPage(state.childPage),
+    childFoldersCollapsed: areChildFoldersCollapsed(),
+    scrollTop: catalogContentScrollPosition(),
+  };
+}
+
+function folderHistoryState(folder, returnAnchor = null, snapshot = null) {
+  const normalizedFolder = String(folder || "");
+  const viewSnapshot = snapshot || currentFolderHistorySnapshot(normalizedFolder);
   return {
     catalog: {
       tag: CATALOG_HISTORY_STATE_TAG,
       version: CATALOG_HISTORY_STATE_VERSION,
       view: "folder",
-      folder: String(folder || ""),
+      folder: normalizedFolder,
       returnAnchor: returnAnchor ? String(returnAnchor) : null,
+      contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(viewSnapshot.contentFilter)
+        ? viewSnapshot.contentFilter
+        : "all",
+      mediaPage: positiveHistoryPage(viewSnapshot.mediaPage),
+      childPage: positiveHistoryPage(viewSnapshot.childPage),
+      childFoldersCollapsed: viewSnapshot.childFoldersCollapsed === true,
+      scrollTop: nonnegativeHistoryScroll(viewSnapshot.scrollTop),
     },
   };
 }
@@ -651,6 +705,13 @@ function catalogFolderHistoryEntry(value = window.history.state) {
     returnAnchor: typeof entry.returnAnchor === "string" && entry.returnAnchor
       ? entry.returnAnchor
       : null,
+    contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(entry.contentFilter)
+      ? entry.contentFilter
+      : "all",
+    mediaPage: positiveHistoryPage(entry.mediaPage),
+    childPage: positiveHistoryPage(entry.childPage),
+    childFoldersCollapsed: entry.childFoldersCollapsed === true,
+    scrollTop: nonnegativeHistoryScroll(entry.scrollTop),
   };
 }
 
@@ -660,6 +721,39 @@ function replaceFolderHistoryEntry(folder, returnAnchor = null) {
 
 function pushFolderHistoryEntry(folder, returnAnchor = null) {
   window.history.pushState(folderHistoryState(folder, returnAnchor), "");
+}
+
+function syncCurrentFolderHistorySnapshot({ clearReturnAnchor = true } = {}) {
+  if (state.view !== "folder") return false;
+  const entry = catalogFolderHistoryEntry();
+  if (!entry || entry.folder !== state.folder) return false;
+  replaceFolderHistoryEntry(
+    state.folder,
+    clearReturnAnchor ? null : entry.returnAnchor,
+  );
+  return true;
+}
+
+function suppressFolderHistoryScrollSync() {
+  folderHistoryScrollSuppressedUntil = Date.now() + 300;
+}
+
+function scheduleFolderHistoryScrollSync() {
+  if (Date.now() < folderHistoryScrollSuppressedUntil) return;
+  if (folderHistoryScrollTimer !== null) {
+    window.clearTimeout(folderHistoryScrollTimer);
+  }
+  folderHistoryScrollTimer = window.setTimeout(() => {
+    folderHistoryScrollTimer = null;
+    syncCurrentFolderHistorySnapshot();
+  }, FOLDER_HISTORY_SCROLL_DEBOUNCE_MS);
+}
+
+function flushFolderHistoryScrollSync() {
+  if (folderHistoryScrollTimer === null) return;
+  window.clearTimeout(folderHistoryScrollTimer);
+  folderHistoryScrollTimer = null;
+  syncCurrentFolderHistorySnapshot();
 }
 
 const THEMES = {
@@ -2839,7 +2933,8 @@ async function savePageSizeSettings(options = {}) {
     if (state.view !== "search") {
       state.mediaPage = 1;
       state.childPage = 1;
-      await reloadSafely(loadCurrentFolder);
+      const reloaded = await reloadSafely(loadCurrentFolder);
+      if (reloaded) syncCurrentFolderHistorySnapshot();
     }
     if (els.pageSizeMessage) {
       els.pageSizeMessage.textContent = quietStatus ? "" : text("settings.pageSizeSaved");
@@ -6882,6 +6977,7 @@ async function resolveChildFolderAnchorPage(parent, anchor) {
 }
 
 function restoreChildFolderAnchor(anchor) {
+  suppressFolderHistoryScrollSync();
   setChildFoldersCollapsed(false);
   const card = Array.from(els.childFolders.querySelectorAll(".folder-card"))
     .find(candidate => candidate.dataset.folderPath === anchor);
@@ -6894,10 +6990,12 @@ function restoreChildFolderAnchor(anchor) {
 }
 
 async function openFolder(path, options = {}) {
+  flushFolderHistoryScrollSync();
   const nextFolder = path || "";
   const historyMode = options.historyMode || "push";
   const sourceEntryAnchor = options.sourceEntryAnchor || null;
   const targetEntryAnchor = options.targetEntryAnchor || null;
+  const restoredSnapshot = historyMode === "restore" ? options.historySnapshot : null;
   const operation = diagnosticOperationStart("frontend.navigation.folder", {
     from_folder: state.folder,
     to_folder: nextFolder,
@@ -6909,16 +7007,23 @@ async function openFolder(path, options = {}) {
   }
   state.view = "folder";
   state.folder = nextFolder;
-  if (
-    (folderChanged || historyMode === "restore" || targetEntryAnchor)
-    && state.contentFilter !== "all"
-  ) {
-    setContentFilter("all");
+  if (restoredSnapshot) {
+    setContentFilter(targetEntryAnchor ? "all" : restoredSnapshot.contentFilter);
+    state.mediaPage = restoredSnapshot.mediaPage;
+    state.childPage = targetEntryAnchor ? 1 : restoredSnapshot.childPage;
+    state.collapsedChildFoldersByFolder[nextFolder] = targetEntryAnchor
+      ? false
+      : restoredSnapshot.childFoldersCollapsed;
+  } else {
+    if ((folderChanged || targetEntryAnchor) && state.contentFilter !== "all") {
+      setContentFilter("all");
+    }
+    state.mediaPage = 1;
+    state.childPage = 1;
   }
-  state.mediaPage = 1;
-  state.childPage = 1;
   const requestId = beginViewLoadRequest();
 
+  suppressFolderHistoryScrollSync();
   scrollToCatalogTop();
   setMessage("");
   updateViewButtons();
@@ -6947,7 +7052,22 @@ async function openFolder(path, options = {}) {
     state.childPage,
     "navigation",
   );
-  const contentRendered = await loadCurrentFolder({ requestId, folderPreviewMeasurement });
+  let contentRendered = await loadCurrentFolder({ requestId, folderPreviewMeasurement });
+  if (contentRendered !== false && restoredSnapshot && !targetEntryAnchor) {
+    const restoresFolders = state.contentFilter === "all" || state.contentFilter === "folders";
+    const restoresMedia = state.contentFilter !== "folders";
+    const validChildPage = restoresFolders
+      ? clampPageNumber(state.childPage, state.childPages)
+      : state.childPage;
+    const validMediaPage = restoresMedia
+      ? clampPageNumber(state.mediaPage, state.mediaPages)
+      : state.mediaPage;
+    if (validChildPage !== state.childPage || validMediaPage !== state.mediaPage) {
+      state.childPage = validChildPage;
+      state.mediaPage = validMediaPage;
+      contentRendered = await loadCurrentFolder({ requestId });
+    }
+  }
   if (contentRendered !== false) {
     if (historyMode === "replace") {
       replaceFolderHistoryEntry(nextFolder);
@@ -6964,6 +7084,16 @@ async function openFolder(path, options = {}) {
     && state.folder === nextFolder
   ) {
     restoreChildFolderAnchor(targetEntryAnchor);
+  } else if (
+    contentRendered !== false
+    && restoredSnapshot
+    && !targetEntryAnchor
+    && requestId === state.viewLoadRequestId
+    && state.view === "folder"
+    && state.folder === nextFolder
+  ) {
+    restoreCatalogContentScroll(restoredSnapshot.scrollTop);
+    replaceFolderHistoryEntry(nextFolder);
   }
   diagnosticOperationEnd("frontend.navigation.folder", operation, {
     to_folder: state.folder,
@@ -6974,6 +7104,7 @@ async function openFolder(path, options = {}) {
 }
 
 async function openFavorites() {
+  flushFolderHistoryScrollSync();
   state.view = "favorites";
   state.mediaPage = 1;
   state.childPage = 1;
@@ -7176,6 +7307,7 @@ async function startSearch() {
     return;
   }
 
+  flushFolderHistoryScrollSync();
   state.view = "search";
   state.searchQuery = query;
   state.searchFolder = els.searchInCurrentFolder.checked ? state.folder : "";
@@ -7379,7 +7511,10 @@ async function goToMediaPage(page) {
 
   state.mediaPage = targetPage;
   scrollToCatalogTop();
-  await reloadSafely(state.view === "folder" ? loadCurrentFolderMediaPage : loadCurrentFolder);
+  const reloaded = await reloadSafely(
+    state.view === "folder" ? loadCurrentFolderMediaPage : loadCurrentFolder,
+  );
+  if (reloaded) syncCurrentFolderHistorySnapshot();
 }
 
 function setChildPagerVisible(visible) {
@@ -7474,10 +7609,11 @@ async function goToChildPage(page) {
     folderPreviewMeasurement.childPageMeasurement = childPageMeasurement;
   }
   scrollToCatalogTop();
-  await reloadSafely(() => loadCurrentFolder({
+  const reloaded = await reloadSafely(() => loadCurrentFolder({
     folderPreviewMeasurement,
     childPageMeasurement,
   }));
+  if (reloaded) syncCurrentFolderHistorySnapshot();
 }
 
 function renderSearchHeader(data) {
@@ -9034,6 +9170,19 @@ function scrollToCatalogTop() {
   });
 }
 
+function restoreCatalogContentScroll(scrollTop) {
+  suppressFolderHistoryScrollSync();
+  const top = nonnegativeHistoryScroll(scrollTop);
+  if (usesIndependentContentScroll()) {
+    const content = document.querySelector(".content");
+    if (content) {
+      content.scrollTo({ top, behavior: "auto" });
+      return;
+    }
+  }
+  window.scrollTo({ top, behavior: "auto" });
+}
+
 els.searchForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await reloadSafely(startSearch);
@@ -9044,7 +9193,8 @@ for (const button of document.querySelectorAll(".tab")) {
     setContentFilter(button.dataset.contentFilter);
     state.mediaPage = 1;
     state.childPage = 1;
-    await reloadSafely(loadCurrentFolder);
+    const reloaded = await reloadSafely(loadCurrentFolder);
+    if (reloaded) syncCurrentFolderHistorySnapshot();
   });
 }
 
@@ -9069,6 +9219,7 @@ if (els.childFoldersToggle) {
       setFavoritesFoldersCollapsed(!state.favoritesFoldersCollapsed);
     } else {
       setChildFoldersCollapsed(!areChildFoldersCollapsed());
+      syncCurrentFolderHistorySnapshot();
     }
   });
 }
@@ -9083,6 +9234,16 @@ for (const pager of els.childPagers) {
   });
   controls.next.addEventListener("click", () => goToChildPage(state.childPage + 1));
   controls.last.addEventListener("click", () => goToChildPage(state.childPages));
+}
+
+window.addEventListener("scroll", scheduleFolderHistoryScrollSync, { passive: true });
+const catalogHistoryContent = document.querySelector(".content");
+if (catalogHistoryContent) {
+  catalogHistoryContent.addEventListener(
+    "scroll",
+    scheduleFolderHistoryScrollSync,
+    { passive: true },
+  );
 }
 
 if (DIAGNOSTICS_ENABLED) {
@@ -9417,6 +9578,7 @@ window.addEventListener("popstate", (event) => {
   void reloadSafely(() => openFolder(entry.folder, {
     historyMode: "restore",
     targetEntryAnchor: entry.returnAnchor,
+    historySnapshot: entry,
   }));
 });
 

@@ -668,3 +668,29 @@ This technical log records completed and approved development steps: what change
 - The focused tests and full automated test suite passed on Windows.
 - A real instance validated ancestor and root breadcrumb jumps, centering of the immediate child anchor, and Back/Forward restoration.
 - The original child-card History API behavior from the preceding step was regression-tested successfully.
+
+## 2026-09-25 — Folder view history snapshots
+
+### Changes
+
+- The version 1 `catalog2.folder-view` state now also stores `contentFilter`, `mediaPage`, `childPage`, `childFoldersCollapsed`, and `scrollTop`; older entries use safe defaults when these fields are absent or invalid.
+- Changes within the current folder view update its matching history entry with `replaceState`, never `pushState`. Synchronization follows content-filter, media-page, folder-page, collapse, and debounced scroll changes; Search and Favorites do not overwrite folder snapshots.
+- A restore without an active anchor reapplies the filter, both page states, folder collapse, and content scroll position. Pages outside the current valid range are corrected, reloaded, and persisted back to the entry.
+- An active `returnAnchor` retains priority over stored child-page, collapse, and scroll state: the folder section is expanded and the current anchor card is centered. Programmatic centering is excluded from scroll synchronization.
+- The first subsequent user snapshot change clears the active anchor, so later restoration uses the newer user state. Child-card and breadcrumb anchor behavior from the preceding History API steps remains unchanged.
+
+### Reason
+
+- Make each folder history entry represent the user's latest in-folder working state without adding browser history steps for filters, pagination, collapse, or scrolling.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `tests/test_folder_history.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused tests and full automated test suite passed on Windows.
+- A real instance validated folder snapshot restoration, anchor priority over an older page/scroll snapshot, and anchor removal after subsequent user interaction.
+- A → B → C → Back → Back → Forward remained functional without a history loop.
