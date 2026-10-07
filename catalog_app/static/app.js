@@ -2843,36 +2843,14 @@ async function executeProtectedCacheCleanup(plan) {
   }
 }
 
-function renderCacheSettingsStatus(payload, options = {}) {
-  if (!els.cacheStatusSummary) return;
-  state.cacheSettingsPayload = payload;
+// Fills the Settings form from the effective runtime settings. The values come
+// from config only, so the form does not have to wait for cache statistics.
+function renderSettingsFormValues(settings, options = {}) {
   const preserveControlStatuses = options.preserveControlStatuses === true;
-
-  // The element starts with data-text only for the initial loading label. Once
-  // it contains dynamic Settings content, static locale application must not
-  // replace that content with the loading label before the cached re-render.
-  els.cacheStatusSummary.removeAttribute("data-text");
-
-  const cache = payload?.thumbnail_cache || {};
-  const database = payload?.database || {};
-  const settings = payload?.settings || {};
-  const cleanupPlan = payload?.cleanup_plan || null;
-  const byClass = database.by_cache_class || {};
-  const dynamic = byClass.dynamic || {};
-  const protectedCache = byClass.protected || {};
-
-  const limitBytes = numericStatusValue(cache.limit_bytes || database.limit_bytes);
-  const dynamicBytes = numericStatusValue(dynamic.size_bytes);
-  const protectedBytes = numericStatusValue(protectedCache.size_bytes);
-  const totalBytes = numericStatusValue(database.size_bytes);
-  const dynamicOverLimit = limitBytes > 0 && dynamicBytes > limitBytes;
-
   const pageSizes = settings.page_sizes || {};
-  const pageSizeSources = settings.page_size_sources || {};
   const galleryDensity = normalizeGalleryDensity(settings.gallery_density || "comfortable");
   const thumbnailSizes = settings.thumbnail_sizes || {};
   const video = settings.video || {};
-  const thumbnailVideoSources = settings.thumbnail_video_param_sources || {};
   renderSourceRootStatus(settings.source_root || {});
   const settingsLocale = normalizeLocale(settings.ui_locale || activeLocale);
   const settingsTheme = normalizeThemeId(settings.ui_theme || document.documentElement.dataset.theme || "original");
@@ -2898,24 +2876,9 @@ function renderCacheSettingsStatus(payload, options = {}) {
       els.catalogTitleStatus.textContent = "";
     }
   }
-  const imageSize = Array.isArray(thumbnailSizes.image_thumb_size) ? thumbnailSizes.image_thumb_size.join("×") : "";
-  const gifSize = Array.isArray(thumbnailSizes.gif_thumb_size) ? thumbnailSizes.gif_thumb_size.join("×") : "";
-
-  const container = document.createElement("div");
-  container.className = "cache-status-panel";
-
-  container.appendChild(renderCacheStatusOverview({
-    dynamicBytes,
-    limitBytes,
-    protectedBytes,
-    totalBytes,
-    dynamicEntries: dynamic.entries,
-    protectedEntries: protectedCache.entries,
-    totalEntries: database.entries,
-  }));
 
   if (els.cacheLimitInput) {
-    const currentLimit = Number(settings.thumbnail_cache_limit_gb || cache.limit_gb || 0);
+    const currentLimit = Number(settings.thumbnail_cache_limit_gb || 0);
     if (Number.isFinite(currentLimit) && currentLimit > 0) {
       els.cacheLimitInput.value = String(currentLimit);
     }
@@ -2953,6 +2916,48 @@ function renderCacheSettingsStatus(payload, options = {}) {
       input.value = String(numberValue);
     }
   }
+}
+
+function renderCacheSettingsStatus(payload, options = {}) {
+  if (!els.cacheStatusSummary) return;
+  state.cacheSettingsPayload = payload;
+
+  // The element starts with data-text only for the initial loading label. Once
+  // it contains dynamic Settings content, static locale application must not
+  // replace that content with the loading label before the cached re-render.
+  els.cacheStatusSummary.removeAttribute("data-text");
+
+  // formValues: false renders only the cache summary, so a late cache status
+  // response cannot overwrite values the user edited after the form was filled.
+  if (options.formValues !== false) {
+    renderSettingsFormValues(payload?.settings || {}, options);
+  }
+
+  const cache = payload?.thumbnail_cache || {};
+  const database = payload?.database || {};
+  const cleanupPlan = payload?.cleanup_plan || null;
+  const byClass = database.by_cache_class || {};
+  const dynamic = byClass.dynamic || {};
+  const protectedCache = byClass.protected || {};
+
+  const limitBytes = numericStatusValue(cache.limit_bytes || database.limit_bytes);
+  const dynamicBytes = numericStatusValue(dynamic.size_bytes);
+  const protectedBytes = numericStatusValue(protectedCache.size_bytes);
+  const totalBytes = numericStatusValue(database.size_bytes);
+  const dynamicOverLimit = limitBytes > 0 && dynamicBytes > limitBytes;
+
+  const container = document.createElement("div");
+  container.className = "cache-status-panel";
+
+  container.appendChild(renderCacheStatusOverview({
+    dynamicBytes,
+    limitBytes,
+    protectedBytes,
+    totalBytes,
+    dynamicEntries: dynamic.entries,
+    protectedEntries: protectedCache.entries,
+    totalEntries: database.entries,
+  }));
 
   if (dynamicOverLimit) {
     const overLimitNotice = document.createElement("p");
@@ -2984,6 +2989,15 @@ async function loadCacheSettingsStatus(options = {}) {
     renderCacheSettingsStatus(state.cacheSettingsPayload);
   }
 
+  // The form values do not depend on cache statistics, so fill the form as soon
+  // as the lightweight settings request returns. Resolves to whether it did.
+  const formFilled = fetchJson("/api/settings/runtime/status")
+    .then((settingsPayload) => {
+      renderSettingsFormValues(settingsPayload?.settings || {});
+      return true;
+    })
+    .catch(() => false);
+
   try {
     const [payload, jobPayload] = await Promise.all([
       fetchJson("/api/thumbnail-cache/status"),
@@ -2993,10 +3007,10 @@ async function loadCacheSettingsStatus(options = {}) {
     if (jobPayload) {
       ensureJobPollingForStatus(jobPayload);
     }
-    renderCacheSettingsStatus(payload);
+    renderCacheSettingsStatus(payload, { formValues: !(await formFilled) });
   } catch (error) {
     if (state.cacheSettingsPayload) {
-      renderCacheSettingsStatus(state.cacheSettingsPayload);
+      renderCacheSettingsStatus(state.cacheSettingsPayload, { formValues: !(await formFilled) });
     }
     els.cacheStatusSummary.classList.add("error");
     els.cacheStatusSummary.textContent = `${text("settings.cacheStatusLoadError")} ${error.message || ""}`.trim();

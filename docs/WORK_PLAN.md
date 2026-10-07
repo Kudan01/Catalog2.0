@@ -200,6 +200,11 @@ Before implementation, define the exact history behavior for media-page changes 
 
 Required for the 1.0 release.
 
+### Progress
+
+- Completed: Settings form values are filled from a lightweight runtime-settings endpoint without waiting for cache statistics (see `docs/DEVELOPMENT_LOG.md`, 2026-10-07).
+- Remaining: cleanup of testing/diagnostic leftovers; the cache summary itself still loads with the original cost.
+
 ### Problem
 
 - The Settings section still contains leftovers from testing and diagnostics.

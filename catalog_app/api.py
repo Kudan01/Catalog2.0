@@ -427,45 +427,54 @@ def thumbnail_cache_status(config: Config) -> dict[str, Any]:
         "thumbnail_cache": layout,
         "database": database,
         "cleanup_plan": cleanup_plan,
-        "settings": {
-            "mode": "read_only_status",
-            "runtime_settings_enabled": config.runtime_settings_active,
-            "runtime_settings_path": str(config.settings_json),
-            "runtime_settings_exists": config.settings_json.exists(),
-            "active_settings_source": "settings.json" if config.runtime_settings_active else "config.json",
-            "thumbnail_cache_limit_gb": config.thumbnail_cache_limit_gb,
-            "thumbnail_cache_limit_source": config.thumbnail_cache_limit_source,
-            "config_path": str(config.config_path),
-            "config_version": config.config_version,
-            "source_root": source_root_settings_status(config),
-            "page_sizes": {
-                "all_page_size": config.all_page_size,
-                "photo_page_size": config.photo_page_size,
-                "video_page_size": config.video_page_size,
-                "gif_page_size": config.gif_page_size,
-                "other_page_size": config.other_page_size,
-                "folder_page_size": config.folder_page_size,
-            },
-            "page_size_sources": dict(config.page_size_sources),
-            "gallery_density": config.gallery_density,
-            "gallery_density_source": config.gallery_density_source,
-            "thumbnail_sizes": {
-                "image_thumb_size": list(config.image_thumb_size),
-                "gif_thumb_size": list(config.gif_thumb_size),
-                "video_preview_width": config.video_preview_width,
-            },
-            "video": {
-                "ffmpeg_timeout_seconds": config.ffmpeg_timeout_seconds,
-                "ffmpeg_threads_per_job": config.ffmpeg_threads_per_job,
-            },
-            "thumbnail_video_param_sources": dict(config.thumbnail_video_param_sources),
-            "ui_locale": config.ui_locale,
-            "ui_locale_source": config.ui_locale_source,
-            "ui_theme": config.ui_theme,
-            "ui_theme_source": config.ui_theme_source,
-            "catalog_title": config.catalog_title,
-            "catalog_title_source": config.catalog_title_source,
+        "settings": runtime_settings_status(config),
+    }
+
+
+def runtime_settings_status(config: Config) -> dict[str, Any]:
+    """Return effective runtime settings for the Settings UI form.
+
+    Values come from the loaded config only. No database access is needed, so
+    the form can be filled without waiting for cache statistics.
+    """
+    return {
+        "mode": "read_only_status",
+        "runtime_settings_enabled": config.runtime_settings_active,
+        "runtime_settings_path": str(config.settings_json),
+        "runtime_settings_exists": config.settings_json.exists(),
+        "active_settings_source": "settings.json" if config.runtime_settings_active else "config.json",
+        "thumbnail_cache_limit_gb": config.thumbnail_cache_limit_gb,
+        "thumbnail_cache_limit_source": config.thumbnail_cache_limit_source,
+        "config_path": str(config.config_path),
+        "config_version": config.config_version,
+        "source_root": source_root_settings_status(config),
+        "page_sizes": {
+            "all_page_size": config.all_page_size,
+            "photo_page_size": config.photo_page_size,
+            "video_page_size": config.video_page_size,
+            "gif_page_size": config.gif_page_size,
+            "other_page_size": config.other_page_size,
+            "folder_page_size": config.folder_page_size,
         },
+        "page_size_sources": dict(config.page_size_sources),
+        "gallery_density": config.gallery_density,
+        "gallery_density_source": config.gallery_density_source,
+        "thumbnail_sizes": {
+            "image_thumb_size": list(config.image_thumb_size),
+            "gif_thumb_size": list(config.gif_thumb_size),
+            "video_preview_width": config.video_preview_width,
+        },
+        "video": {
+            "ffmpeg_timeout_seconds": config.ffmpeg_timeout_seconds,
+            "ffmpeg_threads_per_job": config.ffmpeg_threads_per_job,
+        },
+        "thumbnail_video_param_sources": dict(config.thumbnail_video_param_sources),
+        "ui_locale": config.ui_locale,
+        "ui_locale_source": config.ui_locale_source,
+        "ui_theme": config.ui_theme,
+        "ui_theme_source": config.ui_theme_source,
+        "catalog_title": config.catalog_title,
+        "catalog_title_source": config.catalog_title_source,
     }
 
 

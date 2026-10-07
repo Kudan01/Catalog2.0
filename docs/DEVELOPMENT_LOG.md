@@ -728,3 +728,32 @@ This technical log records completed and approved development steps: what change
 - Starting a new Search from Search and returning to the preceding Search with Back was validated.
 - Reopening active Favorites created no duplicate history entry.
 - Combined navigation among Search, folder, and Favorites completed without history loops.
+
+## 2026-10-07 — Settings form values without waiting for cache statistics
+
+### Changes
+
+- Added `runtime_settings_status(config)`, which returns the effective Settings values from the loaded config without database access. `thumbnail_cache_status` now uses it, so the `settings` part of `/api/thumbnail-cache/status` and of the Settings save responses is unchanged.
+- Added the read-only `GET /api/settings/runtime/status` endpoint returning `{"ok": true, "settings": ...}`.
+- Split frontend Settings rendering: `renderSettingsFormValues` fills the form (title, language, theme, density, page sizes, thumbnail/video parameters, cache limit, and source root), while `renderCacheSettingsStatus` renders the cache summary and fills the form only when not told to skip it.
+- On opening Settings, `loadCacheSettingsStatus` requests the runtime settings in parallel with the cache and job status. The form is filled as soon as the runtime settings arrive. A later cache status response renders only the cache summary, so it cannot overwrite values the user has meanwhile edited. If the runtime settings request fails, the form is filled from the cache status payload as before.
+- Removed unused local variables from the previous combined render function.
+
+### Reason
+
+- Task 20: the Pagination and thumbnail/video values loaded slowly on the first Settings open because the form waited for aggregate statistics over the whole `thumbnails` table, although its values do not depend on them.
+- The cost of the cache statistics themselves is unchanged; they no longer block the form.
+
+### Files
+
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/static/app.js`
+- `tests/test_settings_form_loading.py`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The focused tests and full automated test suite passed on Windows.
+- A real instance validated that Settings opened immediately after catalog startup shows complete form values while the cache summary loads independently.
+- Save, language switching, and cache-limit changes worked as before.

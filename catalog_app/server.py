@@ -46,6 +46,7 @@ from .api import (
     safe_folder_rename_plan_page,
     safe_media_rename_execute_action,
     safe_media_rename_plan_page,
+    runtime_settings_status,
     runtime_ui_locale_status,
     source_root_setting_verify,
     thumbnail_cache_status,
@@ -1119,6 +1120,9 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/jobs/status":
             return job_status(self.config, runtime_job=self.job_manager.snapshot()), HTTPStatus.OK
 
+
+        if path == "/api/settings/runtime/status":
+            return {"ok": True, "settings": runtime_settings_status(self.config)}, HTTPStatus.OK
 
         if path == "/api/settings/runtime/ui-locale":
             return runtime_ui_locale_status(self.config), HTTPStatus.OK
