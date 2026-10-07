@@ -121,7 +121,8 @@ Validate the final release across:
 - photos, GIFs, video, and other media;
 - folder previews including `auto` / `auto_parent`;
 - Favorites for media and folders;
-- folder and media rename;
+- folder and media rename, including case-only rename (task 22);
+- Settings loading and consistent apply behavior, including language switching (tasks 20 and 21);
 - cache management;
 - `data_root` change;
 - media pagination including independent All page size;
@@ -144,7 +145,7 @@ Validate the final release across:
 
 Possible later work:
 
-- bundled Python/runtime;
+- user-friendly Windows distribution — see task 23;
 - second launcher / shortcut;
 - broader theme and language extensibility;
 - new product features.
@@ -194,3 +195,105 @@ Decide whether media-page navigation should behave like:
 `page 1 -> page 2 -> page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`
 
 Before implementation, define the exact history behavior for media-page changes and its interaction with the already completed History API contracts.
+
+## 20. Settings — cleanup and loading — PENDING
+
+Required for the 1.0 release.
+
+### Problem
+
+- The Settings section still contains leftovers from testing and diagnostics.
+- When Settings is opened for the first time after startup, the values in the Pagination and Media sections take a long time to load, even though the catalog content is already loaded.
+
+### Target
+
+- The final Settings UI contains no testing or diagnostic leftovers.
+- When the catalog is loaded, Settings opens with complete content instead of filling in sections progressively.
+
+### Investigation
+
+- Determine which requests Settings issues when it opens and why displaying the data takes so long.
+- A loading indicator must not merely hide an unresolved performance problem (same principle as task 4).
+
+### Coordination
+
+- Task 5 covers Settings appearance in Chromium browsers.
+- Task 4 covers the general startup/readiness contract.
+
+## 21. Settings — consistent apply behavior — DECISION REQUIRED
+
+Required for the 1.0 release.
+
+### Problem
+
+- Settings changes do not behave consistently: some take effect immediately, others only after Save.
+- Switching the language updates part of the UI immediately, but some texts remain in the previous language until the page is reloaded or the user navigates elsewhere.
+
+### Product decision
+
+- Define one apply model for Settings: all changes on Save, all changes immediately, or an explicitly defined set of exceptions.
+- Define exactly which parts of the UI must be re-rendered when the language changes.
+
+### Target
+
+After the decision, all Settings changes behave according to the agreed model and the whole UI reflects them without a manual page reload.
+
+## 22. Folder and media rename — behavior and UI — PENDING
+
+Required for the 1.0 release.
+
+### Investigation
+
+- Determine why rename does not allow changing only the letter case of a folder or media name. Verify on Windows, where the filesystem is case-insensitive.
+- Determine whether renaming a folder or a media item renames the source data on disk or only the catalog record. Verify from the implementation, then confirm on Windows.
+
+### Target
+
+- Simplify the rename dialog from a UI/UX perspective.
+- Remove diagnostic messages from the rename dialog.
+
+### Constraint
+
+Source-media changes are allowed only as explicit user-initiated operations. If the investigation shows that the intended behavior differs from the current one, the resulting contract is a product decision to be agreed before implementation.
+
+### Coordination
+
+Rename is part of the final regression in task 13.
+
+## 23. Windows end-user distribution — DECISION REQUIRED
+
+This is a requirement and planning topic, not an implementation task. Do not choose a packaging technology or implement any part of it until the decisions below are made.
+
+### Problem
+
+The current public workflow requires an installed Python, creating a `.venv`, and using the CLI for `setup-instance` and `update-instance`. A regular Windows user should not have to work with the CLI, Python, or a virtual environment.
+
+### Target
+
+- A user-friendly Windows distribution, ideally a downloadable ZIP/portable package with an EXE or an equivalent launcher.
+- Without the CLI, the user can create a new Catalog instance, start it normally, and later update it to a newer version.
+
+### Constraints
+
+- Preserve the current model of separate instances and their persistent data.
+- An update must not lose or unnecessarily replace config, database, cache, runtime state, or source media.
+- "Update capability" does not mean an automatic online self-update.
+
+### Open decisions
+
+- Packaging technology. PyInstaller, embedded Python, an installer, and other options remain open.
+- Update UX, for example running an updater from a newer release package versus updating from within the application.
+- How FFmpeg/FFprobe is distributed. Bundling it is not automatically an approved solution; it is an open technical and licensing question.
+- Whether this belongs to the 1.0 release or post-1.0 work.
+
+### License compliance (prerequisite)
+
+- Before choosing a distribution approach, inventory all redistributed components and verify their license/distribution terms, especially the Python runtime, Python dependencies, FFmpeg/FFprobe, and any packaging tool.
+- The resulting release must include the required licenses, notices, and attribution.
+- Verify the license of Catalog itself for public distribution; packaging must not leave the project's licensing state unclear.
+
+### Coordination
+
+- Task 11 covers final version metadata.
+- Task 12 covers the release ZIP and public release hygiene.
+- Task 18 covers launcher/runtime lifecycle.
