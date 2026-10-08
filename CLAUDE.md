@@ -54,7 +54,7 @@ If the same step fails twice, stop and report the problem instead of retrying.
 
 Catalog must perform acceptably on typical consumer hardware, not only on the developer's machine. Do not tune defaults to one computer.
 
-Concurrency defaults (worker counts, threads) must be derived from the CPU core count, stay conservative, and remain configurable.
+Concurrency defaults (worker counts, threads) must be derived from the CPU core count and stay conservative. They are computed automatically when the work starts, are not stored, and are not user settings. A cap based on measured disk limits (for example HDD throughput) is allowed when it is documented in the task.
 
 Source media may be on HDDs. Any change that adds concurrent disk reads or background work must be measured with media on an HDD, not only on an SSD.
 

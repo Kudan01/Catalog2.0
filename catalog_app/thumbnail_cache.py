@@ -6,8 +6,9 @@ import subprocess
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Iterator, Literal
 
@@ -41,17 +42,25 @@ GIF_PREVIEW_EXTENSION = ".webp"
 GIF_PREVIEW_QUALITY = 82
 
 VIDEO_POSTER_VARIANT_KEY = "default"
-VIDEO_POSTER_ALGORITHM_VERSION = "video_poster_v3_webp_ffmpeg_scale_vips_20_fit"
+VIDEO_POSTER_ALGORITHM_VERSION = "video_poster_v4_webp_ffmpeg_keyframe_scale_vips_20_fit"
 VIDEO_POSTER_FORMAT = "WEBP"
 VIDEO_POSTER_EXTENSION = ".webp"
 VIDEO_POSTER_QUALITY = 82
 
 VIDEO_FRAME_VARIANT_KEYS = ("frame_1", "frame_2", "frame_3", "frame_4")
 VIDEO_FRAME_RELATIVE_POSITIONS = (0.35, 0.50, 0.65, 0.80)
-VIDEO_FRAME_ALGORITHM_VERSION = "video_frame_v3_webp_ffmpeg_scale_vips_35_50_65_80_fit"
+VIDEO_FRAME_ALGORITHM_VERSION = "video_frame_v4_webp_ffmpeg_keyframe_scale_vips_35_50_65_80_fit"
 VIDEO_FRAME_FORMAT = "WEBP"
 VIDEO_FRAME_EXTENSION = ".webp"
 VIDEO_FRAME_QUALITY = 82
+
+# Input options for poster and frame extraction: seek to the nearest keyframe
+# and decode keyframes only instead of decoding up to the exact timestamp.
+VIDEO_KEYFRAME_INPUT_OPTIONS = ("-noaccurate_seek", "-skip_frame", "nokey")
+
+# Upper bound for videos processed at once by preview jobs. The limit comes
+# from source-disk throughput measured on an HDD, not from the CPU.
+VIDEO_JOB_MAX_WORKERS = 4
 
 DYNAMIC_THUMBNAIL_KINDS: frozenset[str] = frozenset({
     "photo_tile",
@@ -186,6 +195,15 @@ def _ffmpeg_frame_scale_filter(config: Config) -> str:
         f"scale=w='min(iw,{box})':h='min(ih,{box})'"
         ":force_original_aspect_ratio=decrease"
     )
+
+
+def _video_job_worker_count() -> int:
+    """Return how many videos a preview job processes at once.
+
+    Derived from the CPU core count when the phase starts, capped by
+    VIDEO_JOB_MAX_WORKERS, and never stored or exposed as a setting.
+    """
+    return min(VIDEO_JOB_MAX_WORKERS, max(1, (os.cpu_count() or 1) // 4))
 
 
 def _previous_thumbnail_path(
@@ -991,19 +1009,18 @@ def generate_video_posters_for_scope(
     *,
     branch_rel_path: str = "",
 ) -> dict[str, object]:
-    """Generate only missing, stale, failed, or outdated protected video posters."""
+    """Generate only missing, stale, failed, or outdated protected video posters.
+
+    Several videos are processed at once (see _video_job_worker_count). Results
+    are aggregated in row order, so the payload does not depend on timing.
+    """
     started_at = time.time()
     ensure_thumbnail_cache_directories(config)
 
     rows = _video_poster_work_rows(config, branch_rel_path=branch_rel_path)
-    processed = 0
-    created = 0
-    reused = 0
-    errors = 0
-    samples: list[dict[str, str]] = []
 
-    for row in rows:
-        processed += 1
+    def generate_one(row) -> dict[str, str] | None:
+        """Generate one poster; return an error sample, or None on success."""
         rel_path = str(row["rel_path"])
         media_id = int(row["id"])
         source_size = int(row["size_bytes"])
@@ -1034,11 +1051,8 @@ def generate_video_posters_for_scope(
                 source_size_bytes=source_size,
                 source_modified_time=source_modified,
             )
-            created += 1
+            return None
         except Exception as exc:  # noqa: BLE001
-            errors += 1
-            if len(samples) < 10:
-                samples.append({"path": rel_path, "technical_detail": str(exc)})
             try:
                 output_rel_path = _output_relative_path(
                     config,
@@ -1059,6 +1073,23 @@ def generate_video_posters_for_scope(
                 )
             except Exception:  # noqa: BLE001
                 pass
+            return {"path": rel_path, "technical_detail": str(exc)}
+
+    processed = 0
+    created = 0
+    reused = 0
+    errors = 0
+    samples: list[dict[str, str]] = []
+
+    with ThreadPoolExecutor(max_workers=_video_job_worker_count()) as executor:
+        for error_sample in executor.map(generate_one, rows):
+            processed += 1
+            if error_sample is None:
+                created += 1
+                continue
+            errors += 1
+            if len(samples) < 10:
+                samples.append(error_sample)
 
     duration = time.time() - started_at
     return {
@@ -1082,12 +1113,25 @@ def generate_video_posters_for_scope(
     }
 
 
+@dataclass
+class _VideoFramesOutcome:
+    frames_processed: int = 0
+    created: int = 0
+    errors: int = 0
+    samples: list[dict[str, str]] = field(default_factory=list)
+
+
 def generate_video_frames_for_scope(
     config: Config,
     *,
     branch_rel_path: str = "",
 ) -> dict[str, object]:
-    """Generate only missing, stale, failed, or outdated protected video frames."""
+    """Generate only missing, stale, failed, or outdated protected video frames.
+
+    Several videos are processed at once (see _video_job_worker_count); the
+    frames of one video are generated sequentially by one worker. Results are
+    aggregated in video order, so the payload does not depend on timing.
+    """
     started_at = time.time()
     ensure_thumbnail_cache_directories(config)
 
@@ -1104,15 +1148,9 @@ def generate_video_frames_for_scope(
         })
         item["variants"].append(str(row["variant_key"]))
 
-    processed = 0
-    frames_processed = 0
-    created = 0
-    reused = 0
-    errors = 0
-    samples: list[dict[str, str]] = []
-
-    for item in grouped.values():
-        processed += 1
+    def generate_video(item: dict[str, object]) -> _VideoFramesOutcome:
+        """Generate the missing frames of one video and count the outcome."""
+        outcome = _VideoFramesOutcome()
         rel_path = str(item["rel_path"])
         media_id = int(item["id"])
         source_size = int(item["size_bytes"])
@@ -1148,7 +1186,7 @@ def generate_video_frames_for_scope(
 
             for variant_key in variants:
                 frame_index = VIDEO_FRAME_VARIANT_KEYS.index(variant_key) + 1
-                frames_processed += 1
+                outcome.frames_processed += 1
                 try:
                     _generate_video_frame(
                         config,
@@ -1160,11 +1198,10 @@ def generate_video_frames_for_scope(
                         variant_key=variant_key,
                         seek_time=_video_frame_seek_time(duration, frame_index),
                     )
-                    created += 1
+                    outcome.created += 1
                 except Exception as exc:  # noqa: BLE001
-                    errors += 1
-                    if len(samples) < 10:
-                        samples.append({"path": rel_path, "frame": variant_key, "technical_detail": str(exc)})
+                    outcome.errors += 1
+                    outcome.samples.append({"path": rel_path, "frame": variant_key, "technical_detail": str(exc)})
                     try:
                         output_rel_path = _output_relative_path(
                             config,
@@ -1188,10 +1225,27 @@ def generate_video_frames_for_scope(
                     except Exception:  # noqa: BLE001
                         pass
         except Exception as exc:  # noqa: BLE001
-            errors += len(variants)
-            frames_processed += len(variants)
-            if len(samples) < 10:
-                samples.append({"path": rel_path, "technical_detail": str(exc)})
+            outcome.errors += len(variants)
+            outcome.frames_processed += len(variants)
+            outcome.samples.append({"path": rel_path, "technical_detail": str(exc)})
+        return outcome
+
+    processed = 0
+    frames_processed = 0
+    created = 0
+    reused = 0
+    errors = 0
+    samples: list[dict[str, str]] = []
+
+    with ThreadPoolExecutor(max_workers=_video_job_worker_count()) as executor:
+        for outcome in executor.map(generate_video, grouped.values()):
+            processed += 1
+            frames_processed += outcome.frames_processed
+            created += outcome.created
+            errors += outcome.errors
+            for sample in outcome.samples:
+                if len(samples) < 10:
+                    samples.append(sample)
 
     duration = time.time() - started_at
     return {
@@ -3342,8 +3396,9 @@ def _generate_video_poster(
             "-y",
             "-ss",
             f"{seek_time:.3f}",
+            *VIDEO_KEYFRAME_INPUT_OPTIONS,
             "-threads",
-            str(config.ffmpeg_threads_per_job),
+            "1",
             "-i",
             str(source_path),
             "-vf",
@@ -3540,8 +3595,9 @@ def _generate_video_frame(
             "-y",
             "-ss",
             f"{seek_time:.3f}",
+            *VIDEO_KEYFRAME_INPUT_OPTIONS,
             "-threads",
-            str(config.ffmpeg_threads_per_job),
+            "1",
             "-i",
             str(source_path),
             "-vf",

@@ -569,7 +569,6 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                     "gif_thumb_height": self._request_text_value(parsed=parsed, name="gif_thumb_height"),
                     "video_preview_width": self._request_text_value(parsed=parsed, name="video_preview_width"),
                     "ffmpeg_timeout_seconds": self._request_text_value(parsed=parsed, name="ffmpeg_timeout_seconds"),
-                    "ffmpeg_threads_per_job": self._request_text_value(parsed=parsed, name="ffmpeg_threads_per_job"),
                 }
                 try:
                     new_config = save_runtime_thumbnail_video_params(self.config, raw_values)

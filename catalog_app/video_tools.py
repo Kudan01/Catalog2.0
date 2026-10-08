@@ -75,7 +75,6 @@ def video_tools_status(config: Config) -> dict[str, Any]:
         "config": {
             "video_preview_width": config.video_preview_width,
             "ffmpeg_timeout_seconds": config.ffmpeg_timeout_seconds,
-            "ffmpeg_threads_per_job": config.ffmpeg_threads_per_job,
         },
         "planned_outputs": {
             "video_poster": {
@@ -126,7 +125,6 @@ def video_tools_status_lines(config: Config) -> list[str]:
             "Future video preview configuration:",
             f"- video_preview_width: {config.video_preview_width}",
             f"- ffmpeg_timeout_seconds: {config.ffmpeg_timeout_seconds}",
-            f"- ffmpeg_threads_per_job: {config.ffmpeg_threads_per_job}",
             "",
             "Nothing was written or changed.",
         ]

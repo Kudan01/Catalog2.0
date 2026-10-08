@@ -1028,7 +1028,6 @@
   "settings.themeNote": "The appearance choice is saved in this catalog instance. Each fixed mode has its own color palette.",
   "settings.themeSaveError": "Appearance could not be saved.",
   "settings.themeTitle": "Appearance",
-  "settings.thumbnailParamFfmpegThreads": "FFmpeg threads/job",
   "settings.thumbnailParamFfmpegTimeout": "FFmpeg timeout (s)",
   "settings.thumbnailParamGifHeight": "GIF height",
   "settings.thumbnailParamGifWidth": "GIF width",

@@ -1069,7 +1069,6 @@ const els = {
   gifThumbHeightInput: document.getElementById("gifThumbHeightInput"),
   videoPreviewWidthInput: document.getElementById("videoPreviewWidthInput"),
   ffmpegTimeoutInput: document.getElementById("ffmpegTimeoutInput"),
-  ffmpegThreadsInput: document.getElementById("ffmpegThreadsInput"),
   thumbnailParamsSave: document.getElementById("thumbnailParamsSave"),
   thumbnailParamsReset: document.getElementById("thumbnailParamsReset"),
   thumbnailParamsMessage: document.getElementById("thumbnailParamsMessage"),
@@ -2908,7 +2907,6 @@ function renderSettingsFormValues(settings, options = {}) {
     [els.gifThumbHeightInput, gifThumbSize[1]],
     [els.videoPreviewWidthInput, thumbnailSizes.video_preview_width],
     [els.ffmpegTimeoutInput, video.ffmpeg_timeout_seconds],
-    [els.ffmpegThreadsInput, video.ffmpeg_threads_per_job],
   ];
   for (const [input, value] of thumbnailParamInputs) {
     const numberValue = Number(value || 0);
@@ -3140,7 +3138,6 @@ async function saveThumbnailVideoParams() {
     gif_thumb_height: positiveIntegerInputValue(els.gifThumbHeightInput),
     video_preview_width: positiveIntegerInputValue(els.videoPreviewWidthInput),
     ffmpeg_timeout_seconds: positiveIntegerInputValue(els.ffmpegTimeoutInput),
-    ffmpeg_threads_per_job: positiveIntegerInputValue(els.ffmpegThreadsInput),
   };
 
   if ([values.photo_page_size, values.video_page_size, values.gif_page_size, values.other_page_size, values.folder_page_size].some(value => value === null)) {
@@ -9631,7 +9628,6 @@ for (const input of [
   els.gifThumbHeightInput,
   els.videoPreviewWidthInput,
   els.ffmpegTimeoutInput,
-  els.ffmpegThreadsInput,
 ]) {
   if (input) {
     input.addEventListener("keydown", event => {

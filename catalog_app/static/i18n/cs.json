@@ -1028,7 +1028,6 @@
   "settings.themeNote": "Volba vzhledu je uložená v této instanci katalogu.",
   "settings.themeSaveError": "Vzhled se nepodařilo uložit.",
   "settings.themeTitle": "Vzhled",
-  "settings.thumbnailParamFfmpegThreads": "FFmpeg threads/job",
   "settings.thumbnailParamFfmpegTimeout": "FFmpeg timeout (s)",
   "settings.thumbnailParamGifHeight": "GIF výška",
   "settings.thumbnailParamGifWidth": "GIF šířka",

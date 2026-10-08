@@ -319,16 +319,34 @@ The current public workflow requires an installed Python, creating a `.venv`, an
 
 ## 24. Video thumbnail generation performance — PENDING
 
-### Investigation
+### Context
 
-- Parallel processing of several videos at once, or a different `ffmpeg_threads_per_job` setting.
-- Inexact (keyframe) seeking instead of exact frame seeking.
-- Possibly one ffmpeg command that extracts all five images (poster and four hover frames) for a video.
+The benchmark was run on Windows outside the repository on a machine with 32 logical cores and ffmpeg 8.1. No benchmark tooling is added to the repository.
 
-### Decision rule
+HDD (5,400 rpm), cold reads:
 
-Decide from a benchmark run on Windows outside the repository. No benchmark tooling is added to the repository.
+- Current pipeline: 3.0 s per video.
+- One ffmpeg call per video with keyframe extraction: 0.87 s per video (3.5×).
+- The same with 2 videos at once: 0.75 s (4.0×); with 4 videos at once: 0.48 s (6.3×).
+
+SSD:
+
+- Keyframe extraction with one ffmpeg call per image: 2.5× (1 video at once) to 8.7× (4 videos at once).
+- `-noaccurate_seek` alone gave no gain.
+- `-threads 2` with keyframe extraction gave no gain.
+
+### Step 1 — keyframes and concurrent videos — COMPLETED
+
+Within the current structure; posters and hover frames remain separate phases. Implemented and validated on Windows; see `docs/DEVELOPMENT_LOG.md` (2026-10-08).
+
+- Poster and frame extraction add `-noaccurate_seek -skip_frame nokey` before `-i` in every path that generates them (preview preparation and folder-preview builds through `video_poster_resource`). `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` are increased.
+- Video poster and frame phases process `min(4, max(1, cpu_count // 4))` videos at once. The cap of 4 comes from measured HDD throughput, not from the CPU. The value is computed when the phase starts, is not stored, and is not a setting (neither in the UI nor in `config.json`).
+- `ffmpeg_threads_per_job` is removed completely (config, settings, API, UI, instance setup, tests); ffmpeg runs with `-threads 1`. No transition layer; instances are recreated.
+
+### Step 2 — one ffmpeg call per video — DECISION REQUIRED
+
+Merging the poster and the four hover frames into one ffmpeg call per video is a separate decision and is not part of step 1.
 
 ### Constraint
 
-Preserve the current output contract from task 10: WebP quality 82, target sizes from config, correct aspect ratio, and no upscaling. Source originals must not be modified.
+Preserve the output contract from task 10 (WebP quality 82, target sizes from config, correct aspect ratio, no upscaling), job results and payloads, and per-thumbnail error recording. Source originals must not be modified.

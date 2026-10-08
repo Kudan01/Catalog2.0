@@ -38,7 +38,7 @@ class RuntimeSettingsStatusTests(unittest.TestCase):
             self.assertEqual(config.all_page_size, settings["page_sizes"]["all_page_size"])
             self.assertEqual(config.folder_page_size, settings["page_sizes"]["folder_page_size"])
             self.assertEqual(list(config.image_thumb_size), settings["thumbnail_sizes"]["image_thumb_size"])
-            self.assertEqual(config.ffmpeg_threads_per_job, settings["video"]["ffmpeg_threads_per_job"])
+            self.assertEqual(config.ffmpeg_timeout_seconds, settings["video"]["ffmpeg_timeout_seconds"])
             self.assertEqual(config.thumbnail_cache_limit_gb, settings["thumbnail_cache_limit_gb"])
             self.assertEqual(config.ui_locale, settings["ui_locale"])
             self.assertIn("source_root", settings)
@@ -85,7 +85,7 @@ class SettingsFormLoadingFrontendContractTests(unittest.TestCase):
 
         form_body = self._function_body("renderSettingsFormValues")
         self.assertIn("[els.allPageSizeInput, pageSizes.all_page_size]", form_body)
-        self.assertIn("[els.ffmpegThreadsInput, video.ffmpeg_threads_per_job]", form_body)
+        self.assertIn("[els.ffmpegTimeoutInput, video.ffmpeg_timeout_seconds]", form_body)
         self.assertIn("settings.thumbnail_cache_limit_gb", form_body)
 
 

@@ -833,3 +833,44 @@ Licenses:
   - GIF static previews and hover playback;
   - video posters and hover frames with the correct aspect ratio;
   - BMP classified as Other.
+
+## 2026-10-08 — Task 24 step 1: keyframe extraction and concurrent video previews
+
+### Changes
+
+- Video poster and hover-frame extraction adds `-noaccurate_seek -skip_frame nokey` before `-i` and runs ffmpeg with `-threads 1`. Both generators (`_generate_video_poster`, `_generate_video_frame`) are the only ffmpeg extraction paths, so preview preparation and folder-preview builds through `video_poster_resource` use the same command.
+- `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` were increased to `video_poster_v4_webp_ffmpeg_keyframe_scale_vips_20_fit` and `video_frame_v4_webp_ffmpeg_keyframe_scale_vips_35_50_65_80_fit`.
+- `generate_video_posters_for_scope` and `generate_video_frames_for_scope` process several videos at once with a thread pool of `min(4, max(1, cpu_count // 4))` workers (`_video_job_worker_count`). The cap of 4 comes from measured HDD throughput. The value is computed when the phase starts, is not stored, and is not a setting. The frames of one video are generated sequentially by one worker.
+- Results are aggregated in row order in the calling thread, so job payloads, counts, error-sample order, and per-thumbnail error recording are unchanged. Each worker uses its own short SQLite connections (WAL, 5 s busy timeout); temporary file names stay unique per process, thread, and call.
+- `ffmpeg_threads_per_job` was removed from config, runtime settings, the Settings API and UI, translations, instance setup defaults, and video-tool diagnostics. An old key in `config.json` or `settings.json` is ignored.
+- The Performance section of `CLAUDE.md` now states that concurrency defaults are computed automatically, are not stored, and are not user settings; a documented disk-based cap is allowed.
+- GIF preview generation and the output contract from task 10 are unchanged.
+
+### Reason
+
+- Task 24: video preview generation was slow, especially with source media on an HDD. The external benchmark (32 logical cores, ffmpeg 8.1) showed large gains from keyframe extraction and from processing several videos at once; see `docs/WORK_PLAN.md`, task 24.
+
+### Files
+
+- `CLAUDE.md`
+- `catalog_app/thumbnail_cache.py`
+- `catalog_app/config.py`
+- `catalog_app/api.py`
+- `catalog_app/server.py`
+- `catalog_app/setup_instance.py`
+- `catalog_app/video_tools.py`
+- `catalog_app/static/index.html`
+- `catalog_app/static/app.js`
+- `catalog_app/static/i18n/en.json`
+- `catalog_app/static/i18n/cs.json`
+- `tests/test_video_thumbnail_concurrency.py`
+- `tests/test_settings_form_loading.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
+- After updating an existing instance, the "FFmpeg threads/job" field no longer appears in Settings.
+- Preview preparation regenerated existing video previews with the new method and created previews for newly added videos; posters and hover frames display correctly.
+- Catalog browsing remained usable while preview preparation was running.

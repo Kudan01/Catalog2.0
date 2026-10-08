@@ -49,7 +49,6 @@ DEFAULT_INSTANCE_CONFIG: dict[str, Any] = {
     "gif_thumb_size": [300, 300],
     "video_preview_width": 1024,
     "ffmpeg_timeout_seconds": 180,
-    "ffmpeg_threads_per_job": 1,
 }
 
 

@@ -466,7 +466,6 @@ def runtime_settings_status(config: Config) -> dict[str, Any]:
         },
         "video": {
             "ffmpeg_timeout_seconds": config.ffmpeg_timeout_seconds,
-            "ffmpeg_threads_per_job": config.ffmpeg_threads_per_job,
         },
         "thumbnail_video_param_sources": dict(config.thumbnail_video_param_sources),
         "ui_locale": config.ui_locale,

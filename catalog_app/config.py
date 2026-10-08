@@ -26,7 +26,6 @@ THUMBNAIL_VIDEO_PARAM_KEYS = (
     "gif_thumb_size",
     "video_preview_width",
     "ffmpeg_timeout_seconds",
-    "ffmpeg_threads_per_job",
 )
 _LOCALE_REGISTRY = load_locale_registry()
 SUPPORTED_UI_LOCALES = _LOCALE_REGISTRY.codes
@@ -90,7 +89,6 @@ class Config:
 
     video_preview_width: int
     ffmpeg_timeout_seconds: int
-    ffmpeg_threads_per_job: int
 
     @property
     def db_path(self) -> Path:
@@ -215,7 +213,6 @@ def load_config(config_path: Path) -> Config:
     gif_thumb_size = _size_pair(raw, "gif_thumb_size", (300, 300))
     video_preview_width = _positive_int(raw, "video_preview_width", 640)
     ffmpeg_timeout_seconds = _positive_int(raw, "ffmpeg_timeout_seconds", 180)
-    ffmpeg_threads_per_job = _positive_int(raw, "ffmpeg_threads_per_job", 1)
     thumbnail_video_param_sources = {key: "config.json" for key in THUMBNAIL_VIDEO_PARAM_KEYS}
 
     ui_locale = DEFAULT_TRANSITION_UI_LOCALE
@@ -278,10 +275,6 @@ def load_config(config_path: Path) -> Config:
         ffmpeg_timeout_seconds = _positive_int(runtime_settings, "ffmpeg_timeout_seconds", ffmpeg_timeout_seconds)
         thumbnail_video_param_sources["ffmpeg_timeout_seconds"] = "settings.json:ffmpeg_timeout_seconds"
 
-    if "ffmpeg_threads_per_job" in runtime_settings:
-        ffmpeg_threads_per_job = _positive_int(runtime_settings, "ffmpeg_threads_per_job", ffmpeg_threads_per_job)
-        thumbnail_video_param_sources["ffmpeg_threads_per_job"] = "settings.json:ffmpeg_threads_per_job"
-
     config = Config(
         config_path=config_path,
         config_version=config_version,
@@ -313,7 +306,6 @@ def load_config(config_path: Path) -> Config:
         gif_thumb_size=gif_thumb_size,
         video_preview_width=video_preview_width,
         ffmpeg_timeout_seconds=ffmpeg_timeout_seconds,
-        ffmpeg_threads_per_job=ffmpeg_threads_per_job,
     )
 
     validate_config_paths(config)
@@ -419,8 +411,6 @@ def config_summary_lines(config: Config) -> list[str]:
         f"- video_preview_width_source: {config.thumbnail_video_param_sources.get('video_preview_width', 'config.json')}",
         f"- ffmpeg_timeout_seconds: {config.ffmpeg_timeout_seconds}",
         f"- ffmpeg_timeout_seconds_source: {config.thumbnail_video_param_sources.get('ffmpeg_timeout_seconds', 'config.json')}",
-        f"- ffmpeg_threads_per_job: {config.ffmpeg_threads_per_job}",
-        f"- ffmpeg_threads_per_job_source: {config.thumbnail_video_param_sources.get('ffmpeg_threads_per_job', 'config.json')}",
         "",
         "Configuration is valid.",
         "Nothing was written or changed.",
@@ -681,10 +671,6 @@ def _runtime_thumbnail_video_param_values(raw_values: dict[str, Any]) -> dict[st
             raw_values.get("ffmpeg_timeout_seconds"),
             "ffmpeg_timeout_seconds",
         ),
-        "ffmpeg_threads_per_job": _coerce_positive_int_value(
-            raw_values.get("ffmpeg_threads_per_job"),
-            "ffmpeg_threads_per_job",
-        ),
     }
 
 
@@ -806,7 +792,7 @@ def _read_runtime_settings(path: Path) -> dict[str, Any]:
         _size_pair(raw, "image_thumb_size", (300, 400))
     if "gif_thumb_size" in raw:
         _size_pair(raw, "gif_thumb_size", (300, 300))
-    for key in ("video_preview_width", "ffmpeg_timeout_seconds", "ffmpeg_threads_per_job"):
+    for key in ("video_preview_width", "ffmpeg_timeout_seconds"):
         if key in raw:
             _positive_int(raw, key, 1)
 
