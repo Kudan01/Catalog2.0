@@ -42,7 +42,13 @@ If a task does not define enough product behavior to implement safely, stop at a
 
 Work on one clearly bounded functional change at a time. Keep structural refactoring separate unless refactoring itself is the selected task.
 
-Preserve established API, configuration, persistent-data, cache, and instance-update contracts unless the selected task requires changing them. When a persistent contract changes, preserve compatibility or define an explicit migration path.
+Preserve established API, configuration, persistent-data, cache, and instance-update contracts unless the selected task requires changing them. Before the 1.0 release, there are no external users: do not add compatibility, migration, or transition layers for existing instances unless the task explicitly asks for them. Instances are recreated cleanly after such changes.
+
+Plan only the selected task. Do not include outlooks on other tasks; mention another task only if it blocks the selected one.
+
+One-off measurement, benchmark, or investigation scripts do not belong in the repository unless the task explicitly says so. Provide them as standalone scripts for the user to run outside the project.
+
+If the same step fails twice, stop and report the problem instead of retrying.
 
 ## Validation and completion
 
