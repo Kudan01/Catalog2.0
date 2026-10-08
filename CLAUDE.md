@@ -50,6 +50,16 @@ One-off measurement, benchmark, or investigation scripts do not belong in the re
 
 If the same step fails twice, stop and report the problem instead of retrying.
 
+## Performance
+
+Catalog must perform acceptably on typical consumer hardware, not only on the developer's machine. Do not tune defaults to one computer.
+
+Concurrency defaults (worker counts, threads) must be derived from the CPU core count, stay conservative, and remain configurable.
+
+Source media may be on HDDs. Any change that adds concurrent disk reads or background work must be measured with media on an HDD, not only on an SSD.
+
+Benchmarks state the CPU core count and disk type. Results from one machine are valid for comparing variants, not for choosing absolute defaults.
+
 ## Validation and completion
 
 Use the established commands and checks in `docs/DEVELOPMENT.md`. Run validation appropriate to the changed surface, including focused regression coverage and the full automated suite when applicable.
