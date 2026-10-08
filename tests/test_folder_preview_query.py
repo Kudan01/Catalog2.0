@@ -28,6 +28,18 @@ from catalog_app.diagnostics import (
 from catalog_app.schema import SCHEMA_STATEMENTS
 from catalog_app.server import CatalogRequestHandler
 from catalog_app.setup_instance import _instance_config_text
+from catalog_app.thumbnail_cache import (
+    GIF_PREVIEW_ALGORITHM_VERSION,
+    PHOTO_TILE_ALGORITHM_VERSION,
+    VIDEO_POSTER_ALGORITHM_VERSION,
+)
+
+
+_CURRENT_ALGORITHM_VERSIONS = {
+    "photo_tile": PHOTO_TILE_ALGORITHM_VERSION,
+    "gif_preview": GIF_PREVIEW_ALGORITHM_VERSION,
+    "video_poster": VIDEO_POSTER_ALGORITHM_VERSION,
+}
 
 
 class FolderPreviewQueryTests(unittest.TestCase):
@@ -421,9 +433,15 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 media_id, thumbnail_type, cache_class, variant_key, output_rel_path,
                 width, height, file_size_bytes, source_size_bytes,
                 source_modified_time, algorithm_version, status, created_at, updated_at
-            ) VALUES (?, ?, 'dynamic', 'default', ?, 1, 1, 1, 1, 1, 'test', ?, 1, 1)
+            ) VALUES (?, ?, 'dynamic', 'default', ?, 1, 1, 1, 1, 1, ?, ?, 1, 1)
             """,
-            (media_id, thumbnail_type, output_rel_path, thumbnail_status),
+            (
+                media_id,
+                thumbnail_type,
+                output_rel_path,
+                _CURRENT_ALGORITHM_VERSIONS[thumbnail_type],
+                thumbnail_status,
+            ),
         )
         connection.execute(
             """

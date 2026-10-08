@@ -59,3 +59,5 @@ Do not commit or push unless explicitly requested.
 Do not add personal filesystem paths, secrets, private instance data, databases, caches, generated runtime state, `.venv`, or local test artifacts to tracked public content unless a task explicitly requires a safe fixture.
 
 Keep public examples anonymized.
+
+Do not record details of the user's media libraries in tracked content: no concrete file paths, folder or media names, collection sizes, sample file counts, or data volumes. Benchmark and validation notes keep only anonymized results.

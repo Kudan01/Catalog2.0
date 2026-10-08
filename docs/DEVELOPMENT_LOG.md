@@ -757,3 +757,79 @@ This technical log records completed and approved development steps: what change
 - The focused tests and full automated test suite passed on Windows.
 - A real instance validated that Settings opened immediately after catalog startup shows complete form values while the cache summary loads independently.
 - Save, language switching, and cache-limit changes worked as before.
+
+## 2026-10-07 — Task 10 thumbnail benchmark and decision
+
+### Results
+
+The benchmark was run on Windows with standalone scripts on a representative sample of test media outside the repository.
+
+Photos (large JPEG and BMP), tile 600×800:
+
+- Pillow (current pipeline): median 96.4 ms; 26.2 photos/s with 4 parallel threads.
+- pyvips: median 48.7 ms; 69.6 photos/s in parallel; same output size. libvips cannot load BMP.
+- Pillow with `Image.draft`: median 68.8 ms; 32.5 photos/s in parallel.
+- Small photos (equal to or smaller than the target tile) occur in the tested media.
+
+Videos (4K and 1080p), 5 images per video, width 1024:
+
+- Current pipeline: 61.8 s.
+- ffmpeg scale + Pillow: 51.7 s.
+- Full-resolution frame + pyvips: 56.6 s.
+- ffmpeg scale + pyvips: 46.8 s (−24 %).
+- Temporary data dropped by about 44 %; output size unchanged.
+
+GIFs, 300×300:
+
+- Pillow and pyvips were equally fast (about 10 ms) with the same output size; transparency was preserved for all files.
+
+Licenses:
+
+- pyvips is MIT-licensed; `pyvips-binary` is LGPL-3.0-or-later. No GPL component is included (see THIRD-PARTY-NOTICES in `kleisauke/libvips-packaging`).
+
+### Decision
+
+- All thumbnail types (photo tile, GIF preview, video poster, video frames) move from Pillow to pyvips. Pillow is removed and `pyvips[binary]` is added; no parallel Pillow path is kept.
+- ffmpeg downscales video poster and frame images directly (box of at most 2× `video_preview_width`, no upscaling, aspect ratio preserved); pyvips performs the final resize and WebP encoding.
+- BMP moves from images to Other (no thumbnail).
+- Reuse of small photos as the tile source is not introduced, in favor of one uniform generation logic.
+- The algorithm versions of all four thumbnail types are increased so that all thumbnails are regenerated once.
+- Output is preserved: WebP quality 82, the same target sizes, EXIF orientation for photos, transparency for PNG/GIF, and no metadata.
+- libvips distribution for end users is an open question in task 23.
+
+### Implementation
+
+- `requirements.txt` now requires `pyvips[binary]>=3.2.0` instead of Pillow.
+- All four thumbnail generators use one shared pyvips writer, `_write_webp_thumbnail`. It calls `Image.thumbnail` with `size="down"`, which applies EXIF orientation, never upscales, and loads only the first GIF frame. It then normalizes 16-bit, CMYK, and greyscale input to 8-bit sRGB or greyscale while keeping alpha, and writes WebP with quality 82, effort 4, and no metadata (`keep=0` on libvips 8.15+, `strip` otherwise).
+- ffmpeg extracts video poster and frame images with `scale=w='min(iw,2W)':h='min(ih,2W)':force_original_aspect_ratio=decrease`, where W is `video_preview_width`.
+- All four algorithm versions were increased (`photo_tile_v2_webp_vips_fit`, `gif_preview_v2_webp_vips_first_frame_fit`, `video_poster_v3_webp_ffmpeg_scale_vips_20_fit`, `video_frame_v3_webp_ffmpeg_scale_vips_35_50_65_80_fit`).
+- `.bmp` was removed from image extensions, so BMP files are classified as Other; README no longer lists BMP as a supported image.
+- Cache contract fixes:
+  - Ready checks compare `algorithm_version`. An outdated photo tile is not ready and is regenerated on demand. Existing-only GIF and video lookups still serve an outdated file until preview preparation or folder-preview generation regenerates it.
+  - GIF preview and video poster/frame generators delete the previous output file after a successful regeneration, as photo tiles already did.
+  - Scan activation marks thumbnails stale when `media_type` changes, even if size and modified time are unchanged.
+
+### Files
+
+- `requirements.txt`
+- `README.md`
+- `catalog_app/media_types.py`
+- `catalog_app/scan_activate.py`
+- `catalog_app/thumbnail_cache.py`
+- `tests/test_pyvips_thumbnails.py`
+- `tests/test_folder_preview_query.py`
+- `tests/test_instance_runtime_environment.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The benchmark was performed on Windows outside the repository; no benchmark tooling is added to the repository.
+- This is a pre-1.0 change without a transition layer for existing instances; it was validated on a newly created instance.
+- Installed and validated with pyvips 3.2.0 and pyvips-binary 8.18.7 (libvips 8.18.7).
+- The full automated test suite passed on Windows.
+- A new test instance created with `setup-instance` on test media validated:
+  - photo thumbnails, including correct EXIF rotation (a test photo with orientation 6 was displayed in portrait);
+  - GIF static previews and hover playback;
+  - video posters and hover frames with the correct aspect ratio;
+  - BMP classified as Other.

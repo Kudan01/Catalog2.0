@@ -127,7 +127,7 @@ class InstanceRuntimeEnvironmentTests(unittest.TestCase):
                 item.mkdir()
                 (item / "placeholder.txt").write_text(name, encoding="utf-8")
             else:
-                item.write_text("Pillow>=10.0\n" if name == "requirements.txt" else "", encoding="utf-8")
+                item.write_text("pyvips[binary]>=3.2.0\n" if name == "requirements.txt" else "", encoding="utf-8")
         return path
 
     @classmethod
@@ -153,7 +153,7 @@ class InstanceRuntimeEnvironmentTests(unittest.TestCase):
                 item.mkdir()
                 (item / "placeholder.txt").write_text(name, encoding="utf-8")
             else:
-                item.write_text("Pillow>=10.0\n" if name == "requirements.txt" else "", encoding="utf-8")
+                item.write_text("pyvips[binary]>=3.2.0\n" if name == "requirements.txt" else "", encoding="utf-8")
 
 
 if __name__ == "__main__":

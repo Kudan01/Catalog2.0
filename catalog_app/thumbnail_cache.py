@@ -29,26 +29,26 @@ ThumbnailKind = Literal[
 
 THUMBNAIL_CACHE_VERSION = "v1"
 PHOTO_TILE_VARIANT_KEY = "default"
-PHOTO_TILE_ALGORITHM_VERSION = "photo_tile_v1_webp_fit"
+PHOTO_TILE_ALGORITHM_VERSION = "photo_tile_v2_webp_vips_fit"
 PHOTO_TILE_FORMAT = "WEBP"
 PHOTO_TILE_EXTENSION = ".webp"
 PHOTO_TILE_QUALITY = 82
 
 GIF_PREVIEW_VARIANT_KEY = "default"
-GIF_PREVIEW_ALGORITHM_VERSION = "gif_preview_v1_webp_first_frame_fit"
+GIF_PREVIEW_ALGORITHM_VERSION = "gif_preview_v2_webp_vips_first_frame_fit"
 GIF_PREVIEW_FORMAT = "WEBP"
 GIF_PREVIEW_EXTENSION = ".webp"
 GIF_PREVIEW_QUALITY = 82
 
 VIDEO_POSTER_VARIANT_KEY = "default"
-VIDEO_POSTER_ALGORITHM_VERSION = "video_poster_v2_webp_ffmpeg_20_fit"
+VIDEO_POSTER_ALGORITHM_VERSION = "video_poster_v3_webp_ffmpeg_scale_vips_20_fit"
 VIDEO_POSTER_FORMAT = "WEBP"
 VIDEO_POSTER_EXTENSION = ".webp"
 VIDEO_POSTER_QUALITY = 82
 
 VIDEO_FRAME_VARIANT_KEYS = ("frame_1", "frame_2", "frame_3", "frame_4")
 VIDEO_FRAME_RELATIVE_POSITIONS = (0.35, 0.50, 0.65, 0.80)
-VIDEO_FRAME_ALGORITHM_VERSION = "video_frame_v2_webp_ffmpeg_35_50_65_80_fit"
+VIDEO_FRAME_ALGORITHM_VERSION = "video_frame_v3_webp_ffmpeg_scale_vips_35_50_65_80_fit"
 VIDEO_FRAME_FORMAT = "WEBP"
 VIDEO_FRAME_EXTENSION = ".webp"
 VIDEO_FRAME_QUALITY = 82
@@ -80,7 +80,7 @@ def _thumbnail_generation_lock(key: tuple[str, str]) -> Iterator[None]:
 
     The local server uses threaded request handling. Without this guard, two
     near-simultaneous requests for the same missing on-demand thumbnail can do
-    the same expensive Pillow work and race on the same output row/file.
+    the same expensive image work and race on the same output row/file.
     """
     with _thumbnail_generation_locks_guard:
         state = _thumbnail_generation_locks.get(key)
@@ -110,6 +110,110 @@ def _unique_thumbnail_frame_path(destination: Path) -> Path:
     """Return a unique temporary raw frame path next to the final thumbnail."""
     token = f"{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}"
     return destination.with_name(f".{destination.stem}.{token}.frame.png")
+
+
+# libvips WebP effort; the same encoder effort as the former method=4 setting.
+THUMBNAIL_WEBP_EFFORT = 4
+
+
+def _require_pyvips():
+    """Import pyvips, turning a missing package or libvips binary into a cache error."""
+    try:
+        import pyvips
+    except (ImportError, OSError) as exc:
+        raise ThumbnailCacheError(
+            "pyvips is not available. Install dependencies with: python -m pip install -r requirements.txt"
+        ) from exc
+    return pyvips
+
+
+def _webp_compatible_image(image):
+    """Return 8-bit sRGB or greyscale pixels, keeping any alpha band."""
+    interpretation = str(image.interpretation)
+    if interpretation in {"rgb16", "cmyk"}:
+        image = image.colourspace("srgb")
+    elif interpretation == "grey16":
+        image = image.colourspace("b-w")
+    if str(image.format) != "uchar":
+        image = image.cast("uchar")
+    return image
+
+
+def _write_webp_thumbnail(
+    source_path: Path,
+    temp_path: Path,
+    *,
+    box_width: int,
+    box_height: int,
+    quality: int,
+) -> tuple[int, int]:
+    """Fit the source into the box with pyvips and write a metadata-free WebP.
+
+    Image.thumbnail applies EXIF orientation, never upscales with size="down",
+    and loads only the first frame of animated sources such as GIF.
+    """
+    pyvips = _require_pyvips()
+    image = pyvips.Image.thumbnail(
+        str(source_path),
+        int(box_width),
+        height=int(box_height),
+        size="down",
+    )
+    image = _webp_compatible_image(image)
+    if pyvips.at_least_libvips(8, 15):
+        # VIPS_FOREIGN_KEEP_NONE: drop EXIF, XMP, IPTC, ICC and other metadata.
+        metadata_options = {"keep": 0}
+    else:
+        metadata_options = {"strip": True}
+    # webpsave is called explicitly because the temp path has no .webp suffix.
+    image.webpsave(
+        str(temp_path),
+        Q=int(quality),
+        effort=THUMBNAIL_WEBP_EFFORT,
+        **metadata_options,
+    )
+    return int(image.width), int(image.height)
+
+
+def _ffmpeg_frame_scale_filter(config: Config) -> str:
+    """Return the ffmpeg filter that pre-scales a video frame for pyvips.
+
+    The frame fits a box of twice video_preview_width, keeps its aspect ratio,
+    and is never upscaled. pyvips performs the final resize.
+    """
+    box = max(1, int(config.video_preview_width) * 2)
+    return (
+        f"scale=w='min(iw,{box})':h='min(ih,{box})'"
+        ":force_original_aspect_ratio=decrease"
+    )
+
+
+def _previous_thumbnail_path(
+    config: Config,
+    *,
+    media_id: int,
+    thumbnail_type: ThumbnailKind,
+    variant_key: str,
+) -> Path | None:
+    """Return the file currently recorded for a thumbnail row, if any."""
+    with open_database(config.db_path, read_only=True, validate=False) as connection:
+        row = connection.execute(
+            """
+            SELECT output_rel_path
+            FROM thumbnails
+            WHERE media_id = ? AND thumbnail_type = ? AND variant_key = ?
+            """,
+            (int(media_id), thumbnail_type, variant_key),
+        ).fetchone()
+    if row is None:
+        return None
+    return _thumbnail_filesystem_path(config, str(row["output_rel_path"]))
+
+
+def _delete_replaced_thumbnail_file(previous_path: Path | None, destination: Path) -> None:
+    """Delete the previous output after a regeneration wrote a different file."""
+    if previous_path is not None and previous_path != destination and previous_path.is_file():
+        previous_path.unlink()
 
 
 def _cache_cleanup_status_messages() -> list[dict[str, object]]:
@@ -552,6 +656,11 @@ def ready_cached_thumbnail_resource(
     This fast path intentionally does not touch the original media file and does
     not update usage metadata. Scan/activation logic is responsible for marking
     thumbnails stale when source files change.
+
+    A photo_tile with an outdated algorithm version is not ready, so the caller
+    regenerates it on demand. GIF and video previews are not generated on
+    demand; an outdated version stays served until preview preparation
+    regenerates it.
     """
     lookup_started = time.perf_counter() if diagnostic_timings is not None else 0.0
     try:
@@ -564,6 +673,7 @@ def ready_cached_thumbnail_resource(
                     height,
                     file_size_bytes,
                     cache_class,
+                    algorithm_version,
                     status
                 FROM thumbnails
                 WHERE media_id = ?
@@ -579,6 +689,11 @@ def ready_cached_thumbnail_resource(
             ) * 1000.0
 
     if row is None or str(row["status"]) != "ready":
+        return None
+    if (
+        thumbnail_type == "photo_tile"
+        and str(row["algorithm_version"]) != PHOTO_TILE_ALGORITHM_VERSION
+    ):
         return None
 
     check_started = time.perf_counter() if diagnostic_timings is not None else 0.0
@@ -621,7 +736,7 @@ def photo_tile_resource(
         _reconcile_photo_tile_locked(config, media_id)
         # A previous near-simultaneous request may have created the tile while
         # this request was waiting. Check DB/cache again before opening the
-        # original image and doing expensive Pillow work.
+        # original image and doing expensive image work.
         existing = _ready_existing_photo_tile(
             config,
             media_id=media_id,
@@ -660,12 +775,17 @@ def gif_preview_existing_resource(
     source_size_bytes: int,
     source_modified_time: float,
 ) -> ThumbnailResource | None:
-    """Return an existing ready GIF preview without generating it on demand."""
+    """Return an existing ready GIF preview without generating it on demand.
+
+    An outdated algorithm version is still served; preview preparation jobs
+    regenerate it.
+    """
     return _ready_existing_gif_preview(
         config,
         media_id=media_id,
         source_size_bytes=source_size_bytes,
         source_modified_time=source_modified_time,
+        require_current_version=False,
     )
 
 
@@ -745,6 +865,7 @@ def video_poster_existing_resource(
         source_modified_time=source_modified_time,
         update_usage=False,
         mark_stale=False,
+        require_current_version=False,
     )
 
 
@@ -765,6 +886,7 @@ def video_frame_existing_resource(
         source_modified_time=source_modified_time,
         update_usage=False,
         mark_stale=False,
+        require_current_version=False,
     )
 
 
@@ -2520,6 +2642,7 @@ def _ready_existing_photo_tile(
                 source_size_bytes,
                 source_modified_time,
                 cache_class,
+                algorithm_version,
                 status
             FROM thumbnails
             WHERE media_id = ?
@@ -2539,8 +2662,16 @@ def _ready_existing_photo_tile(
             source_size_bytes,
             source_modified_time,
         )
+        # An outdated algorithm version is regenerated by this on-demand path.
+        version_matches = str(row["algorithm_version"]) == PHOTO_TILE_ALGORITHM_VERSION
 
-        if str(row["status"]) == "ready" and source_matches and path.exists() and path.is_file():
+        if (
+            str(row["status"]) == "ready"
+            and source_matches
+            and version_matches
+            and path.exists()
+            and path.is_file()
+        ):
             stat_result = path.stat()
             now = time.time()
             connection.execute(
@@ -2597,12 +2728,7 @@ def _generate_photo_tile(
     destination: Path | None = None,
     cache_class: ThumbnailCacheClass | None = None,
 ) -> ThumbnailResource:
-    try:
-        from PIL import Image, ImageOps
-    except ImportError as exc:
-        raise ThumbnailCacheError(
-            "Pillow is not installed. Install dependencies with: python -m pip install -r requirements.txt"
-        ) from exc
+    _require_pyvips()
 
     if cache_class is None:
         with open_database(config.db_path, read_only=True, validate=False) as connection:
@@ -2618,41 +2744,24 @@ def _generate_photo_tile(
     destination.parent.mkdir(parents=True, exist_ok=True)
     output_rel_path = _output_relative_path(config, destination)
     temp_path = _unique_thumbnail_temp_path(destination)
-    previous_path: Path | None = None
-    with open_database(config.db_path, read_only=True, validate=False) as connection:
-        previous_row = connection.execute(
-            """
-            SELECT output_rel_path
-            FROM thumbnails
-            WHERE media_id = ? AND thumbnail_type = 'photo_tile' AND variant_key = ?
-            """,
-            (int(media_id), PHOTO_TILE_VARIANT_KEY),
-        ).fetchone()
-    if previous_row is not None:
-        previous_path = _thumbnail_filesystem_path(config, str(previous_row["output_rel_path"]))
+    previous_path = _previous_thumbnail_path(
+        config,
+        media_id=media_id,
+        thumbnail_type="photo_tile",
+        variant_key=PHOTO_TILE_VARIANT_KEY,
+    )
 
     try:
-        with Image.open(source_path) as image:
-            image = ImageOps.exif_transpose(image)
-            image.thumbnail(config.image_thumb_size, Image.Resampling.LANCZOS)
-
-            if image.mode not in {"RGB", "RGBA"}:
-                if "A" in image.getbands() or "transparency" in image.info:
-                    image = image.convert("RGBA")
-                else:
-                    image = image.convert("RGB")
-
-            width, height = image.size
-            image.save(
-                temp_path,
-                format=PHOTO_TILE_FORMAT,
-                quality=PHOTO_TILE_QUALITY,
-                method=4,
-            )
+        width, height = _write_webp_thumbnail(
+            source_path,
+            temp_path,
+            box_width=config.image_thumb_size[0],
+            box_height=config.image_thumb_size[1],
+            quality=PHOTO_TILE_QUALITY,
+        )
 
         temp_path.replace(destination)
-        if previous_path is not None and previous_path != destination and previous_path.is_file():
-            previous_path.unlink()
+        _delete_replaced_thumbnail_file(previous_path, destination)
         file_size = destination.stat().st_size
         now = time.time()
 
@@ -2758,6 +2867,7 @@ def _ready_existing_gif_preview(
     media_id: int,
     source_size_bytes: int,
     source_modified_time: float,
+    require_current_version: bool = True,
 ) -> ThumbnailResource | None:
     with open_database(config.db_path, read_only=False) as connection:
         row = connection.execute(
@@ -2770,6 +2880,7 @@ def _ready_existing_gif_preview(
                 file_size_bytes,
                 source_size_bytes,
                 source_modified_time,
+                algorithm_version,
                 status
             FROM thumbnails
             WHERE media_id = ?
@@ -2789,8 +2900,18 @@ def _ready_existing_gif_preview(
             source_size_bytes,
             source_modified_time,
         )
+        version_matches = (
+            not require_current_version
+            or str(row["algorithm_version"]) == GIF_PREVIEW_ALGORITHM_VERSION
+        )
 
-        if str(row["status"]) == "ready" and source_matches and path.exists() and path.is_file():
+        if (
+            str(row["status"]) == "ready"
+            and source_matches
+            and version_matches
+            and path.exists()
+            and path.is_file()
+        ):
             stat_result = path.stat()
             now = time.time()
             connection.execute(
@@ -2843,12 +2964,7 @@ def _generate_gif_preview(
     source_size_bytes: int,
     source_modified_time: float,
 ) -> ThumbnailResource:
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise ThumbnailCacheError(
-            "Pillow is not installed. Install dependencies with: python -m pip install -r requirements.txt"
-        ) from exc
+    _require_pyvips()
 
     destination = _gif_preview_destination(
         config,
@@ -2859,21 +2975,25 @@ def _generate_gif_preview(
     destination.parent.mkdir(parents=True, exist_ok=True)
     output_rel_path = _output_relative_path(config, destination)
     temp_path = _unique_thumbnail_temp_path(destination)
+    previous_path = _previous_thumbnail_path(
+        config,
+        media_id=media_id,
+        thumbnail_type="gif_preview",
+        variant_key=GIF_PREVIEW_VARIANT_KEY,
+    )
 
     try:
-        with Image.open(source_path) as image:
-            image.seek(0)
-            frame = image.convert("RGBA")
-            frame.thumbnail(config.gif_thumb_size, Image.Resampling.LANCZOS)
-            width, height = frame.size
-            frame.save(
-                temp_path,
-                format=GIF_PREVIEW_FORMAT,
-                quality=GIF_PREVIEW_QUALITY,
-                method=4,
-            )
+        # pyvips loads only the first GIF frame by default.
+        width, height = _write_webp_thumbnail(
+            source_path,
+            temp_path,
+            box_width=config.gif_thumb_size[0],
+            box_height=config.gif_thumb_size[1],
+            quality=GIF_PREVIEW_QUALITY,
+        )
 
         temp_path.replace(destination)
+        _delete_replaced_thumbnail_file(previous_path, destination)
         file_size = destination.stat().st_size
         now = time.time()
 
@@ -2970,6 +3090,7 @@ def _ready_existing_video_poster(
     source_modified_time: float,
     update_usage: bool = True,
     mark_stale: bool = True,
+    require_current_version: bool = True,
 ) -> ThumbnailResource | None:
     write_needed = update_usage or mark_stale
     with open_database(config.db_path, read_only=not write_needed) as connection:
@@ -2983,6 +3104,7 @@ def _ready_existing_video_poster(
                 file_size_bytes,
                 source_size_bytes,
                 source_modified_time,
+                algorithm_version,
                 status
             FROM thumbnails
             WHERE media_id = ?
@@ -3002,8 +3124,18 @@ def _ready_existing_video_poster(
             source_size_bytes,
             source_modified_time,
         )
+        version_matches = (
+            not require_current_version
+            or str(row["algorithm_version"]) == VIDEO_POSTER_ALGORITHM_VERSION
+        )
 
-        if str(row["status"]) == "ready" and source_matches and path.exists() and path.is_file():
+        if (
+            str(row["status"]) == "ready"
+            and source_matches
+            and version_matches
+            and path.exists()
+            and path.is_file()
+        ):
             stat_result = path.stat()
             if update_usage:
                 now = time.time()
@@ -3057,6 +3189,7 @@ def _ready_existing_video_frame(
     source_modified_time: float,
     update_usage: bool = True,
     mark_stale: bool = True,
+    require_current_version: bool = True,
 ) -> ThumbnailResource | None:
     write_needed = update_usage or mark_stale
     with open_database(config.db_path, read_only=not write_needed) as connection:
@@ -3070,6 +3203,7 @@ def _ready_existing_video_frame(
                 file_size_bytes,
                 source_size_bytes,
                 source_modified_time,
+                algorithm_version,
                 status
             FROM thumbnails
             WHERE media_id = ?
@@ -3089,8 +3223,18 @@ def _ready_existing_video_frame(
             source_size_bytes,
             source_modified_time,
         )
+        version_matches = (
+            not require_current_version
+            or str(row["algorithm_version"]) == VIDEO_FRAME_ALGORITHM_VERSION
+        )
 
-        if str(row["status"]) == "ready" and source_matches and path.exists() and path.is_file():
+        if (
+            str(row["status"]) == "ready"
+            and source_matches
+            and version_matches
+            and path.exists()
+            and path.is_file()
+        ):
             stat_result = path.stat()
             if update_usage:
                 now = time.time()
@@ -3144,12 +3288,7 @@ def _generate_video_poster(
     source_size_bytes: int,
     source_modified_time: float,
 ) -> ThumbnailResource:
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise ThumbnailCacheError(
-            "Pillow is not installed. Install dependencies with: python -m pip install -r requirements.txt"
-        ) from exc
+    _require_pyvips()
 
     try:
         tools = require_video_tools()
@@ -3180,6 +3319,12 @@ def _generate_video_poster(
     output_rel_path = _output_relative_path(config, destination)
     raw_frame_path = _unique_thumbnail_frame_path(destination)
     temp_path = _unique_thumbnail_temp_path(destination)
+    previous_path = _previous_thumbnail_path(
+        config,
+        media_id=media_id,
+        thumbnail_type="video_poster",
+        variant_key=VIDEO_POSTER_VARIANT_KEY,
+    )
 
     try:
         duration = _probe_video_duration(
@@ -3201,6 +3346,8 @@ def _generate_video_poster(
             str(config.ffmpeg_threads_per_job),
             "-i",
             str(source_path),
+            "-vf",
+            _ffmpeg_frame_scale_filter(config),
             "-frames:v",
             "1",
             str(raw_frame_path),
@@ -3220,19 +3367,16 @@ def _generate_video_poster(
         if not raw_frame_path.exists() or not raw_frame_path.is_file():
             raise ThumbnailCacheError(f"ffmpeg did not produce an output frame for {rel_path}")
 
-        with Image.open(raw_frame_path) as image:
-            image.thumbnail((config.video_preview_width, config.video_preview_width), Image.Resampling.LANCZOS)
-            if image.mode not in {"RGB", "RGBA"}:
-                image = image.convert("RGB")
-            width, height = image.size
-            image.save(
-                temp_path,
-                format=VIDEO_POSTER_FORMAT,
-                quality=VIDEO_POSTER_QUALITY,
-                method=4,
-            )
+        width, height = _write_webp_thumbnail(
+            raw_frame_path,
+            temp_path,
+            box_width=config.video_preview_width,
+            box_height=config.video_preview_width,
+            quality=VIDEO_POSTER_QUALITY,
+        )
 
         temp_path.replace(destination)
+        _delete_replaced_thumbnail_file(previous_path, destination)
         file_size = destination.stat().st_size
         now = time.time()
 
@@ -3346,12 +3490,7 @@ def _generate_video_frame(
     variant_key: str,
     seek_time: float,
 ) -> ThumbnailResource:
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise ThumbnailCacheError(
-            "Pillow is not installed. Install dependencies with: python -m pip install -r requirements.txt"
-        ) from exc
+    _require_pyvips()
 
     try:
         tools = require_video_tools()
@@ -3385,6 +3524,12 @@ def _generate_video_frame(
     output_rel_path = _output_relative_path(config, destination)
     raw_frame_path = _unique_thumbnail_frame_path(destination)
     temp_path = _unique_thumbnail_temp_path(destination)
+    previous_path = _previous_thumbnail_path(
+        config,
+        media_id=media_id,
+        thumbnail_type="video_frame",
+        variant_key=variant_key,
+    )
 
     try:
         command = [
@@ -3399,6 +3544,8 @@ def _generate_video_frame(
             str(config.ffmpeg_threads_per_job),
             "-i",
             str(source_path),
+            "-vf",
+            _ffmpeg_frame_scale_filter(config),
             "-frames:v",
             "1",
             str(raw_frame_path),
@@ -3418,19 +3565,16 @@ def _generate_video_frame(
         if not raw_frame_path.exists() or not raw_frame_path.is_file():
             raise ThumbnailCacheError(f"ffmpeg did not produce output video frame {variant_key} for {rel_path}")
 
-        with Image.open(raw_frame_path) as image:
-            image.thumbnail((config.video_preview_width, config.video_preview_width), Image.Resampling.LANCZOS)
-            if image.mode not in {"RGB", "RGBA"}:
-                image = image.convert("RGB")
-            width, height = image.size
-            image.save(
-                temp_path,
-                format=VIDEO_FRAME_FORMAT,
-                quality=VIDEO_FRAME_QUALITY,
-                method=4,
-            )
+        width, height = _write_webp_thumbnail(
+            raw_frame_path,
+            temp_path,
+            box_width=config.video_preview_width,
+            box_height=config.video_preview_width,
+            quality=VIDEO_FRAME_QUALITY,
+        )
 
         temp_path.replace(destination)
+        _delete_replaced_thumbnail_file(previous_path, destination)
         file_size = destination.stat().st_size
         now = time.time()
 

@@ -13,7 +13,6 @@ IMAGE_EXTENSIONS = frozenset({
     ".jfif",
     ".png",
     ".webp",
-    ".bmp",
 })
 
 GIF_EXTENSIONS = frozenset({

@@ -1983,13 +1983,18 @@ def _invalidate_changed_derived_rows(
     změněných řádků. Tady se nejdřív vytvoří malý delta seznam médií, jejichž
     velikost nebo modified_time se proti aktivní DB opravdu liší. Pokud je prázdný,
     thumbnail/video-preview invalidace se úplně přeskočí.
+
+    A media_type change also invalidates derived rows even when size and
+    modified_time are unchanged, because the old thumbnails belong to the
+    previous media type.
     """
     connection.execute(
         """
         CREATE TEMP TABLE IF NOT EXISTS catalog2_changed_derived_media (
             media_id INTEGER PRIMARY KEY,
             source_size_bytes INTEGER NOT NULL,
-            source_modified_time REAL NOT NULL
+            source_modified_time REAL NOT NULL,
+            media_type_changed INTEGER NOT NULL
         )
         """
     )
@@ -2001,12 +2006,14 @@ def _invalidate_changed_derived_rows(
         INSERT INTO catalog2_changed_derived_media (
             media_id,
             source_size_bytes,
-            source_modified_time
+            source_modified_time,
+            media_type_changed
         )
         SELECT
             active.id,
             staged.size_bytes,
-            staged.modified_time
+            staged.modified_time,
+            CASE WHEN active.media_type <> staged.media_type THEN 1 ELSE 0 END
         FROM scan_media_files AS staged
         JOIN media_files AS active
           ON active.path_key = staged.path_key
@@ -2014,6 +2021,7 @@ def _invalidate_changed_derived_rows(
           AND (
               active.size_bytes <> staged.size_bytes
               OR active.modified_time <> staged.modified_time
+              OR active.media_type <> staged.media_type
           )
         """,
         (scan_id,),
@@ -2054,6 +2062,7 @@ def _invalidate_changed_derived_rows(
               AND (
                   thumbnails.source_size_bytes <> changed.source_size_bytes
                   OR thumbnails.source_modified_time <> changed.source_modified_time
+                  OR changed.media_type_changed = 1
               )
         )
         """,
@@ -2077,6 +2086,7 @@ def _invalidate_changed_derived_rows(
               AND (
                   video_previews.source_size_bytes <> changed.source_size_bytes
                   OR video_previews.source_modified_time <> changed.source_modified_time
+                  OR changed.media_type_changed = 1
               )
         )
         """,

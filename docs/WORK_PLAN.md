@@ -81,20 +81,33 @@ Dynamic cache is the safely deletable class; protected cache contains thumbnails
 
 The resulting lifecycle was validated on the development instance.
 
-## 10. Photo thumbnails — source reuse and generation performance — PENDING
+## 10. Thumbnail generation — migration from Pillow to pyvips — COMPLETED
 
-### Investigation
+### Context
 
-- Determine whether static photos whose dimensions are equal to or smaller than the target `photo_tile` should reuse the original as the source instead of generating another tile.
-- Benchmark pyvips/libvips against the current Pillow pipeline on a small representative sample.
-- The benchmark must not require rebuilding the whole catalog.
-- Source originals must not be modified.
+The project benchmark was run on Windows outside the repository and the decision below was accepted. Benchmark results are recorded in `docs/DEVELOPMENT_LOG.md` (2026-10-07). No benchmark tooling is added to the repository. The decision was implemented and validated on a newly created Windows instance; see the same log entry.
 
-### Decision rule
+### Decision
 
-If pyvips/libvips shows a meaningful project-specific benefit, assess Windows runtime/dependency impact and supported-format compatibility before considering migration.
+1. All thumbnail types move from Pillow to pyvips: photo tile, GIF preview (first frame), video poster, and video frames. Pillow is removed from the project (`requirements.txt`) and `pyvips[binary]` is added. There is no parallel Pillow path and no legacy branch.
+2. Video poster and frames: ffmpeg downscales the extracted frame directly (box of at most 2× `video_preview_width`, no upscaling, aspect ratio preserved) instead of writing it at full resolution. pyvips performs the final resize and WebP encoding.
+3. BMP moves from images to Other (no thumbnail).
+4. Reuse of small photos (equal to or smaller than the target tile) as the tile source is **not** introduced. Small photos do occur, but the reuse was rejected in favor of one uniform generation logic.
+5. The algorithm versions of all four thumbnail types (`PHOTO_TILE_`, `GIF_PREVIEW_`, `VIDEO_POSTER_`, `VIDEO_FRAME_ALGORITHM_VERSION`) are increased so that all thumbnails are regenerated once cleanly.
+6. Output is preserved: WebP quality 82, the same target sizes from config, EXIF orientation for photos, transparency for PNG/GIF, and no metadata in the output.
+7. How libvips is shipped in the end-user distribution is not decided here; it belongs to task 23.
 
-Do not change the thumbnail pipeline based only on generic performance claims; decide from the project benchmark.
+### Cache contract fixes
+
+These apply to any future algorithm or media-type change:
+
+- Ready checks must treat a thumbnail with an outdated `algorithm_version` as not ready.
+- GIF preview and video poster/frame generators must delete the previous output file after successful regeneration, as photo tiles already do.
+- Thumbnails of media whose `media_type` changed must be invalidated during scan activation.
+
+### Constraint
+
+Source originals must not be modified.
 
 ## 11. Final version / release metadata — PENDING
 
@@ -289,11 +302,12 @@ The current public workflow requires an installed Python, creating a `.venv`, an
 - Packaging technology. PyInstaller, embedded Python, an installer, and other options remain open.
 - Update UX, for example running an updater from a newer release package versus updating from within the application.
 - How FFmpeg/FFprobe is distributed. Bundling it is not automatically an approved solution; it is an open technical and licensing question.
+- How libvips (required by pyvips since task 10) is distributed: bundled in the release package (for example via `pyvips[binary]`), or downloaded after first start similarly to FFmpeg. pyvips is MIT-licensed; `pyvips-binary` is LGPL-3.0-or-later (see its THIRD-PARTY-NOTICES). Both variants are subject to the license inventory below.
 - Whether this belongs to the 1.0 release or post-1.0 work.
 
 ### License compliance (prerequisite)
 
-- Before choosing a distribution approach, inventory all redistributed components and verify their license/distribution terms, especially the Python runtime, Python dependencies, FFmpeg/FFprobe, and any packaging tool.
+- Before choosing a distribution approach, inventory all redistributed components and verify their license/distribution terms, especially the Python runtime, Python dependencies, libvips, FFmpeg/FFprobe, and any packaging tool.
 - The resulting release must include the required licenses, notices, and attribution.
 - Verify the license of Catalog itself for public distribution; packaging must not leave the project's licensing state unclear.
 
@@ -302,3 +316,19 @@ The current public workflow requires an installed Python, creating a `.venv`, an
 - Task 11 covers final version metadata.
 - Task 12 covers the release ZIP and public release hygiene.
 - Task 18 covers launcher/runtime lifecycle.
+
+## 24. Video thumbnail generation performance — PENDING
+
+### Investigation
+
+- Parallel processing of several videos at once, or a different `ffmpeg_threads_per_job` setting.
+- Inexact (keyframe) seeking instead of exact frame seeking.
+- Possibly one ffmpeg command that extracts all five images (poster and four hover frames) for a video.
+
+### Decision rule
+
+Decide from a benchmark run on Windows outside the repository. No benchmark tooling is added to the repository.
+
+### Constraint
+
+Preserve the current output contract from task 10: WebP quality 82, target sizes from config, correct aspect ratio, and no upscaling. Source originals must not be modified.

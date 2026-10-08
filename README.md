@@ -144,7 +144,7 @@ Rename actions are explicit operations initiated by the user.
 
 Main media types currently include:
 
-- Images: JPG, JPEG, JPE, JFIF, PNG, WEBP, BMP
+- Images: JPG, JPEG, JPE, JFIF, PNG, WEBP
 - GIF: GIF
 - Video: MP4, MOV, AVI, MKV, WEBM, FLV
 
