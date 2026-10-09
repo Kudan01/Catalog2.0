@@ -6,8 +6,7 @@ from .config import Config
 from .database import validate_database_runtime
 from .thumbnail_cache import (
     generate_gif_previews_for_scope,
-    generate_video_frames_for_scope,
-    generate_video_posters_for_scope,
+    generate_video_previews_for_scope,
 )
 
 
@@ -30,16 +29,14 @@ def build_media_previews_for_scope(config: Config, *, branch_rel_path: str = "")
         config,
         branch_rel_path=branch_rel_path,
     )
-    video_poster_result = generate_video_posters_for_scope(
-        config,
-        branch_rel_path=branch_rel_path,
-    )
-    video_frame_result = generate_video_frames_for_scope(
+    # Posters and missing hover frames of one video are extracted together:
+    # one phase, one ffprobe and one ffmpeg call per video.
+    video_result = generate_video_previews_for_scope(
         config,
         branch_rel_path=branch_rel_path,
     )
 
-    phase_results = (gif_result, video_poster_result, video_frame_result)
+    phase_results = (gif_result, video_result)
     return {
         "media_preview_workflow": True,
         "scope": "branch" if branch_rel_path else "full",
@@ -140,5 +137,6 @@ def _thumbnail_type_label(thumbnail_type: str) -> str:
         "gif_preview": "GIF preview",
         "video_poster": "video poster",
         "video_frame": "video frame previews",
+        "video_previews": "video previews (poster and hover frames)",
     }
     return labels.get(thumbnail_type, thumbnail_type or "unknown phase")

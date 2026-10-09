@@ -840,7 +840,7 @@ Licenses:
 
 - Video poster and hover-frame extraction adds `-noaccurate_seek -skip_frame nokey` before `-i` and runs ffmpeg with `-threads 1`. Both generators (`_generate_video_poster`, `_generate_video_frame`) are the only ffmpeg extraction paths, so preview preparation and folder-preview builds through `video_poster_resource` use the same command.
 - `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` were increased to `video_poster_v4_webp_ffmpeg_keyframe_scale_vips_20_fit` and `video_frame_v4_webp_ffmpeg_keyframe_scale_vips_35_50_65_80_fit`.
-- `generate_video_posters_for_scope` and `generate_video_frames_for_scope` process several videos at once with a thread pool of `min(4, max(1, cpu_count // 4))` workers (`_video_job_worker_count`). The cap of 4 comes from measured HDD throughput. The value is computed when the phase starts, is not stored, and is not a setting. The frames of one video are generated sequentially by one worker.
+- `generate_video_posters_for_scope` and `generate_video_frames_for_scope` process several videos at once with a thread pool of `min(4, max(1, cpu_count // 4))` workers (`_video_job_worker_count`). The cap of 4 comes from measured disk throughput. The value is computed when the phase starts, is not stored, and is not a setting. The frames of one video are generated sequentially by one worker.
 - Results are aggregated in row order in the calling thread, so job payloads, counts, error-sample order, and per-thumbnail error recording are unchanged. Each worker uses its own short SQLite connections (WAL, 5 s busy timeout); temporary file names stay unique per process, thread, and call.
 - `ffmpeg_threads_per_job` was removed from config, runtime settings, the Settings API and UI, translations, instance setup defaults, and video-tool diagnostics. An old key in `config.json` or `settings.json` is ignored.
 - The Performance section of `CLAUDE.md` now states that concurrency defaults are computed automatically, are not stored, and are not user settings; a documented disk-based cap is allowed.
@@ -848,7 +848,7 @@ Licenses:
 
 ### Reason
 
-- Task 24: video preview generation was slow, especially with source media on an HDD. The external benchmark (32 logical cores, ffmpeg 8.1) showed large gains from keyframe extraction and from processing several videos at once; see `docs/WORK_PLAN.md`, task 24.
+- Task 24: video preview generation was slow, especially with source media on slow disks. The external benchmark showed large gains from keyframe extraction and from processing several videos at once; see `docs/WORK_PLAN.md`, task 24.
 
 ### Files
 
@@ -874,3 +874,40 @@ Licenses:
 - After updating an existing instance, the "FFmpeg threads/job" field no longer appears in Settings.
 - Preview preparation regenerated existing video previews with the new method and created previews for newly added videos; posters and hover frames display correctly.
 - Catalog browsing remained usable while preview preparation was running.
+
+## 2026-10-09 — Task 24 step 2: one ffmpeg call per video
+
+### Changes
+
+- Added `_extract_video_images`, which extracts any number of posters and hover frames of one video with one ffmpeg call: one `-ss … -noaccurate_seek -skip_frame nokey -threads 1 -i` input per image and one output per image via `-map i:V:0` (a video stream that is not cover art), with the same scale filter and pyvips/WebP encoding as step 1.
+- Each image is stored or fails on its own. An image the shared call did not produce is retried with its own single-input call; if it still fails, the error is recorded only for that image and the other images are stored. A timeout is not retried; every image not yet produced gets the timeout error.
+- Poster and frame rows are written by one shared `_store_video_image` with the unchanged upsert SQL.
+- `_generate_video_poster` (also used by `video_poster_resource` for folder previews) extracts its single image through `_extract_video_images`; its interface and errors are unchanged.
+- The video-frames job runs ffprobe once per video and extracts all missing frames of a video in one call; its payload is unchanged. `_generate_video_frame` was removed.
+- Added `generate_video_previews_for_scope` for preview preparation. It groups poster and frame work rows by video and extracts the poster and missing frames of each video together with one ffprobe and one ffmpeg call. Videos are processed concurrently with `_video_job_worker_count` and aggregated in work-row order.
+- Preview preparation (`build_media_previews_for_scope`) now has a GIF phase and one `video_previews` phase instead of separate video-poster and video-frame phases. The new phase keeps the same keys: `processed` counts videos, `frames_processed` counts hover frames, `created`/`reused`/`errors` count images, and `duration_seconds` is the real pass time. As a result, `processed_media` in preview-preparation totals counts each video once instead of twice. The CLI result lines label the new phase.
+- `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` are unchanged because the images match step 1, so existing previews are not regenerated.
+- The separate video-poster and video-frames jobs (service buttons), video concurrency, the frontend, and the output contract from task 10 are unchanged.
+
+### Reason
+
+- Task 24 step 2: reduce per-image ffmpeg process and input-open overhead by extracting all images of a video with one call.
+
+### Files
+
+- `catalog_app/thumbnail_cache.py`
+- `catalog_app/media_preview_workflow.py`
+- `tests/test_video_single_ffmpeg_call.py`
+- `tests/test_video_thumbnail_concurrency.py`
+- `tests/test_pyvips_thumbnails.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite passed on Windows.
+- `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` were confirmed unchanged.
+- Preview preparation on an already prepared part of the catalog created no video previews; existing previews were not regenerated.
+- For newly added videos, catalog update followed by preview preparation created posters and hover frames, which display correctly.
+- The video-posters service job completed. Its error samples were expected: very short videos without a decodable frame, not a regression.
+- The video-frames service job and poster creation through folder-preview builds (`video_poster_resource`) were not validated manually; they are covered by the automated tests.

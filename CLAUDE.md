@@ -58,7 +58,7 @@ Concurrency defaults (worker counts, threads) must be derived from the CPU core 
 
 Source media may be on HDDs. Any change that adds concurrent disk reads or background work must be measured with media on an HDD, not only on an SSD.
 
-Benchmarks state the CPU core count and disk type. Results from one machine are valid for comparing variants, not for choosing absolute defaults.
+Benchmark notes describe variants and relative results, without details of the user's machine or data. Results from one machine are valid for comparing variants, not for choosing absolute defaults.
 
 ## Validation and completion
 

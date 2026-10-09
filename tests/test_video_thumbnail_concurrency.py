@@ -16,7 +16,8 @@ from catalog_app.thumbnail_cache import (
     VIDEO_FRAME_ALGORITHM_VERSION,
     VIDEO_POSTER_ALGORITHM_VERSION,
     _ffmpeg_frame_scale_filter,
-    _generate_video_frame,
+    _VideoImageRequest,
+    _extract_video_images,
     _generate_video_poster,
     _video_job_worker_count,
     generate_video_frames_for_scope,
@@ -157,15 +158,15 @@ class VideoExtractionCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             config = _instance(Path(temp))
             media_id, source = self._video_media(config)
-            commands = self._run_with_fake_tools(lambda: _generate_video_frame(
+            commands = self._run_with_fake_tools(lambda: _extract_video_images(
                 config,
+                "ffmpeg",
                 media_id=media_id,
                 rel_path="clip.mp4",
                 source_path=source,
                 source_size_bytes=5,
                 source_modified_time=1,
-                variant_key="frame_1",
-                seek_time=3.5,
+                requests=[_VideoImageRequest("video_frame", "frame_1", 3.5)],
             ))
             self.assertEqual(1, len(commands))
             self._assert_keyframe_command(config, commands[0])
@@ -242,34 +243,43 @@ class VideoScopeConcurrencyTests(unittest.TestCase):
                 for variant_key in ("frame_1", "frame_2")
             ]
             barrier = threading.Barrier(self.WORKERS, timeout=5)
+            extract_calls: list[tuple[int, list[str]]] = []
+            calls_lock = threading.Lock()
 
-            def fake_generate(config, *, media_id, variant_key, **kwargs):
-                if media_id <= self.WORKERS and variant_key == "frame_1":
+            def fake_extract(config, ffmpeg_path, *, media_id, requests, **kwargs):
+                with calls_lock:
+                    extract_calls.append((media_id, [request.variant_key for request in requests]))
+                if media_id <= self.WORKERS:
                     barrier.wait()
                 if media_id == 5:
-                    raise RuntimeError(f"{variant_key} failed")
+                    raise RuntimeError("video failed")
+                return [object() for _ in requests]
 
             with patch(f"{MODULE}._video_job_worker_count", return_value=self.WORKERS), patch(
                 f"{MODULE}._video_frame_work_rows", return_value=frame_rows
             ), patch(
                 f"{MODULE}.require_video_tools",
                 return_value=SimpleNamespace(ffmpeg_path="ffmpeg", ffprobe_path="ffprobe"),
-            ), patch(f"{MODULE}._probe_video_duration", return_value=10.0), patch(
-                f"{MODULE}._generate_video_frame", side_effect=fake_generate
-            ), patch(f"{MODULE}._record_video_frame_error") as record_error:
+            ), patch(f"{MODULE}._probe_video_duration", return_value=10.0) as probe, patch(
+                f"{MODULE}._extract_video_images", side_effect=fake_extract
+            ):
                 result = generate_video_frames_for_scope(config)
 
+            # One extraction call and one ffprobe per video, with all missing frames.
+            self.assertEqual(
+                sorted((media_id, ["frame_1", "frame_2"]) for media_id in range(1, 7)),
+                sorted(extract_calls),
+            )
+            self.assertEqual(6, probe.call_count)
             self.assertEqual(6, result["processed"])
             self.assertEqual(12, result["frames_processed"])
             self.assertEqual(10, result["created"])
             self.assertEqual(2, result["errors"])
             self.assertEqual(
-                [
-                    {"path": "video_5.mp4", "frame": "frame_1", "technical_detail": "frame_1 failed"},
-                    {"path": "video_5.mp4", "frame": "frame_2", "technical_detail": "frame_2 failed"},
-                ],
+                [{"path": "video_5.mp4", "technical_detail": "video failed"}],
                 result["error_samples"],
             )
+            self.assertEqual("video_frame", result["thumbnail_type"])
             self.assertEqual([35, 50, 65, 80], result["frame_positions_percent"])
             self.assertEqual(
                 {
@@ -279,7 +289,6 @@ class VideoScopeConcurrencyTests(unittest.TestCase):
                 },
                 set(result),
             )
-            self.assertEqual(2, record_error.call_count)
 
 
 class FfmpegThreadsSettingRemovedTests(unittest.TestCase):

@@ -1114,11 +1114,216 @@ def generate_video_posters_for_scope(
 
 
 @dataclass
-class _VideoFramesOutcome:
+class _VideoWorkItem:
+    """Missing images of one video: optionally the poster, plus hover frames."""
+
+    media_id: int
+    rel_path: str
+    size_bytes: int
+    modified_time: float
+    poster: bool = False
+    variants: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _VideoWorkOutcome:
     frames_processed: int = 0
     created: int = 0
     errors: int = 0
     samples: list[dict[str, str]] = field(default_factory=list)
+
+
+def _video_error_sample(rel_path: str, request: _VideoImageRequest, message: str) -> dict[str, str]:
+    if request.thumbnail_type == "video_frame":
+        return {"path": rel_path, "frame": request.variant_key, "technical_detail": message}
+    return {"path": rel_path, "technical_detail": message}
+
+
+def _generate_video_work_item(config: Config, item: _VideoWorkItem) -> _VideoWorkOutcome:
+    """Generate the missing images of one video with one ffprobe and one ffmpeg call."""
+    outcome = _VideoWorkOutcome()
+    rel_path = item.rel_path
+
+    try:
+        source_path = safe_join_catalog_path(config.data_root, rel_path, allow_root=False)
+        if not source_path.exists() or not source_path.is_file():
+            raise ThumbnailCacheError(f"Source video is not available on disk: {rel_path}")
+
+        stat_result = source_path.stat()
+        if not _source_metadata_matches(
+            item.size_bytes,
+            item.modified_time,
+            int(stat_result.st_size),
+            float(stat_result.st_mtime),
+        ):
+            raise ThumbnailCacheError(
+                f"Source video changed after the last catalog update: {rel_path}. "
+                "Run catalog update first."
+            )
+
+        tools = None
+        tools_error = ""
+        try:
+            tools = require_video_tools()
+        except VideoToolsError as exc:
+            tools_error = str(exc)
+        duration = None
+        if tools is not None:
+            duration = _probe_video_duration(
+                tools.ffprobe_path,
+                source_path,
+                timeout_seconds=min(config.ffmpeg_timeout_seconds, 30),
+            )
+
+        requests: list[_VideoImageRequest] = []
+        if item.poster:
+            requests.append(_VideoImageRequest(
+                thumbnail_type="video_poster",
+                variant_key=VIDEO_POSTER_VARIANT_KEY,
+                seek_time=_video_poster_seek_time(duration),
+            ))
+        for variant_key in item.variants:
+            frame_index = VIDEO_FRAME_VARIANT_KEYS.index(variant_key) + 1
+            requests.append(_VideoImageRequest(
+                thumbnail_type="video_frame",
+                variant_key=variant_key,
+                seek_time=_video_frame_seek_time(duration, frame_index),
+            ))
+
+        if tools is None:
+            results: list[ThumbnailResource | str] = []
+            for request in requests:
+                target_destination = (
+                    _video_poster_destination(
+                        config,
+                        rel_path=rel_path,
+                        source_size_bytes=item.size_bytes,
+                        source_modified_time=item.modified_time,
+                    )
+                    if request.thumbnail_type == "video_poster"
+                    else _video_frame_destination(
+                        config,
+                        rel_path=rel_path,
+                        source_size_bytes=item.size_bytes,
+                        source_modified_time=item.modified_time,
+                        variant_key=request.variant_key,
+                    )
+                )
+                _record_video_image_error(
+                    config,
+                    media_id=item.media_id,
+                    request=request,
+                    output_rel_path=_output_relative_path(config, target_destination),
+                    source_size_bytes=item.size_bytes,
+                    source_modified_time=item.modified_time,
+                    message=tools_error,
+                )
+                results.append(tools_error)
+        else:
+            results = _extract_video_images(
+                config,
+                tools.ffmpeg_path,
+                media_id=item.media_id,
+                rel_path=rel_path,
+                source_path=source_path,
+                source_size_bytes=item.size_bytes,
+                source_modified_time=item.modified_time,
+                requests=requests,
+            )
+
+        for request, result in zip(requests, results):
+            if request.thumbnail_type == "video_frame":
+                outcome.frames_processed += 1
+            if isinstance(result, str):
+                outcome.errors += 1
+                outcome.samples.append(_video_error_sample(rel_path, request, result))
+            else:
+                outcome.created += 1
+    except Exception as exc:  # noqa: BLE001 - one video failure must not stop the job
+        # The video could not be processed at all: count every missing image.
+        # As before, only the poster error is recorded in the DB.
+        if item.poster:
+            try:
+                _record_video_poster_error(
+                    config,
+                    media_id=item.media_id,
+                    output_rel_path=_output_relative_path(
+                        config,
+                        _video_poster_destination(
+                            config,
+                            rel_path=rel_path,
+                            source_size_bytes=item.size_bytes,
+                            source_modified_time=item.modified_time,
+                        ),
+                    ),
+                    source_size_bytes=item.size_bytes,
+                    source_modified_time=item.modified_time,
+                    message=str(exc),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        outcome = _VideoWorkOutcome(
+            frames_processed=len(item.variants),
+            created=0,
+            errors=len(item.variants) + (1 if item.poster else 0),
+            samples=[{"path": rel_path, "technical_detail": str(exc)}],
+        )
+    return outcome
+
+
+def _generate_video_work_items(
+    config: Config,
+    items: list[_VideoWorkItem],
+) -> dict[str, object]:
+    """Process videos concurrently and aggregate their outcomes in item order."""
+    processed = 0
+    frames_processed = 0
+    created = 0
+    errors = 0
+    samples: list[dict[str, str]] = []
+
+    with ThreadPoolExecutor(max_workers=_video_job_worker_count()) as executor:
+        for outcome in executor.map(lambda item: _generate_video_work_item(config, item), items):
+            processed += 1
+            frames_processed += outcome.frames_processed
+            created += outcome.created
+            errors += outcome.errors
+            for sample in outcome.samples:
+                if len(samples) < 10:
+                    samples.append(sample)
+
+    return {
+        "processed": processed,
+        "frames_processed": frames_processed,
+        "created": created,
+        "reused": 0,
+        "errors": errors,
+        "error_samples": samples,
+    }
+
+
+def _video_work_items(*, poster_rows=(), frame_rows=()) -> list[_VideoWorkItem]:
+    """Group poster and frame work rows by video, keeping work-row order."""
+    items: dict[int, _VideoWorkItem] = {}
+
+    def item_for(row) -> _VideoWorkItem:
+        media_id = int(row["id"])
+        item = items.get(media_id)
+        if item is None:
+            item = _VideoWorkItem(
+                media_id=media_id,
+                rel_path=str(row["rel_path"]),
+                size_bytes=int(row["size_bytes"]),
+                modified_time=float(row["modified_time"]),
+            )
+            items[media_id] = item
+        return item
+
+    for row in poster_rows:
+        item_for(row).poster = True
+    for row in frame_rows:
+        item_for(row).variants.append(str(row["variant_key"]))
+    return list(items.values())
 
 
 def generate_video_frames_for_scope(
@@ -1128,124 +1333,17 @@ def generate_video_frames_for_scope(
 ) -> dict[str, object]:
     """Generate only missing, stale, failed, or outdated protected video frames.
 
-    Several videos are processed at once (see _video_job_worker_count); the
-    frames of one video are generated sequentially by one worker. Results are
+    Several videos are processed at once (see _video_job_worker_count). The
+    missing frames of one video are extracted with one ffmpeg call. Results are
     aggregated in video order, so the payload does not depend on timing.
     """
     started_at = time.time()
     ensure_thumbnail_cache_directories(config)
 
-    rows = _video_frame_work_rows(config, branch_rel_path=branch_rel_path)
-    grouped: dict[int, dict[str, object]] = {}
-    for row in rows:
-        media_id = int(row["id"])
-        item = grouped.setdefault(media_id, {
-            "id": media_id,
-            "rel_path": str(row["rel_path"]),
-            "size_bytes": int(row["size_bytes"]),
-            "modified_time": float(row["modified_time"]),
-            "variants": [],
-        })
-        item["variants"].append(str(row["variant_key"]))
-
-    def generate_video(item: dict[str, object]) -> _VideoFramesOutcome:
-        """Generate the missing frames of one video and count the outcome."""
-        outcome = _VideoFramesOutcome()
-        rel_path = str(item["rel_path"])
-        media_id = int(item["id"])
-        source_size = int(item["size_bytes"])
-        source_modified = float(item["modified_time"])
-        variants = list(item["variants"])
-
-        try:
-            source_path = safe_join_catalog_path(config.data_root, rel_path, allow_root=False)
-            if not source_path.exists() or not source_path.is_file():
-                raise ThumbnailCacheError(f"Source video is not available on disk: {rel_path}")
-
-            stat_result = source_path.stat()
-            if not _source_metadata_matches(
-                source_size,
-                source_modified,
-                int(stat_result.st_size),
-                float(stat_result.st_mtime),
-            ):
-                raise ThumbnailCacheError(
-                    f"Source video changed after the last catalog update: {rel_path}. "
-                    "Run catalog update first."
-                )
-
-            try:
-                tools = require_video_tools()
-                duration = _probe_video_duration(
-                    tools.ffprobe_path,
-                    source_path,
-                    timeout_seconds=min(config.ffmpeg_timeout_seconds, 30),
-                )
-            except VideoToolsError:
-                duration = None
-
-            for variant_key in variants:
-                frame_index = VIDEO_FRAME_VARIANT_KEYS.index(variant_key) + 1
-                outcome.frames_processed += 1
-                try:
-                    _generate_video_frame(
-                        config,
-                        media_id=media_id,
-                        rel_path=rel_path,
-                        source_path=source_path,
-                        source_size_bytes=source_size,
-                        source_modified_time=source_modified,
-                        variant_key=variant_key,
-                        seek_time=_video_frame_seek_time(duration, frame_index),
-                    )
-                    outcome.created += 1
-                except Exception as exc:  # noqa: BLE001
-                    outcome.errors += 1
-                    outcome.samples.append({"path": rel_path, "frame": variant_key, "technical_detail": str(exc)})
-                    try:
-                        output_rel_path = _output_relative_path(
-                            config,
-                            _video_frame_destination(
-                                config,
-                                rel_path=rel_path,
-                                source_size_bytes=source_size,
-                                source_modified_time=source_modified,
-                                variant_key=variant_key,
-                            ),
-                        )
-                        _record_video_frame_error(
-                            config,
-                            media_id=media_id,
-                            variant_key=variant_key,
-                            output_rel_path=output_rel_path,
-                            source_size_bytes=source_size,
-                            source_modified_time=source_modified,
-                            message=str(exc),
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
-        except Exception as exc:  # noqa: BLE001
-            outcome.errors += len(variants)
-            outcome.frames_processed += len(variants)
-            outcome.samples.append({"path": rel_path, "technical_detail": str(exc)})
-        return outcome
-
-    processed = 0
-    frames_processed = 0
-    created = 0
-    reused = 0
-    errors = 0
-    samples: list[dict[str, str]] = []
-
-    with ThreadPoolExecutor(max_workers=_video_job_worker_count()) as executor:
-        for outcome in executor.map(generate_video, grouped.values()):
-            processed += 1
-            frames_processed += outcome.frames_processed
-            created += outcome.created
-            errors += outcome.errors
-            for sample in outcome.samples:
-                if len(samples) < 10:
-                    samples.append(sample)
+    items = _video_work_items(
+        frame_rows=_video_frame_work_rows(config, branch_rel_path=branch_rel_path),
+    )
+    counts = _generate_video_work_items(config, items)
 
     duration = time.time() - started_at
     return {
@@ -1254,17 +1352,51 @@ def generate_video_frames_for_scope(
         "cache_class": "protected",
         "scope": "branch" if branch_rel_path else "full",
         "branch": branch_rel_path,
-        "processed": processed,
-        "frames_processed": frames_processed,
-        "created": created,
-        "reused": reused,
-        "errors": errors,
-        "error_samples": samples,
+        **counts,
         "frame_positions_percent": [35, 50, 65, 80],
         "duration_seconds": duration,
         "writes": {
             "catalog_db": "thumbnails",
             "cache_files": str(config.video_frame_cache_dir),
+            "source_media": False,
+            "protected_cache_deleted": False,
+        },
+    }
+
+
+def generate_video_previews_for_scope(
+    config: Config,
+    *,
+    branch_rel_path: str = "",
+) -> dict[str, object]:
+    """Generate missing video posters and hover frames in one pass per video.
+
+    Used by preview preparation. Each video needs one ffprobe and one ffmpeg
+    call for its poster and missing frames together. processed counts videos,
+    frames_processed counts hover frames, and created/errors count images.
+    """
+    started_at = time.time()
+    ensure_thumbnail_cache_directories(config)
+
+    items = _video_work_items(
+        poster_rows=_video_poster_work_rows(config, branch_rel_path=branch_rel_path),
+        frame_rows=_video_frame_work_rows(config, branch_rel_path=branch_rel_path),
+    )
+    counts = _generate_video_work_items(config, items)
+
+    duration = time.time() - started_at
+    return {
+        "thumbnail_job": True,
+        "thumbnail_type": "video_previews",
+        "cache_class": "protected",
+        "scope": "branch" if branch_rel_path else "full",
+        "branch": branch_rel_path,
+        **counts,
+        "frame_positions_percent": [35, 50, 65, 80],
+        "duration_seconds": duration,
+        "writes": {
+            "catalog_db": "thumbnails",
+            "cache_files": f"{config.video_poster_cache_dir}, {config.video_frame_cache_dir}",
             "source_media": False,
             "protected_cache_deleted": False,
         },
@@ -3333,6 +3465,372 @@ def _ready_existing_video_frame(
     return None
 
 
+@dataclass(frozen=True)
+class _VideoImageRequest:
+    """One video poster or hover frame to extract from a video."""
+
+    thumbnail_type: Literal["video_poster", "video_frame"]
+    variant_key: str
+    seek_time: float
+
+
+@dataclass(frozen=True)
+class _VideoImageTarget:
+    request: _VideoImageRequest
+    destination: Path
+    output_rel_path: str
+    previous_path: Path | None
+    raw_frame_path: Path
+    temp_path: Path
+
+
+def _video_image_target(
+    config: Config,
+    *,
+    media_id: int,
+    rel_path: str,
+    source_size_bytes: int,
+    source_modified_time: float,
+    request: _VideoImageRequest,
+) -> _VideoImageTarget:
+    if request.thumbnail_type == "video_poster":
+        destination = _video_poster_destination(
+            config,
+            rel_path=rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+        )
+    else:
+        destination = _video_frame_destination(
+            config,
+            rel_path=rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+            variant_key=request.variant_key,
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    return _VideoImageTarget(
+        request=request,
+        destination=destination,
+        output_rel_path=_output_relative_path(config, destination),
+        previous_path=_previous_thumbnail_path(
+            config,
+            media_id=media_id,
+            thumbnail_type=request.thumbnail_type,
+            variant_key=request.variant_key,
+        ),
+        raw_frame_path=_unique_thumbnail_frame_path(destination),
+        temp_path=_unique_thumbnail_temp_path(destination),
+    )
+
+
+def _video_extraction_command(
+    config: Config,
+    ffmpeg_path: str,
+    source_path: Path,
+    targets: list[_VideoImageTarget],
+) -> list[str]:
+    """Build one ffmpeg call that extracts every target image from one video.
+
+    Each image gets its own input with the same keyframe seek options as a
+    single-image extraction, so the images match one-call-per-image output.
+    V selects a video stream that is not an attached picture (cover art).
+    """
+    command = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-y"]
+    for target in targets:
+        command.extend([
+            "-ss",
+            f"{target.request.seek_time:.3f}",
+            *VIDEO_KEYFRAME_INPUT_OPTIONS,
+            "-threads",
+            "1",
+            "-i",
+            str(source_path),
+        ])
+    scale_filter = _ffmpeg_frame_scale_filter(config)
+    for index, target in enumerate(targets):
+        command.extend([
+            "-map",
+            f"{index}:V:0",
+            "-vf",
+            scale_filter,
+            "-frames:v",
+            "1",
+            str(target.raw_frame_path),
+        ])
+    return command
+
+
+def _run_video_extraction(
+    config: Config,
+    ffmpeg_path: str,
+    source_path: Path,
+    targets: list[_VideoImageTarget],
+) -> str | None:
+    """Run one extraction call; return ffmpeg's error detail, or None on success."""
+    completed = subprocess.run(
+        _video_extraction_command(config, ffmpeg_path, source_path, targets),
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=config.ffmpeg_timeout_seconds,
+    )
+    if completed.returncode != 0:
+        return (completed.stderr or completed.stdout or "").strip() or "unknown error"
+    return None
+
+
+def _raw_frame_ready(target: _VideoImageTarget) -> bool:
+    return target.raw_frame_path.exists() and target.raw_frame_path.is_file()
+
+
+def _video_image_missing_message(target: _VideoImageTarget, rel_path: str, failure: str | None) -> str:
+    request = target.request
+    if request.thumbnail_type == "video_poster":
+        if failure is not None:
+            return f"ffmpeg did not create a video poster for {rel_path}: {failure}"
+        return f"ffmpeg did not produce an output frame for {rel_path}"
+    if failure is not None:
+        return f"ffmpeg did not create video frame {request.variant_key} for {rel_path}: {failure}"
+    return f"ffmpeg did not produce output video frame {request.variant_key} for {rel_path}"
+
+
+def _video_image_timeout_message(config: Config, target: _VideoImageTarget, rel_path: str) -> str:
+    timeout = config.ffmpeg_timeout_seconds
+    if target.request.thumbnail_type == "video_poster":
+        return f"ffmpeg exceeded the {timeout} s timeout while creating a poster: {rel_path}"
+    return (
+        f"ffmpeg exceeded the {timeout} s timeout while creating video frame "
+        f"{target.request.variant_key}: {rel_path}"
+    )
+
+
+def _video_image_label(request: _VideoImageRequest) -> str:
+    if request.thumbnail_type == "video_poster":
+        return "video poster"
+    return f"video frame {request.variant_key}"
+
+
+def _store_video_image(
+    config: Config,
+    target: _VideoImageTarget,
+    *,
+    media_id: int,
+    source_size_bytes: int,
+    source_modified_time: float,
+) -> ThumbnailResource:
+    """Encode one extracted raw frame to WebP and record its ready row."""
+    request = target.request
+    if request.thumbnail_type == "video_poster":
+        quality = VIDEO_POSTER_QUALITY
+        algorithm_version = VIDEO_POSTER_ALGORITHM_VERSION
+    else:
+        quality = VIDEO_FRAME_QUALITY
+        algorithm_version = VIDEO_FRAME_ALGORITHM_VERSION
+
+    width, height = _write_webp_thumbnail(
+        target.raw_frame_path,
+        target.temp_path,
+        box_width=config.video_preview_width,
+        box_height=config.video_preview_width,
+        quality=quality,
+    )
+
+    target.temp_path.replace(target.destination)
+    _delete_replaced_thumbnail_file(target.previous_path, target.destination)
+    file_size = target.destination.stat().st_size
+    now = time.time()
+
+    with open_database(config.db_path, read_only=False) as connection:
+        connection.execute(
+            """
+            INSERT INTO thumbnails (
+                media_id,
+                thumbnail_type,
+                cache_class,
+                variant_key,
+                output_rel_path,
+                width,
+                height,
+                file_size_bytes,
+                source_size_bytes,
+                source_modified_time,
+                algorithm_version,
+                status,
+                created_at,
+                updated_at,
+                last_used_at,
+                error_message
+            )
+            VALUES (?, ?, 'protected', ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, NULL)
+            ON CONFLICT(media_id, thumbnail_type, variant_key) DO UPDATE SET
+                cache_class = excluded.cache_class,
+                output_rel_path = excluded.output_rel_path,
+                width = excluded.width,
+                height = excluded.height,
+                file_size_bytes = excluded.file_size_bytes,
+                source_size_bytes = excluded.source_size_bytes,
+                source_modified_time = excluded.source_modified_time,
+                algorithm_version = excluded.algorithm_version,
+                status = 'ready',
+                updated_at = excluded.updated_at,
+                last_used_at = excluded.last_used_at,
+                error_message = NULL
+            """,
+            (
+                media_id,
+                request.thumbnail_type,
+                request.variant_key,
+                target.output_rel_path,
+                int(width),
+                int(height),
+                int(file_size),
+                int(source_size_bytes),
+                float(source_modified_time),
+                algorithm_version,
+                now,
+                now,
+                now,
+            ),
+        )
+        connection.commit()
+
+    return ThumbnailResource(
+        rel_path=target.output_rel_path,
+        thumbnail_type=request.thumbnail_type,
+        cache_class="protected",
+        variant_key=request.variant_key,
+        filesystem_path=target.destination,
+        file_name=target.destination.name,
+        mime_type="image/webp",
+        size_bytes=int(file_size),
+        width=int(width),
+        height=int(height),
+        generated=True,
+    )
+
+
+def _record_video_image_error(
+    config: Config,
+    *,
+    media_id: int,
+    request: _VideoImageRequest,
+    output_rel_path: str,
+    source_size_bytes: int,
+    source_modified_time: float,
+    message: str,
+) -> None:
+    if request.thumbnail_type == "video_poster":
+        _record_video_poster_error(
+            config,
+            media_id=media_id,
+            output_rel_path=output_rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+            message=message,
+        )
+    else:
+        _record_video_frame_error(
+            config,
+            media_id=media_id,
+            variant_key=request.variant_key,
+            output_rel_path=output_rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+            message=message,
+        )
+
+
+def _extract_video_images(
+    config: Config,
+    ffmpeg_path: str,
+    *,
+    media_id: int,
+    rel_path: str,
+    source_path: Path,
+    source_size_bytes: int,
+    source_modified_time: float,
+    requests: list[_VideoImageRequest],
+) -> list[ThumbnailResource | str]:
+    """Extract posters and hover frames of one video with one ffmpeg call.
+
+    Returns one outcome per request, in request order: the stored resource, or
+    the error message recorded for that image. An image the shared call did not
+    produce is retried with its own single-input call, so one failing seek does
+    not affect the other images. A timeout is not retried.
+    """
+    _require_pyvips()
+    targets = [
+        _video_image_target(
+            config,
+            media_id=media_id,
+            rel_path=rel_path,
+            source_size_bytes=source_size_bytes,
+            source_modified_time=source_modified_time,
+            request=request,
+        )
+        for request in requests
+    ]
+    outcomes: list[ThumbnailResource | str | None] = [None] * len(targets)
+
+    try:
+        try:
+            failure = _run_video_extraction(config, ffmpeg_path, source_path, targets)
+            for index, target in enumerate(targets):
+                if _raw_frame_ready(target):
+                    continue
+                if len(targets) > 1:
+                    failure = _run_video_extraction(config, ffmpeg_path, source_path, [target])
+                    if _raw_frame_ready(target):
+                        continue
+                outcomes[index] = _video_image_missing_message(target, rel_path, failure)
+        except subprocess.TimeoutExpired:
+            for index, target in enumerate(targets):
+                if outcomes[index] is None and not _raw_frame_ready(target):
+                    outcomes[index] = _video_image_timeout_message(config, target, rel_path)
+
+        for index, target in enumerate(targets):
+            if outcomes[index] is not None:
+                continue
+            try:
+                outcomes[index] = _store_video_image(
+                    config,
+                    target,
+                    media_id=media_id,
+                    source_size_bytes=source_size_bytes,
+                    source_modified_time=source_modified_time,
+                )
+            except ThumbnailCacheError as exc:
+                outcomes[index] = str(exc)
+            except Exception as exc:  # noqa: BLE001 - one image failure must not stop the others
+                outcomes[index] = (
+                    f"Could not create {_video_image_label(target.request)} for {rel_path}: {exc}"
+                )
+
+        for index, target in enumerate(targets):
+            outcome = outcomes[index]
+            if isinstance(outcome, str):
+                _record_video_image_error(
+                    config,
+                    media_id=media_id,
+                    request=target.request,
+                    output_rel_path=target.output_rel_path,
+                    source_size_bytes=source_size_bytes,
+                    source_modified_time=source_modified_time,
+                    message=outcome,
+                )
+    finally:
+        for target in targets:
+            for path in (target.raw_frame_path, target.temp_path):
+                try:
+                    if path.exists():
+                        path.unlink()
+                except OSError:
+                    pass
+
+    return [outcome for outcome in outcomes if outcome is not None]
+
+
 def _generate_video_poster(
     config: Config,
     *,
@@ -3363,376 +3861,29 @@ def _generate_video_poster(
         )
         raise ThumbnailCacheError(str(exc)) from exc
 
-    destination = _video_poster_destination(
-        config,
-        rel_path=rel_path,
-        source_size_bytes=source_size_bytes,
-        source_modified_time=source_modified_time,
+    duration = _probe_video_duration(
+        tools.ffprobe_path,
+        source_path,
+        timeout_seconds=min(config.ffmpeg_timeout_seconds, 30),
     )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    output_rel_path = _output_relative_path(config, destination)
-    raw_frame_path = _unique_thumbnail_frame_path(destination)
-    temp_path = _unique_thumbnail_temp_path(destination)
-    previous_path = _previous_thumbnail_path(
-        config,
-        media_id=media_id,
+    request = _VideoImageRequest(
         thumbnail_type="video_poster",
         variant_key=VIDEO_POSTER_VARIANT_KEY,
+        seek_time=_video_poster_seek_time(duration),
     )
-
-    try:
-        duration = _probe_video_duration(
-            tools.ffprobe_path,
-            source_path,
-            timeout_seconds=min(config.ffmpeg_timeout_seconds, 30),
-        )
-        seek_time = _video_poster_seek_time(duration)
-
-        command = [
-            tools.ffmpeg_path,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-ss",
-            f"{seek_time:.3f}",
-            *VIDEO_KEYFRAME_INPUT_OPTIONS,
-            "-threads",
-            "1",
-            "-i",
-            str(source_path),
-            "-vf",
-            _ffmpeg_frame_scale_filter(config),
-            "-frames:v",
-            "1",
-            str(raw_frame_path),
-        ]
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=config.ffmpeg_timeout_seconds,
-        )
-        if completed.returncode != 0:
-            stderr = (completed.stderr or completed.stdout or "").strip()
-            raise ThumbnailCacheError(
-                f"ffmpeg did not create a video poster for {rel_path}: {stderr or 'unknown error'}"
-            )
-        if not raw_frame_path.exists() or not raw_frame_path.is_file():
-            raise ThumbnailCacheError(f"ffmpeg did not produce an output frame for {rel_path}")
-
-        width, height = _write_webp_thumbnail(
-            raw_frame_path,
-            temp_path,
-            box_width=config.video_preview_width,
-            box_height=config.video_preview_width,
-            quality=VIDEO_POSTER_QUALITY,
-        )
-
-        temp_path.replace(destination)
-        _delete_replaced_thumbnail_file(previous_path, destination)
-        file_size = destination.stat().st_size
-        now = time.time()
-
-        with open_database(config.db_path, read_only=False) as connection:
-            connection.execute(
-                """
-                INSERT INTO thumbnails (
-                    media_id,
-                    thumbnail_type,
-                    cache_class,
-                    variant_key,
-                    output_rel_path,
-                    width,
-                    height,
-                    file_size_bytes,
-                    source_size_bytes,
-                    source_modified_time,
-                    algorithm_version,
-                    status,
-                    created_at,
-                    updated_at,
-                    last_used_at,
-                    error_message
-                )
-                VALUES (?, 'video_poster', 'protected', ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, NULL)
-                ON CONFLICT(media_id, thumbnail_type, variant_key) DO UPDATE SET
-                    cache_class = excluded.cache_class,
-                    output_rel_path = excluded.output_rel_path,
-                    width = excluded.width,
-                    height = excluded.height,
-                    file_size_bytes = excluded.file_size_bytes,
-                    source_size_bytes = excluded.source_size_bytes,
-                    source_modified_time = excluded.source_modified_time,
-                    algorithm_version = excluded.algorithm_version,
-                    status = 'ready',
-                    updated_at = excluded.updated_at,
-                    last_used_at = excluded.last_used_at,
-                    error_message = NULL
-                """,
-                (
-                    media_id,
-                    VIDEO_POSTER_VARIANT_KEY,
-                    output_rel_path,
-                    int(width),
-                    int(height),
-                    int(file_size),
-                    int(source_size_bytes),
-                    float(source_modified_time),
-                    VIDEO_POSTER_ALGORITHM_VERSION,
-                    now,
-                    now,
-                    now,
-                ),
-            )
-            connection.commit()
-
-        return ThumbnailResource(
-            rel_path=output_rel_path,
-            thumbnail_type="video_poster",
-            cache_class="protected",
-            variant_key=VIDEO_POSTER_VARIANT_KEY,
-            filesystem_path=destination,
-            file_name=destination.name,
-            mime_type="image/webp",
-            size_bytes=int(file_size),
-            width=int(width),
-            height=int(height),
-            generated=True,
-        )
-
-    except subprocess.TimeoutExpired as exc:
-        message = f"ffmpeg exceeded the {config.ffmpeg_timeout_seconds} s timeout while creating a poster: {rel_path}"
-        _record_video_poster_error(
-            config,
-            media_id=media_id,
-            output_rel_path=output_rel_path,
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            message=message,
-        )
-        raise ThumbnailCacheError(message) from exc
-    except Exception as exc:
-        _record_video_poster_error(
-            config,
-            media_id=media_id,
-            output_rel_path=output_rel_path,
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            message=str(exc),
-        )
-        if isinstance(exc, ThumbnailCacheError):
-            raise
-        raise ThumbnailCacheError(f"Could not create video poster for {rel_path}: {exc}") from exc
-    finally:
-        for path in (raw_frame_path, temp_path):
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
-
-
-def _generate_video_frame(
-    config: Config,
-    *,
-    media_id: int,
-    rel_path: str,
-    source_path: Path,
-    source_size_bytes: int,
-    source_modified_time: float,
-    variant_key: str,
-    seek_time: float,
-) -> ThumbnailResource:
-    _require_pyvips()
-
-    try:
-        tools = require_video_tools()
-    except VideoToolsError as exc:
-        destination = _video_frame_destination(
-            config,
-            rel_path=rel_path,
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            variant_key=variant_key,
-        )
-        _record_video_frame_error(
-            config,
-            media_id=media_id,
-            variant_key=variant_key,
-            output_rel_path=_output_relative_path(config, destination),
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            message=str(exc),
-        )
-        raise ThumbnailCacheError(str(exc)) from exc
-
-    destination = _video_frame_destination(
+    outcome = _extract_video_images(
         config,
+        tools.ffmpeg_path,
+        media_id=media_id,
         rel_path=rel_path,
+        source_path=source_path,
         source_size_bytes=source_size_bytes,
         source_modified_time=source_modified_time,
-        variant_key=variant_key,
-    )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    output_rel_path = _output_relative_path(config, destination)
-    raw_frame_path = _unique_thumbnail_frame_path(destination)
-    temp_path = _unique_thumbnail_temp_path(destination)
-    previous_path = _previous_thumbnail_path(
-        config,
-        media_id=media_id,
-        thumbnail_type="video_frame",
-        variant_key=variant_key,
-    )
-
-    try:
-        command = [
-            tools.ffmpeg_path,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-ss",
-            f"{seek_time:.3f}",
-            *VIDEO_KEYFRAME_INPUT_OPTIONS,
-            "-threads",
-            "1",
-            "-i",
-            str(source_path),
-            "-vf",
-            _ffmpeg_frame_scale_filter(config),
-            "-frames:v",
-            "1",
-            str(raw_frame_path),
-        ]
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=config.ffmpeg_timeout_seconds,
-        )
-        if completed.returncode != 0:
-            stderr = (completed.stderr or completed.stdout or "").strip()
-            raise ThumbnailCacheError(
-                f"ffmpeg did not create video frame {variant_key} for {rel_path}: {stderr or 'unknown error'}"
-            )
-        if not raw_frame_path.exists() or not raw_frame_path.is_file():
-            raise ThumbnailCacheError(f"ffmpeg did not produce output video frame {variant_key} for {rel_path}")
-
-        width, height = _write_webp_thumbnail(
-            raw_frame_path,
-            temp_path,
-            box_width=config.video_preview_width,
-            box_height=config.video_preview_width,
-            quality=VIDEO_FRAME_QUALITY,
-        )
-
-        temp_path.replace(destination)
-        _delete_replaced_thumbnail_file(previous_path, destination)
-        file_size = destination.stat().st_size
-        now = time.time()
-
-        with open_database(config.db_path, read_only=False) as connection:
-            connection.execute(
-                """
-                INSERT INTO thumbnails (
-                    media_id,
-                    thumbnail_type,
-                    cache_class,
-                    variant_key,
-                    output_rel_path,
-                    width,
-                    height,
-                    file_size_bytes,
-                    source_size_bytes,
-                    source_modified_time,
-                    algorithm_version,
-                    status,
-                    created_at,
-                    updated_at,
-                    last_used_at,
-                    error_message
-                )
-                VALUES (?, 'video_frame', 'protected', ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, NULL)
-                ON CONFLICT(media_id, thumbnail_type, variant_key) DO UPDATE SET
-                    cache_class = excluded.cache_class,
-                    output_rel_path = excluded.output_rel_path,
-                    width = excluded.width,
-                    height = excluded.height,
-                    file_size_bytes = excluded.file_size_bytes,
-                    source_size_bytes = excluded.source_size_bytes,
-                    source_modified_time = excluded.source_modified_time,
-                    algorithm_version = excluded.algorithm_version,
-                    status = 'ready',
-                    updated_at = excluded.updated_at,
-                    last_used_at = excluded.last_used_at,
-                    error_message = NULL
-                """,
-                (
-                    media_id,
-                    variant_key,
-                    output_rel_path,
-                    int(width),
-                    int(height),
-                    int(file_size),
-                    int(source_size_bytes),
-                    float(source_modified_time),
-                    VIDEO_FRAME_ALGORITHM_VERSION,
-                    now,
-                    now,
-                    now,
-                ),
-            )
-            connection.commit()
-
-        return ThumbnailResource(
-            rel_path=output_rel_path,
-            thumbnail_type="video_frame",
-            cache_class="protected",
-            variant_key=variant_key,
-            filesystem_path=destination,
-            file_name=destination.name,
-            mime_type="image/webp",
-            size_bytes=int(file_size),
-            width=int(width),
-            height=int(height),
-            generated=True,
-        )
-
-    except subprocess.TimeoutExpired as exc:
-        message = f"ffmpeg exceeded the {config.ffmpeg_timeout_seconds} s timeout while creating video frame {variant_key}: {rel_path}"
-        _record_video_frame_error(
-            config,
-            media_id=media_id,
-            variant_key=variant_key,
-            output_rel_path=output_rel_path,
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            message=message,
-        )
-        raise ThumbnailCacheError(message) from exc
-    except Exception as exc:
-        _record_video_frame_error(
-            config,
-            media_id=media_id,
-            variant_key=variant_key,
-            output_rel_path=output_rel_path,
-            source_size_bytes=source_size_bytes,
-            source_modified_time=source_modified_time,
-            message=str(exc),
-        )
-        if isinstance(exc, ThumbnailCacheError):
-            raise
-        raise ThumbnailCacheError(f"Could not create video frame {variant_key} for {rel_path}: {exc}") from exc
-    finally:
-        for path in (raw_frame_path, temp_path):
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                pass
+        requests=[request],
+    )[0]
+    if isinstance(outcome, str):
+        raise ThumbnailCacheError(outcome)
+    return outcome
 
 
 def cleanup_dynamic_thumbnail_cache(

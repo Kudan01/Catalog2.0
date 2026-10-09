@@ -317,19 +317,18 @@ The current public workflow requires an installed Python, creating a `.venv`, an
 - Task 12 covers the release ZIP and public release hygiene.
 - Task 18 covers launcher/runtime lifecycle.
 
-## 24. Video thumbnail generation performance — PENDING
+## 24. Video thumbnail generation performance — COMPLETED
 
 ### Context
 
-The benchmark was run on Windows outside the repository on a machine with 32 logical cores and ffmpeg 8.1. No benchmark tooling is added to the repository.
+The benchmark was run on Windows outside the repository. No benchmark tooling is added to the repository. Results are relative to the pipeline before this task.
 
-HDD (5,400 rpm), cold reads:
+Disk-bound run, cold reads:
 
-- Current pipeline: 3.0 s per video.
-- One ffmpeg call per video with keyframe extraction: 0.87 s per video (3.5×).
-- The same with 2 videos at once: 0.75 s (4.0×); with 4 videos at once: 0.48 s (6.3×).
+- One ffmpeg call per video with keyframe extraction: 3.5× faster.
+- The same with 2 videos at once: 4.0×; with 4 videos at once: 6.3×.
 
-SSD:
+Run with faster storage:
 
 - Keyframe extraction with one ffmpeg call per image: 2.5× (1 video at once) to 8.7× (4 videos at once).
 - `-noaccurate_seek` alone gave no gain.
@@ -340,12 +339,21 @@ SSD:
 Within the current structure; posters and hover frames remain separate phases. Implemented and validated on Windows; see `docs/DEVELOPMENT_LOG.md` (2026-10-08).
 
 - Poster and frame extraction add `-noaccurate_seek -skip_frame nokey` before `-i` in every path that generates them (preview preparation and folder-preview builds through `video_poster_resource`). `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` are increased.
-- Video poster and frame phases process `min(4, max(1, cpu_count // 4))` videos at once. The cap of 4 comes from measured HDD throughput, not from the CPU. The value is computed when the phase starts, is not stored, and is not a setting (neither in the UI nor in `config.json`).
+- Video poster and frame phases process `min(4, max(1, cpu_count // 4))` videos at once. The cap of 4 comes from measured disk throughput, not from the CPU. The value is computed when the phase starts, is not stored, and is not a setting (neither in the UI nor in `config.json`).
 - `ffmpeg_threads_per_job` is removed completely (config, settings, API, UI, instance setup, tests); ffmpeg runs with `-threads 1`. No transition layer; instances are recreated.
 
-### Step 2 — one ffmpeg call per video — DECISION REQUIRED
+### Step 2 — one ffmpeg call per video — COMPLETED
 
-Merging the poster and the four hover frames into one ffmpeg call per video is a separate decision and is not part of step 1.
+Implemented and validated on Windows; see `docs/DEVELOPMENT_LOG.md` (2026-10-09).
+
+Decision:
+
+- The poster and missing hover frames of one video are extracted with one ffmpeg call: one `-ss … -noaccurate_seek -skip_frame nokey -threads 1 -i` input per image and one output per image via `-map i:V:0` (a video stream that is not cover art), with the same scale filter and pyvips/WebP encoding as step 1.
+- Images stay identical to step 1, so `VIDEO_POSTER_ALGORITHM_VERSION` and `VIDEO_FRAME_ALGORITHM_VERSION` are not changed and step-1 previews are not regenerated.
+- An image the shared call did not produce is retried with its own single-input call; when one image fails, the others are stored and the error is recorded only for that image. A timeout is not retried.
+- Users: `_generate_video_poster` (one image; also `video_poster_resource` for folder previews), the video-frames job (missing frames of a video at once), and preview preparation.
+- Preview preparation replaces the separate video-poster and video-frame phases with one `video_previews` phase with the same keys: `processed` counts videos, `frames_processed` counts hover frames, `created`/`reused`/`errors` count images, and `duration_seconds` is the real pass time. ffprobe runs once per video. As a result, `processed_media` in preview-preparation totals counts each video once instead of twice. The GIF phase is unchanged.
+- The separate video-poster and video-frames jobs (service buttons for the whole catalog and the current folder) and their results are unchanged. Video concurrency stays at `min(4, max(1, cpu_count // 4))`. The frontend is unchanged.
 
 ### Constraint
 

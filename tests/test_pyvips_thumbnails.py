@@ -21,6 +21,7 @@ from catalog_app.thumbnail_cache import (
     VIDEO_POSTER_ALGORITHM_VERSION,
     _delete_replaced_thumbnail_file,
     _ffmpeg_frame_scale_filter,
+    _video_extraction_command,
     _ready_existing_gif_preview,
     _ready_existing_photo_tile,
     _webp_compatible_image,
@@ -137,9 +138,18 @@ class PyvipsWriterTests(unittest.TestCase):
             _ffmpeg_frame_scale_filter(config),
         )
 
-    def test_both_video_generators_pass_the_scale_filter(self) -> None:
-        source = THUMBNAIL_CACHE_PY.read_text(encoding="utf-8")
-        self.assertEqual(2, source.count('"-vf",\n            _ffmpeg_frame_scale_filter(config),'))
+    def test_video_extraction_passes_the_scale_filter_for_every_output(self) -> None:
+        config = types.SimpleNamespace(video_preview_width=640)
+        targets = [
+            types.SimpleNamespace(
+                request=types.SimpleNamespace(seek_time=float(index)),
+                raw_frame_path=Path(f"raw_{index}.png"),
+            )
+            for index in range(3)
+        ]
+        command = _video_extraction_command(config, "ffmpeg", Path("clip.mp4"), targets)
+        self.assertEqual(3, command.count("-vf"))
+        self.assertEqual(3, command.count(_ffmpeg_frame_scale_filter(config)))
 
     def test_pillow_is_not_used(self) -> None:
         source = THUMBNAIL_CACHE_PY.read_text(encoding="utf-8")
