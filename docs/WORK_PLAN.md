@@ -426,21 +426,34 @@ Updating the whole catalog is slow for large catalogs, especially the first (col
 
 First measure a cold run with a timing breakdown (the activation service output), and only then propose changes.
 
-## 28. Media pager above media cards — PENDING
+## 28. Folder page simplification — COMPLETED
 
-### Target
+Media pagination gained a top copy above the media cards using the child-folder pager pattern. The folder page was simplified: compact symbol pagers hidden for a single page, counts next to section titles, a separator before Media, a one-line folder header summary, folder cards without text counts, a plain-text breadcrumb with a non-clickable current item, and underlined filter tabs, adjusted for all themes.
 
-Media pagination is available at the top center above the media cards as well as at the bottom, so the user does not have to scroll down to reach the next page.
+Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09).
 
-### Findings
+## 29. Folder card layout — PENDING
 
-- Child-folder pagination already has a top and a bottom copy with shared state and navigation (task 2, `data-child-pager`, `syncChildPagerControls`).
-- Media pagination exists once and is wired through fixed IDs (`firstPage`, `prevPage`, `pageJumpInput`, …).
-- The change converts media pagination to the same pattern and adds a top copy, without new pagination logic.
+### Problem
 
-### To assess during planning
+After the text counts were removed, folder cards keep an empty left column between the folder name and the buttons.
 
-- Behavior in Search and Favorites.
-- Updating the history tests that refer to the media pagination IDs.
-- Whether the top controls are shown when there is only one page.
-- Visual clutter in folders that contain both subfolders and media, where two top pagers will be visible.
+### Constraints
+
+- A folder has 6 previews (`FOLDER_PREVIEW_REQUESTED_COUNT`).
+- The card switches between the wide and compact layout (`folderCardWideRequiredWidth`).
+- On the root page, the root name appears both in the breadcrumb and in the heading.
+
+### Approach
+
+Design and try the layout before implementation.
+
+## 30. Photo modal — selection flash on navigation — PENDING
+
+### Problem
+
+When clicking the edge of the photo modal to navigate to the previous or next photo, the old photo briefly flashes blue like a browser selection. The modal code has not changed.
+
+### Possible solution
+
+`user-select: none` on the photo area.

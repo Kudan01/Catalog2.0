@@ -253,14 +253,38 @@ h2 { font-size: 17px; }
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  align-items: baseline;
+  gap: 4px 8px;
   margin-bottom: 14px;
   color: var(--muted);
 }
 
-.breadcrumb button {
-  border-radius: 999px;
-  padding: 5px 9px;
+/* Breadcrumb items are plain text links. The :root prefix keeps them flat
+   against the theme-specific button rules. */
+:root .content .breadcrumb button {
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 2px 0;
+}
+
+:root .content .breadcrumb button:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+:root .content .breadcrumb button:disabled {
+  color: var(--text);
+  font-weight: 700;
+  opacity: 1;
+  cursor: default;
+  text-decoration: none;
+}
+
+.breadcrumb-separator {
+  color: var(--muted);
 }
 
 .content-head {
@@ -320,24 +344,59 @@ h2 { font-size: 17px; }
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 0 16px;
+  gap: 4px 20px;
+  padding: 8px 0 0;
   border-top: 1px solid rgba(255,255,255,.08);
   border-bottom: 1px solid rgba(255,255,255,.08);
   margin-bottom: 16px;
 }
 
-.tab.active {
-  background: var(--accent);
-  border-color: var(--accent);
+/* Filters are underlined tabs: no frame or background; the active filter has
+   an accent underline and stronger text. The :root prefix keeps them flat
+   against the theme-specific button rules. */
+:root .tabs .tab {
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 6px 2px 8px;
+}
+
+:root .tabs .tab:hover {
+  color: var(--text);
+  border-bottom-color: var(--line);
+}
+
+:root .tabs .tab.active {
+  color: var(--text);
+  font-weight: 700;
+  background: none;
+  border-bottom-color: var(--accent);
+  box-shadow: none;
 }
 
 .media-head {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: baseline;
   gap: 12px;
   margin-top: 20px;
+}
+
+/* Separates the media section from a visible subfolders section above it. */
+section:not([hidden]) + .media-section {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding-top: 6px;
+}
+
+.section-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
 }
 
 .media-row {
@@ -374,6 +433,19 @@ h2 { font-size: 17px; }
 .media-pager {
   flex-wrap: wrap;
   align-items: center;
+}
+
+.media-pager[hidden] {
+  display: none;
+}
+
+/* Top copy of the media pager: centered directly above the media cards, with
+   the same look as the bottom copy and separate from the right-aligned,
+   compact child-folder pager. */
+.pager.media-pager-top {
+  justify-content: center;
+  margin-top: 10px;
+  margin-bottom: 12px;
 }
 
 .folder-section-head {
@@ -446,12 +518,11 @@ h2 { font-size: 17px; }
 }
 
 .folder-pager .page-jump input {
-  width: 76px;
-  padding: 6px 9px;
+  width: 56px;
+  padding: 6px 6px;
 }
 
-.folder-pager .page-jump button {
-  padding: 6px 9px;
+.folder-pager .page-jump-total {
   font-size: 13px;
 }
 
@@ -467,13 +538,16 @@ h2 { font-size: 17px; }
   gap: 6px;
 }
 
-.page-jump label {
+.page-jump-total {
   color: var(--muted);
-  font-size: 13px;
+  white-space: nowrap;
 }
 
 .page-jump input {
-  width: 86px;
+  width: 64px;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
   color: var(--text);
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -484,6 +558,13 @@ h2 { font-size: 17px; }
 .page-jump input:disabled {
   opacity: .45;
   cursor: default;
+}
+
+/* The jump field shows the current page; hide the number spinner arrows. */
+.page-jump input::-webkit-inner-spin-button,
+.page-jump input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .message {
@@ -1649,21 +1730,6 @@ body.modal-open {
   letter-spacing: .01em;
 }
 
-.folder-card-primary-meta {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-
-.folder-card-detail-meta {
-  display: grid;
-  gap: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
 .folder-card-preview {
   grid-column: 3;
   min-width: 0;
@@ -2267,7 +2333,6 @@ body.layout-compact .folder-preview-thumb {
   border-bottom-color: rgba(139, 105, 74, .16);
 }
 
-:root[data-theme="serious-light"] .tab.active,
 :root[data-theme="serious-light"] .pagination-button.active,
 :root[data-theme="serious-light"] #favoritesView.active {
   color: #fffaf2;
@@ -2430,7 +2495,6 @@ body.layout-compact .folder-preview-thumb {
   border-bottom-color: rgba(149, 168, 189, .12);
 }
 
-:root[data-theme="serious-dark"] .tab.active,
 :root[data-theme="serious-dark"] .pagination-button.active,
 :root[data-theme="serious-dark"] #favoritesView.active {
   color: #041018;
@@ -2600,7 +2664,6 @@ body.layout-compact .folder-preview-thumb {
   border-bottom-color: rgba(255, 151, 73, .13);
 }
 
-:root[data-theme="vivid-content"] .tab.active,
 :root[data-theme="vivid-content"] .pagination-button.active,
 :root[data-theme="vivid-content"] #favoritesView.active {
   color: #260807;
@@ -2807,7 +2870,6 @@ body.layout-compact .folder-preview-thumb {
   border-bottom-color: rgba(166, 42, 70, .20);
 }
 
-:root[data-theme="dark-cinema"] .tab.active,
 :root[data-theme="dark-cinema"] .pagination-button.active,
 :root[data-theme="dark-cinema"] #favoritesView.active {
   color: #fff6ec;
@@ -2989,10 +3051,6 @@ body.layout-compact .folder-preview-thumb {
 }
 
 /* Step 7.7a: compact responsive fix for folder cards and header search wrapping. */
-body.layout-compact .folder-card-detail-meta {
-  display: none;
-}
-
 @media (max-width: 1120px) {
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto;

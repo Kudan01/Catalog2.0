@@ -1033,12 +1033,7 @@ const els = {
   mediaTitle: document.getElementById("mediaTitle"),
   mediaList: document.getElementById("mediaList"),
   pageInfo: document.getElementById("pageInfo"),
-  firstPage: document.getElementById("firstPage"),
-  prevPage: document.getElementById("prevPage"),
-  pageJumpForm: document.getElementById("pageJumpForm"),
-  pageJumpInput: document.getElementById("pageJumpInput"),
-  nextPage: document.getElementById("nextPage"),
-  lastPage: document.getElementById("lastPage"),
+  mediaPagers: Array.from(document.querySelectorAll("[data-media-pager]")),
   message: document.getElementById("message"),
   jobStatusText: document.getElementById("jobStatusText"),
   jobResult: document.getElementById("jobResult"),
@@ -1274,8 +1269,6 @@ function refreshTreeLocaleLabels() {
   if (els.rootPageInfo && state.treeLoaded) {
     els.rootPageInfo.textContent = text("pagination.folders", {
       total: state.rootTotal,
-      page: state.rootPages ? state.rootPage : 0,
-      pages: state.rootPages,
     });
   }
 }
@@ -6010,10 +6003,6 @@ function recursiveCountText(folder) {
   return folderCountSummary(folder.recursive, "count.recursiveSuffix");
 }
 
-function directCountText(folder) {
-  return folderCountSummary(folder.direct, "count.directSuffix");
-}
-
 function safeCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) && number > 0 ? number : 0;
@@ -6038,6 +6027,8 @@ function localizedMediaCount(count, type) {
   return localizedCount(count, `count.${type}.one`, `count.${type}.few`, `count.${type}.many`);
 }
 
+// One-line summary for the open-folder header: non-zero recursive media counts
+// and the recursive folder count.
 function folderPrimarySummary(folder) {
   const r = folderRecursiveCounts(folder);
   const parts = [];
@@ -6046,6 +6037,7 @@ function folderPrimarySummary(folder) {
   if (r.gifs) parts.push(localizedMediaCount(r.gifs, "gif"));
   if (r.videos) parts.push(localizedMediaCount(r.videos, "video"));
   if (r.other) parts.push(localizedMediaCount(r.other, "other"));
+  if (r.folders) parts.push(localizedFolderCount(r.folders));
 
   return parts.length ? parts.join(" · ") : text("folderCard.primaryEmpty");
 }
@@ -6808,8 +6800,6 @@ function renderRootTreePage(data) {
   els.folderList.classList.add("folder-tree");
   els.rootPageInfo.textContent = text("pagination.folders", {
     total: state.rootTotal,
-    page: state.rootPages ? state.rootPage : 0,
-    pages: state.rootPages,
   });
   els.prevRootPage.disabled = true;
   els.nextRootPage.disabled = true;
@@ -7603,6 +7593,22 @@ function breadcrumbDisplayName(item) {
   return String(item?.name || "");
 }
 
+function appendBreadcrumbItem(button) {
+  if (els.breadcrumb.children.length > 0) {
+    const separator = document.createElement("span");
+    separator.className = "breadcrumb-separator";
+    separator.setAttribute("aria-hidden", "true");
+    separator.textContent = "›";
+    els.breadcrumb.appendChild(separator);
+  }
+  els.breadcrumb.appendChild(button);
+}
+
+function markBreadcrumbCurrent(button) {
+  button.disabled = true;
+  button.setAttribute("aria-current", "page");
+}
+
 function renderFolder(folder, breadcrumb) {
   const operation = diagnosticOperationStart("frontend.render.folder", {
     folder: folder?.rel_path || "",
@@ -7617,8 +7623,9 @@ function renderFolder(folder, breadcrumb) {
     els.currentFolderRename.setAttribute("aria-label", text("folderRename.editAction"));
   }
   els.folderCounts.replaceChildren();
-  els.folderCounts.appendChild(countLine(text("count.directLabel"), directCountText(folder)));
-  els.folderCounts.appendChild(countLine(text("count.recursiveLabel"), recursiveCountText(folder)));
+  const summaryLine = document.createElement("span");
+  summaryLine.textContent = folderPrimarySummary(folder);
+  els.folderCounts.appendChild(summaryLine);
 
   const folderProblem = folderFilesystemProblemText(folder);
   if (folderProblem) {
@@ -7635,10 +7642,15 @@ function renderFolder(folder, breadcrumb) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = breadcrumbDisplayName(item);
-    button.addEventListener("click", () => openFolder(item.rel_path, {
-      targetEntryAnchor,
-    }));
-    els.breadcrumb.appendChild(button);
+    if (index === breadcrumb.length - 1) {
+      // The current folder is highlighted and not clickable.
+      markBreadcrumbCurrent(button);
+    } else {
+      button.addEventListener("click", () => openFolder(item.rel_path, {
+        targetEntryAnchor,
+      }));
+    }
+    appendBreadcrumbItem(button);
   });
 
   updateJobActionButtons(state.jobRunning);
@@ -7659,13 +7671,13 @@ function renderFavoritesHeader(data) {
   rootButton.type = "button";
   rootButton.textContent = text("app.root");
   rootButton.addEventListener("click", () => openFolder(""));
-  els.breadcrumb.appendChild(rootButton);
+  appendBreadcrumbItem(rootButton);
 
   const favoritesButton = document.createElement("button");
   favoritesButton.type = "button";
   favoritesButton.textContent = text("app.favorites");
-  favoritesButton.disabled = true;
-  els.breadcrumb.appendChild(favoritesButton);
+  markBreadcrumbCurrent(favoritesButton);
+  appendBreadcrumbItem(favoritesButton);
 
   els.childFolders.replaceChildren();
   resetChildPager();
@@ -7733,19 +7745,45 @@ function updateMediaPager(data) {
   state.mediaPages = pages;
   els.pageInfo.textContent = text("pagination.items", {
     total: data.total,
-    page: hasPages ? page : 0,
-    pages,
   });
 
-  els.firstPage.disabled = !hasPages || page <= 1;
-  els.prevPage.disabled = !hasPages || page <= 1;
-  els.nextPage.disabled = !hasPages || page >= pages;
-  els.lastPage.disabled = !hasPages || page >= pages;
+  syncMediaPagerControls(page, pages);
+  setMediaPagerVisible(pages);
+}
 
-  els.pageJumpInput.disabled = !hasPages;
-  els.pageJumpInput.min = "1";
-  els.pageJumpInput.max = hasPages ? String(pages) : "1";
-  els.pageJumpInput.value = hasPages ? String(page) : "";
+function mediaPagerControls(pager) {
+  return {
+    first: pager.querySelector('[data-media-page-action="first"]'),
+    previous: pager.querySelector('[data-media-page-action="previous"]'),
+    next: pager.querySelector('[data-media-page-action="next"]'),
+    last: pager.querySelector('[data-media-page-action="last"]'),
+    jumpForm: pager.querySelector("[data-media-page-jump-form]"),
+    jumpInput: pager.querySelector("[data-media-page-jump-input]"),
+    total: pager.querySelector("[data-media-page-total]"),
+  };
+}
+
+function syncMediaPagerControls(page, pages) {
+  const hasPages = pages > 0;
+  for (const pager of els.mediaPagers) {
+    const controls = mediaPagerControls(pager);
+    controls.first.disabled = !hasPages || page <= 1;
+    controls.previous.disabled = !hasPages || page <= 1;
+    controls.next.disabled = !hasPages || page >= pages;
+    controls.last.disabled = !hasPages || page >= pages;
+    controls.jumpInput.disabled = !hasPages;
+    controls.jumpInput.min = "1";
+    controls.jumpInput.max = hasPages ? String(pages) : "1";
+    controls.jumpInput.value = hasPages ? String(page) : "";
+    controls.total.textContent = hasPages ? `/ ${pages}` : "";
+  }
+}
+
+// Both copies are hidden when there is at most one page.
+function setMediaPagerVisible(pages) {
+  for (const pager of els.mediaPagers) {
+    pager.hidden = pages <= 1;
+  }
 }
 
 async function goToMediaPage(page) {
@@ -7753,7 +7791,7 @@ async function goToMediaPage(page) {
 
   const targetPage = clampPageNumber(page, state.mediaPages);
   if (targetPage === state.mediaPage) {
-    els.pageJumpInput.value = String(targetPage);
+    syncMediaPagerControls(targetPage, state.mediaPages);
     return;
   }
 
@@ -7768,9 +7806,10 @@ async function goToMediaPage(page) {
 function setChildPagerVisible(visible) {
   for (const pager of els.childPagers) {
     const isBottom = pager.dataset.childPagerPosition === "bottom";
-    pager.hidden = !visible || (isBottom && (
-      state.childPages <= 1
-      || (
+    // Both copies are hidden for at most one page; the bottom copy also follows
+    // the cards and the collapsed state.
+    pager.hidden = !visible || state.childPages <= 1 || (isBottom && (
+      (
         state.view === "search"
           ? state.searchFoldersCollapsed
           : state.view === "favorites"
@@ -7790,6 +7829,7 @@ function childPagerControls(pager) {
     last: pager.querySelector('[data-child-page-action="last"]'),
     jumpForm: pager.querySelector("[data-child-page-jump-form]"),
     jumpInput: pager.querySelector("[data-child-page-jump-input]"),
+    total: pager.querySelector("[data-child-page-total]"),
   };
 }
 
@@ -7805,6 +7845,7 @@ function syncChildPagerControls(page, pages) {
     controls.jumpInput.min = "1";
     controls.jumpInput.max = hasPages ? String(pages) : "1";
     controls.jumpInput.value = hasPages ? String(page) : "";
+    controls.total.textContent = hasPages ? `/ ${pages}` : "";
   }
 }
 
@@ -7824,8 +7865,6 @@ function updateChildPager(data) {
   state.childPageSize = Math.max(0, Number(data.page_size) || 0);
   els.childPageInfo.textContent = text("pagination.folders", {
     total: data.total,
-    page: hasPages ? page : 0,
-    pages,
   });
 
   setChildPagerVisible(hasPages);
@@ -7883,13 +7922,13 @@ function renderSearchHeader(data) {
   rootButton.type = "button";
   rootButton.textContent = text("app.root");
   rootButton.addEventListener("click", () => openFolder(""));
-  els.breadcrumb.appendChild(rootButton);
+  appendBreadcrumbItem(rootButton);
 
   const searchButton = document.createElement("button");
   searchButton.type = "button";
   searchButton.textContent = text("app.search");
-  searchButton.disabled = true;
-  els.breadcrumb.appendChild(searchButton);
+  markBreadcrumbCurrent(searchButton);
+  appendBreadcrumbItem(searchButton);
 
   resetChildPager();
   updateJobActionButtons(state.jobRunning);
@@ -7986,8 +8025,7 @@ function folderResultCard(folder) {
       <div class="folder-card-main">
         <div class="row-title folder-card-title">${escapeHtml(folder.name)}</div>
         <div class="row-path">${escapeHtml(folder.rel_path)}</div>
-        ${isAvailable ? `<div class="row-meta"><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>` : `<div class="row-meta">${escapeHtml(text("meta.unavailable"))}</div>`}
-        ${isAvailable ? `<div class="row-meta"><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>` : ""}
+        ${isAvailable ? "" : `<div class="row-meta">${escapeHtml(text("meta.unavailable"))}</div>`}
         <div class="folder-card-actions"></div>
       </div>
       ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
@@ -8223,12 +8261,7 @@ function renderChildFolders(data) {
             <div class="row-title folder-card-title">${escapeHtml(folder.name)}</div>
             ${folderCanBeRenamed(folder) ? folderRenameIconMarkup() : ""}
           </div>
-          <div class="folder-card-primary-meta">${escapeHtml(folderPrimarySummary(folder))}</div>
           ${folderFilesystemProblemMarkup(folder)}
-          <div class="folder-card-detail-meta">
-            <div><strong>${escapeHtml(text("count.directLabel"))}:</strong> ${escapeHtml(directCountText(folder))}</div>
-            <div><strong>${escapeHtml(text("count.recursiveLabel"))}:</strong> ${escapeHtml(recursiveCountText(folder))}</div>
-          </div>
           <div class="folder-card-actions"></div>
         </div>
         ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
@@ -9449,18 +9482,17 @@ for (const button of document.querySelectorAll(".tab")) {
   });
 }
 
-els.firstPage.addEventListener("click", () => goToMediaPage(1));
-
-els.prevPage.addEventListener("click", () => goToMediaPage(state.mediaPage - 1));
-
-els.pageJumpForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  goToMediaPage(els.pageJumpInput.value);
-});
-
-els.nextPage.addEventListener("click", () => goToMediaPage(state.mediaPage + 1));
-
-els.lastPage.addEventListener("click", () => goToMediaPage(state.mediaPages));
+for (const pager of els.mediaPagers) {
+  const controls = mediaPagerControls(pager);
+  controls.first.addEventListener("click", () => goToMediaPage(1));
+  controls.previous.addEventListener("click", () => goToMediaPage(state.mediaPage - 1));
+  controls.jumpForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    goToMediaPage(controls.jumpInput.value);
+  });
+  controls.next.addEventListener("click", () => goToMediaPage(state.mediaPage + 1));
+  controls.last.addEventListener("click", () => goToMediaPage(state.mediaPages));
+}
 
 if (els.childFoldersToggle) {
   els.childFoldersToggle.addEventListener("click", () => {

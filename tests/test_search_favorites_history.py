@@ -137,7 +137,7 @@ class SearchFavoritesHistoryContractTests(unittest.TestCase):
         media_page = self._function_body("async function goToMediaPage(page)")
         child_page = self._function_body("async function goToChildPage(page)")
         tabs_start = self.source.index('for (const button of document.querySelectorAll(".tab"))')
-        tabs_end = self.source.index("\nels.firstPage", tabs_start)
+        tabs_end = self.source.index("\nfor (const pager of els.mediaPagers)", tabs_start)
         tabs = self.source[tabs_start:tabs_end]
         collapse_start = self.source.index("\nif (els.childFoldersToggle)") + 1
         collapse_end = self.source.index("\nfor (const pager", collapse_start)

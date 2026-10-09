@@ -246,7 +246,7 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn("syncCurrentCatalogHistorySnapshot()", media_page)
         self.assertIn("syncCurrentCatalogHistorySnapshot()", child_page)
         tabs_start = self.source.index('for (const button of document.querySelectorAll(".tab"))')
-        tabs_end = self.source.index("\nels.firstPage", tabs_start)
+        tabs_end = self.source.index("\nfor (const pager of els.mediaPagers)", tabs_start)
         tabs = self.source[tabs_start:tabs_end]
         collapse_start = self.source.index('\nif (els.childFoldersToggle)') + 1
         collapse_end = self.source.index("\nfor (const pager", collapse_start)

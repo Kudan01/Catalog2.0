@@ -86,55 +86,64 @@
 
       <section>
         <div class="section-head folder-section-head">
-          <h2 class="folder-section-title">
-            <button id="childFoldersToggle" class="section-collapse-toggle" type="button" aria-expanded="true" data-title="actions.collapseSubfolders" data-aria-label="actions.collapseSubfolders" hidden>▾</button>
-            <span data-text="sections.childFolders"></span>
-          </h2>
+          <div class="section-title-group">
+            <h2 class="folder-section-title">
+              <button id="childFoldersToggle" class="section-collapse-toggle" type="button" aria-expanded="true" data-title="actions.collapseSubfolders" data-aria-label="actions.collapseSubfolders" hidden>▾</button>
+              <span data-text="sections.childFolders"></span>
+            </h2>
+            <div id="childPageInfo" class="muted section-count"></div>
+          </div>
           <div class="folder-section-controls">
-            <div id="childPageInfo" class="muted"></div>
             <div id="childPager" class="pager compact folder-pager" data-child-pager data-child-pager-position="top">
-              <button id="firstChildPage" type="button" data-child-page-action="first" data-text="actions.first"></button>
-              <button id="prevChildPage" type="button" data-child-page-action="previous" data-text="actions.previous"></button>
-              <form id="childPageJumpForm" class="page-jump" data-child-page-jump-form novalidate>
-                <label for="childPageJumpInput" data-text="pagination.jumpLabel"></label>
-                <input id="childPageJumpInput" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
-                <button id="childPageJumpButton" type="submit" data-text="actions.go"></button>
+              <button type="button" data-child-page-action="first" data-title="actions.first" data-aria-label="actions.first">«</button>
+              <button type="button" data-child-page-action="previous" data-title="actions.previous" data-aria-label="actions.previous">‹</button>
+              <form class="page-jump" data-child-page-jump-form novalidate>
+                <input id="childPageJumpInput" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-aria-label="pagination.jumpLabel" data-placeholder="pagination.jumpPlaceholder">
+                <span class="page-jump-total" data-child-page-total></span>
               </form>
-              <button id="nextChildPage" type="button" data-child-page-action="next" data-text="actions.next"></button>
-              <button id="lastChildPage" type="button" data-child-page-action="last" data-text="actions.last"></button>
+              <button type="button" data-child-page-action="next" data-title="actions.next" data-aria-label="actions.next">›</button>
+              <button type="button" data-child-page-action="last" data-title="actions.last" data-aria-label="actions.last">»</button>
             </div>
           </div>
         </div>
         <div id="childFolders" class="cards"></div>
         <div class="pager compact folder-pager folder-pager-bottom" data-child-pager data-child-pager-position="bottom" hidden>
-          <button type="button" data-child-page-action="first" data-text="actions.first"></button>
-          <button type="button" data-child-page-action="previous" data-text="actions.previous"></button>
+          <button type="button" data-child-page-action="first" data-title="actions.first" data-aria-label="actions.first">«</button>
+          <button type="button" data-child-page-action="previous" data-title="actions.previous" data-aria-label="actions.previous">‹</button>
           <form class="page-jump" data-child-page-jump-form novalidate>
-            <label for="childPageJumpInputBottom" data-text="pagination.jumpLabel"></label>
-            <input id="childPageJumpInputBottom" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
-            <button type="submit" data-text="actions.go"></button>
+            <input id="childPageJumpInputBottom" data-child-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-aria-label="pagination.jumpLabel" data-placeholder="pagination.jumpPlaceholder">
+            <span class="page-jump-total" data-child-page-total></span>
           </form>
-          <button type="button" data-child-page-action="next" data-text="actions.next"></button>
-          <button type="button" data-child-page-action="last" data-text="actions.last"></button>
+          <button type="button" data-child-page-action="next" data-title="actions.next" data-aria-label="actions.next">›</button>
+          <button type="button" data-child-page-action="last" data-title="actions.last" data-aria-label="actions.last">»</button>
         </div>
       </section>
 
-      <section>
+      <section class="media-section">
         <div class="media-head">
           <h2 id="mediaTitle" data-text="sections.media"></h2>
-          <div id="pageInfo" class="muted"></div>
+          <div id="pageInfo" class="muted section-count"></div>
+        </div>
+        <div class="pager media-pager media-pager-top" data-media-pager data-media-pager-position="top" data-aria-label="sections.media" hidden>
+          <button type="button" data-media-page-action="first" data-title="actions.first" data-aria-label="actions.first">«</button>
+          <button type="button" data-media-page-action="previous" data-title="actions.previous" data-aria-label="actions.previous">‹</button>
+          <form class="page-jump" data-media-page-jump-form novalidate>
+            <input id="mediaPageJumpInputTop" data-media-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-aria-label="pagination.jumpLabel" data-placeholder="pagination.jumpPlaceholder">
+            <span class="page-jump-total" data-media-page-total></span>
+          </form>
+          <button type="button" data-media-page-action="next" data-title="actions.next" data-aria-label="actions.next">›</button>
+          <button type="button" data-media-page-action="last" data-title="actions.last" data-aria-label="actions.last">»</button>
         </div>
         <div id="mediaList" class="media-list"></div>
-        <div class="pager media-pager">
-          <button id="firstPage" type="button" data-text="actions.first"></button>
-          <button id="prevPage" type="button" data-text="actions.previous"></button>
-          <form id="pageJumpForm" class="page-jump" novalidate>
-            <label for="pageJumpInput" data-text="pagination.jumpLabel"></label>
-            <input id="pageJumpInput" type="number" min="1" step="1" inputmode="numeric" data-placeholder="pagination.jumpPlaceholder">
-            <button id="pageJumpButton" type="submit" data-text="actions.go"></button>
+        <div class="pager media-pager" data-media-pager data-media-pager-position="bottom" data-aria-label="sections.media">
+          <button type="button" data-media-page-action="first" data-title="actions.first" data-aria-label="actions.first">«</button>
+          <button type="button" data-media-page-action="previous" data-title="actions.previous" data-aria-label="actions.previous">‹</button>
+          <form class="page-jump" data-media-page-jump-form novalidate>
+            <input id="mediaPageJumpInputBottom" data-media-page-jump-input type="number" min="1" step="1" inputmode="numeric" data-aria-label="pagination.jumpLabel" data-placeholder="pagination.jumpPlaceholder">
+            <span class="page-jump-total" data-media-page-total></span>
           </form>
-          <button id="nextPage" type="button" data-text="actions.next"></button>
-          <button id="lastPage" type="button" data-text="actions.last"></button>
+          <button type="button" data-media-page-action="next" data-title="actions.next" data-aria-label="actions.next">›</button>
+          <button type="button" data-media-page-action="last" data-title="actions.last" data-aria-label="actions.last">»</button>
         </div>
       </section>
 

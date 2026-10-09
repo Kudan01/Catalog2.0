@@ -911,3 +911,43 @@ Licenses:
 - For newly added videos, catalog update followed by preview preparation created posters and hover frames, which display correctly.
 - The video-posters service job completed. Its error samples were expected: very short videos without a decodable frame, not a regression.
 - The video-frames service job and poster creation through folder-preview builds (`video_poster_resource`) were not validated manually; they are covered by the automated tests.
+
+## 2026-10-09 — Folder page simplification and top media pager
+
+### Changes
+
+- Media pagination was converted to the child-folder pager pattern: two copies (`data-media-pager`, top and bottom) without fixed IDs, controlled by `mediaPagerControls`, `syncMediaPagerControls`, and `setMediaPagerVisible`, sharing `state.mediaPage`/`state.mediaPages` and the single `goToMediaPage` navigation path. The new top copy sits centered directly above the media cards. Both copies carry `data-aria-label="sections.media"`.
+- All pagers (child folders and media, top and bottom) use the symbols « ‹ › » with `actions.first`/`previous`/`next`/`last` as title and aria-label. The "Page" label and the "Go" button were removed; the jump field shows the current page followed by "/ N", submits with Enter, has `pagination.jumpLabel` as its aria-label, and hides the number spinner arrows. Child-folder pagers stay compact and right-aligned; media pagers keep full size and are centered.
+- All pagers are hidden when there is at most one page. The other child-folder visibility conditions (collapsed section, no cards) still apply to the bottom copy only. Pagination logic and state are unchanged.
+- `pagination.folders` and `pagination.items` show only the count. The count sits next to its section title on the left (`.section-title-group` for subfolders, `.media-head` for media). This also applies to the folder count in the folder-tree header.
+- A separator and a larger gap precede the Media section when a visible Subfolders section is above it.
+- The open-folder header shows one line with the non-zero recursive media counts and the recursive folder count (`folderPrimarySummary`) instead of the "Directly" and "Total" lines; the folder problem notice is kept.
+- Folder cards and search-result folder cards no longer show text counts (`folder-card-primary-meta`, "Directly", "Total"); the count graphic (`folderInsightMarkup`) remains, and "Unavailable" is kept for unavailable search results. `directCountText` and the unused keys `count.directLabel` and `count.directSuffix` were removed; `recursiveCountText` remains for the folder tree.
+- The breadcrumb is plain text separated by "›" (`appendBreadcrumbItem`); the current item is highlighted, disabled, and marked with `aria-current="page"` (`markBreadcrumbCurrent`) in folder, Search, and Favorites views. Clicking the current folder in the breadcrumb no longer reloads it.
+- Content filters are underlined tabs without frame or background; the active filter has an accent underline and stronger text.
+- Themes: the new rules use only theme variables; `.tab.active` was removed from the four theme-specific active-button rules, and the breadcrumb and tab rules use higher specificity than theme button rules.
+
+### Reason
+
+- Task 28: allow paging media without scrolling to the bottom, and reduce visual noise on the folder page while keeping the same functions, with a distinct look for each kind of element in all themes.
+
+### Files
+
+- `catalog_app/static/index.html`
+- `catalog_app/static/app.js`
+- `catalog_app/static/style.css`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_media_pagers.py`
+- `tests/test_folder_page_simplification.py`
+- `tests/test_child_folder_pagers.py`
+- `tests/test_folder_history.py`
+- `tests/test_search_favorites_history.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
+- Validated manually on Windows in Firefox in all themes.
+- Chrome and Edge were not validated (they have known issues tracked in tasks 5 and 6).

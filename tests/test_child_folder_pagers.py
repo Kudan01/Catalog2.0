@@ -30,6 +30,15 @@ class ChildFolderPagerContractTests(unittest.TestCase):
         ids = re.findall(r'\bid="([^"]+)"', self.html)
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_count_sits_next_to_the_section_title(self) -> None:
+        group_start = self.html.index('<div class="section-title-group">')
+        controls_start = self.html.index('<div class="folder-section-controls">', group_start)
+        group = self.html[group_start:controls_start]
+        self.assertIn('class="folder-section-title"', group)
+        self.assertIn('id="childPageInfo"', group)
+        top_pager_start = self.html.index('data-child-pager-position="top"')
+        self.assertNotIn("childPageInfo", self.html[controls_start:top_pager_start])
+
     def test_bottom_pager_contains_controls_only(self) -> None:
         start = self.html.index('data-child-pager-position="bottom"')
         end = self.html.index("</section>", start)
@@ -62,7 +71,8 @@ class ChildFolderPagerContractTests(unittest.TestCase):
     def test_bottom_visibility_follows_cards_and_collapse_state(self) -> None:
         visibility = self._function_body("function setChildPagerVisible(visible)")
         self.assertIn('pager.dataset.childPagerPosition === "bottom"', visibility)
-        self.assertIn("state.childPages <= 1", visibility)
+        # Both copies, not only the bottom one, are hidden for at most one page.
+        self.assertIn("pager.hidden = !visible || state.childPages <= 1 || (isBottom && (", visibility)
         self.assertIn("areChildFoldersCollapsed()", visibility)
         self.assertIn("els.childFolders.children.length === 0", visibility)
 
