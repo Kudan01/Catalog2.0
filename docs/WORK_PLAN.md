@@ -193,7 +193,7 @@ This is not an immediate implementation priority.
 
 The "hide after ready" part depends on the readiness contract established in task 4.
 
-## 19. Browser Back through media pages — DECISION REQUIRED
+## 19. Browser Back through media pages — PENDING
 
 ### Context
 
@@ -201,13 +201,17 @@ This is a follow-up discovered after task 3 was completed. It is not part of the
 
 Current media-page navigation does not provide browser-history steps for previously viewed pages inside the same album.
 
-### Product decision
+### Decision
 
-Decide whether media-page navigation should behave like:
+Back behaves as in a browser:
 
-`page 1 -> page 2 -> page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`
+`page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`
 
-Before implementation, define the exact history behavior for media-page changes and its interaction with the already completed History API contracts.
+Back must not leave the album before reaching the first viewed page.
+
+### To assess during planning
+
+- Interaction with the completed History API contracts from task 3 (folder, Search, and Favorites history states, anchors, and snapshots).
 
 ## 20. Settings — cleanup and loading — PENDING
 
@@ -358,3 +362,65 @@ Decision:
 ### Constraint
 
 Preserve the output contract from task 10 (WebP quality 82, target sizes from config, correct aspect ratio, no upscaling), job results and payloads, and per-thumbnail error recording. Source originals must not be modified.
+
+## 25. Photo browsing — thumbnail loading while scrolling — PENDING
+
+### Problem
+
+- Photo thumbnails are generated on demand while browsing; this is intentional, and thumbnails appearing progressively is expected.
+- Generation became faster after the move to pyvips (task 10), but browsing feels almost unchanged. Something other than the generation itself is therefore probably the bottleneck.
+- Follows up on task 7.
+
+### Target
+
+Noticeably smoother photo browsing.
+
+### To investigate (not decisions)
+
+- Where the waiting occurs between the browser request and the displayed thumbnail.
+- Viewport handling.
+- Browser caching of thumbnail responses (currently `Cache-Control: no-store`).
+- Limiting the number of concurrent browser requests.
+- Cancelling requests for thumbnails that are no longer on screen.
+- Prioritizing visible thumbnails.
+- Possible generation ahead of scrolling (must be measured on an HDD).
+
+### Constraint
+
+The dynamic-cache cleanup logic (removing the least recently used entries) is complete and does not change.
+
+## 26. Folder URLs — open a folder in another tab — PENDING
+
+### Target
+
+- Allow opening the catalog in another tab on a different folder.
+- Middle-click (and Ctrl+click) on a folder in the tree opens it in a new tab.
+
+### Findings
+
+- Tree items are buttons, and history entries do not change the URL, so a folder has no address of its own.
+- The change is localized: the folder address in history entries, loading the folder from the address at startup, and links in the tree.
+
+### Coordination
+
+Task 19 changes the same history handling; implement this task after task 19.
+
+### Open question
+
+Whether the same applies to folder cards and breadcrumb navigation.
+
+## 27. Catalog update performance — PENDING
+
+### Problem
+
+Updating the whole catalog is slow for large catalogs, especially the first (cold) run; a repeated run is faster.
+
+### To investigate (not decisions)
+
+- `os.path.isjunction` called for every entry during the walk (`scanner.py`) instead of using data from `os.scandir`.
+- Writing and deleting the whole catalog in the staging tables on every update.
+- Recalculating statistics for all folders.
+
+### Approach
+
+First measure a cold run with a timing breakdown (the activation service output), and only then propose changes.
