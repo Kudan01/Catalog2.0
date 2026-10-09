@@ -981,3 +981,37 @@ Licenses:
 - The full automated test suite passed on Windows.
 - Validated manually on Windows in Firefox: Back/Forward through media and child-folder pages, URLs without default values, anchors, scroll restoration, filter and collapse without history steps, rapid page clicks, Search and Favorites addresses and history, preservation of `catalog2_diagnostics`, the light restore without redrawing the folder tree, and F5 showing the root.
 - Chrome and Edge were not validated.
+
+## 2026-10-09 — Folder URLs and browser Back through pages, step 2
+
+### Changes
+
+- At startup and after reload (F5), the folder view is read from the address (`folderViewFromUrl`): `folder`, `filter`, `folder_page`, and `media_page`. An unknown filter falls back to `all` and an invalid page to 1. When the current history entry describes the same view (reload), its scroll position and collapsed state are restored as well; a new tab starts at the top.
+- Startup (`openInitialFolderView`) opens this view through the existing restore mode of `openFolder`, which applies the filter, pages, and collapsed state, corrects out-of-range pages to the last valid page without a message, restores scroll, and replaces the entry without pushing. Startup makes the same requests as before; additional requests occur only when a page is out of range or the folder is not found.
+- A folder from the address that does not exist (404 or 400 from the folder request) opens the root, rewrites the address, and shows the new `navigation.folderNotFound` message (cs and en).
+- Folder tree items (including the root), child-folder cards, and breadcrumb items except the current folder are real links with the folder URL (`folderLinkUrl`). A plain left click keeps the in-page navigation through `bindFolderLink` (`preventDefault`), including return and target anchors; middle-click, Ctrl+click, and the context menu work natively. Disk candidates in the tree stay buttons.
+- Child-folder cards contain an invisible link covering the card (`folder-card-link`); the favorite, more, and rename buttons stay above it and keep working.
+- Tree and breadcrumb links keep the previous look in all themes; the new styles use only theme variables.
+- Search and Favorites folder cards and headers, the "show folder" media action, the home button, folder opening after jobs and rename, and `popstate` are unchanged.
+
+### Reason
+
+- Task 19 step 2: restore the folder view after reload and allow opening folders in another tab.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `catalog_app/static/style.css`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tests/test_folder_links.py`
+- `tests/test_folder_history.py`
+- `tests/test_folder_page_simplification.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
+- Validated manually on Windows in Firefox: reload restores the folder, page, and scroll position; middle-click and Ctrl+click open folders in a new tab from the tree, cards, and breadcrumb; plain clicks and anchors behave as before; card buttons work; a missing folder in the address opens the root with a message; the appearance is unchanged in all themes.
+- Chrome and Edge were not validated.

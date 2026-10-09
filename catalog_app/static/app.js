@@ -849,6 +849,64 @@ function folderHistoryUrl(entry) {
   return catalogUrlString(url);
 }
 
+// Address of a folder opened with default settings, used by folder links.
+function folderLinkUrl(relPath) {
+  return folderHistoryUrl({
+    folder: String(relPath || ""),
+    contentFilter: "all",
+    childPage: 1,
+    mediaPage: 1,
+  });
+}
+
+// A plain left click keeps the in-page navigation; middle-click, modifier
+// clicks, and the context menu keep the native link behavior.
+function bindFolderLink(link, open) {
+  link.addEventListener("click", (event) => {
+    if (
+      event.button !== 0
+      || event.ctrlKey
+      || event.metaKey
+      || event.shiftKey
+      || event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    open();
+  });
+}
+
+// Folder view requested by the address at startup or after reload. Scroll and
+// collapsed state come from the current history entry only when it describes
+// the same view (reload); a new tab starts at the top.
+function folderViewFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const filter = params.get("filter");
+  const view = {
+    view: "folder",
+    folder: params.get("folder") || "",
+    returnAnchor: null,
+    contentFilter: FOLDER_HISTORY_CONTENT_FILTERS.has(filter) ? filter : "all",
+    childPage: positiveHistoryPage(params.get("folder_page")),
+    mediaPage: positiveHistoryPage(params.get("media_page")),
+    childFoldersCollapsed: false,
+    scrollTop: 0,
+  };
+  const current = catalogFolderHistoryEntry();
+  if (
+    current
+    && current.folder === view.folder
+    && current.contentFilter === view.contentFilter
+    && current.childPage === view.childPage
+    && current.mediaPage === view.mediaPage
+  ) {
+    view.childFoldersCollapsed = current.childFoldersCollapsed;
+    view.scrollTop = current.scrollTop;
+  }
+  return view;
+}
+
 function replaceFolderHistoryEntry(folder, returnAnchor = null) {
   const historyState = folderHistoryState(folder, returnAnchor);
   window.history.replaceState(historyState, "", folderHistoryUrl(historyState.catalog));
@@ -6885,11 +6943,11 @@ function folderTreeRootNode() {
   icon.setAttribute("aria-hidden", "true");
   row.appendChild(icon);
 
-  const main = document.createElement("button");
-  main.type = "button";
+  const main = document.createElement("a");
   main.className = "tree-node-main";
+  main.href = folderLinkUrl("");
   main.innerHTML = `<span class="tree-node-name">${escapeHtml(text("tree.root"))}</span>`;
-  main.addEventListener("click", () => openFolder(""));
+  bindFolderLink(main, () => openFolder(""));
   row.appendChild(main);
 
   const meta = document.createElement("span");
@@ -6947,18 +7005,20 @@ function folderTreeNode(folder, depth) {
   icon.setAttribute("aria-hidden", "true");
   row.appendChild(icon);
 
-  const main = document.createElement("button");
-  main.type = "button";
+  // Disk candidates cannot be opened, so they stay buttons; other folders are
+  // links that also open in a new tab.
+  const main = document.createElement(isDiskCandidate ? "button" : "a");
   main.className = "tree-node-main";
   main.innerHTML = `<span class="tree-node-name">${escapeHtml(folder.name)}</span>`;
-  main.addEventListener("click", () => {
-    if (isDiskCandidate) {
+  if (isDiskCandidate) {
+    main.type = "button";
+    main.addEventListener("click", () => {
       setMessage(text("jobs.diskRootCandidateOpen"), false);
-      return;
-    }
-
-    openFolder(folder.rel_path);
-  });
+    });
+  } else {
+    main.href = folderLinkUrl(folder.rel_path);
+    bindFolderLink(main, () => openFolder(folder.rel_path));
+  }
   row.appendChild(main);
 
   const meta = document.createElement("span");
@@ -7739,18 +7799,22 @@ function renderFolder(folder, breadcrumb) {
 
   breadcrumb.forEach((item, index) => {
     const targetEntryAnchor = breadcrumb[index + 1]?.rel_path || null;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = breadcrumbDisplayName(item);
     if (index === breadcrumb.length - 1) {
       // The current folder is highlighted and not clickable.
-      markBreadcrumbCurrent(button);
-    } else {
-      button.addEventListener("click", () => openFolder(item.rel_path, {
-        targetEntryAnchor,
-      }));
+      const current = document.createElement("button");
+      current.type = "button";
+      current.textContent = breadcrumbDisplayName(item);
+      markBreadcrumbCurrent(current);
+      appendBreadcrumbItem(current);
+      return;
     }
-    appendBreadcrumbItem(button);
+    const link = document.createElement("a");
+    link.href = folderLinkUrl(item.rel_path);
+    link.textContent = breadcrumbDisplayName(item);
+    bindFolderLink(link, () => openFolder(item.rel_path, {
+      targetEntryAnchor,
+    }));
+    appendBreadcrumbItem(link);
   });
 
   updateJobActionButtons(state.jobRunning);
@@ -8398,7 +8462,10 @@ function renderChildFolders(data) {
     const previewHtml = folderPreviewMarkup(folder);
     card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}${folderFilesystemIsUsable(folder) ? "" : " folder-missing"}`;
     card.dataset.folderPath = folder.rel_path;
+    // The whole card is a link below its buttons, so middle-click and Ctrl+click
+    // open the folder in a new tab while the buttons keep working.
     card.innerHTML = `
+      <a class="folder-card-link" href="${escapeHtml(folderLinkUrl(folder.rel_path))}" aria-label="${escapeHtml(folder.name)}"></a>
       <div class="folder-card-layout">
         <div class="folder-card-main">
           <div class="folder-card-title-row">
@@ -8429,7 +8496,7 @@ function renderChildFolders(data) {
       });
     }
     bindFolderPreviewImageErrors(card);
-    card.addEventListener("click", () => openFolder(folder.rel_path, {
+    bindFolderLink(card.querySelector(".folder-card-link"), () => openFolder(folder.rel_path, {
       sourceEntryAnchor: folder.rel_path,
     }));
     els.childFolders.appendChild(card);
@@ -10016,6 +10083,23 @@ window.addEventListener("popstate", (event) => {
   }
 });
 
+// Opens the folder view from the address. The restore mode applies the filter,
+// pages, and collapsed state, corrects out-of-range pages, restores scroll, and
+// replaces the entry without pushing. A folder that does not exist opens the
+// root with a message.
+async function openInitialFolderView() {
+  const initial = folderViewFromUrl();
+  try {
+    await openFolder(initial.folder, { historyMode: "restore", historySnapshot: initial });
+  } catch (error) {
+    const folderNotFound = initial.folder !== ""
+      && (error?.status === 404 || error?.status === 400);
+    if (!folderNotFound) throw error;
+    await openFolder("", { historyMode: "replace" });
+    setMessage(text("navigation.folderNotFound", { path: initial.folder }), true);
+  }
+}
+
 (async function main() {
   const operation = diagnosticOperationStart("frontend.app.main", {
     diagnostics_enabled: DIAGNOSTICS_ENABLED,
@@ -10031,7 +10115,7 @@ window.addEventListener("popstate", (event) => {
     await loadStatus();
     const jobStatus = await loadJobStatus();
     ensureJobPollingForStatus(jobStatus);
-    await openFolder("", { historyMode: "replace" });
+    await openInitialFolderView();
     diagnosticOperationEnd("frontend.app.main", operation, {
       result: "ok",
       active_locale: activeLocale,

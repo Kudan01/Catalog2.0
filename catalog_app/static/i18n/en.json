@@ -676,6 +676,7 @@
   "modal.videoTitle": "Video",
   "modal.zoomIn": "+ Zoom",
   "modal.zoomOut": "− Zoom",
+  "navigation.folderNotFound": "The folder from the address was not found: {path}",
   "pagination.folders": "{total} folders",
   "pagination.items": "{total} items",
   "pagination.jumpLabel": "Page",

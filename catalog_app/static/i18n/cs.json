@@ -676,6 +676,7 @@
   "modal.videoTitle": "Video",
   "modal.zoomIn": "+ Zoom",
   "modal.zoomOut": "− Zoom",
+  "navigation.folderNotFound": "Složka z adresy nebyla nalezena: {path}",
   "pagination.folders": "{total} složek",
   "pagination.items": "{total} položek",
   "pagination.jumpLabel": "Strana",

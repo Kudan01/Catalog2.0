@@ -193,32 +193,11 @@ This is not an immediate implementation priority.
 
 The "hide after ready" part depends on the readiness contract established in task 4.
 
-## 19. Folder URLs and browser Back through pages — PENDING
+## 19. Folder URLs and browser Back through pages — COMPLETED
 
-### Context
+Step 1 (COMPLETED): page changes inside a folder create history steps, and every folder history entry carries a URL (`folder`, `filter`, `folder_page`, `media_page`, default values omitted, other parameters preserved); Back/Forward between pages of the same folder uses a light restore without reloading the tree. Step 2 (COMPLETED): the folder view is restored from the address at startup and after reload, a missing folder opens the root with a message, and tree items, child-folder cards, and breadcrumb items are links for middle-click and Ctrl+click. Search and Favorites keep their history behavior.
 
-History entries are created with `history.pushState(state, "")` without a URL, so a folder has no address of its own and a page change inside a folder creates no history step. Both parts change the same history entries, so they share one design and are implemented in two steps, each validated separately.
-
-### Decisions
-
-1. URL content: folder, content filter, child-folder page, and media page. Default values are omitted, so the root stays `/` and a folder on default settings has only the folder parameter. Scroll position and collapsed state stay in the history state only, not in the URL. Encoding uses `URLSearchParams`. Existing query parameters (`catalog2_diagnostics`) are preserved.
-2. Back steps through both media pages and child-folder pages: `page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`. Changing the content filter does not create a history step.
-3. URLs apply to folder views only. Search and Favorites keep their current history behavior.
-4. Middle-click and Ctrl+click open a folder in a new tab from the folder tree, child-folder cards, and breadcrumb items (except the current folder).
-5. A URL with a folder that does not exist opens the root and shows a message that the folder was not found.
-
-### Step 1 — COMPLETED
-
-History steps for page changes; every folder history entry carries its URL. See `docs/DEVELOPMENT_LOG.md` (2026-10-09, step 1).
-
-### Step 2 — PENDING
-
-Loading the folder view from the URL at startup and after reload; links for middle-click/Ctrl+click.
-
-### To assess during planning
-
-- Interaction with the completed History API contracts from task 3 (anchors, snapshots, `popstate` without loops).
-- Step 2 must not slow down startup (task 4 covers readiness separately).
+Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09, steps 1 and 2).
 
 ## 20. Settings — cleanup and loading — PENDING
 

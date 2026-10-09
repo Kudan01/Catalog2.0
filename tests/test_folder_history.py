@@ -141,7 +141,13 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn("replaceFolderHistoryEntry(nextFolder)", open_folder)
         self.assertIn('historyMode === "push"', open_folder)
         self.assertIn("pushFolderHistoryEntry(nextFolder, targetEntryAnchor)", open_folder)
-        self.assertIn('await openFolder("", { historyMode: "replace" })', self.source)
+        initial = self._function_body("async function openInitialFolderView()")
+        self.assertIn(
+            'await openFolder(initial.folder, { historyMode: "restore", historySnapshot: initial })',
+            initial,
+        )
+        self.assertIn('await openFolder("", { historyMode: "replace" })', initial)
+        self.assertIn("await openInitialFolderView()", self.source)
 
     def test_history_state_contains_normalized_folder_snapshot_and_legacy_defaults(self) -> None:
         state_builder = self._function_body(
@@ -345,6 +351,32 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertIn("folderPageNavigationsPending -= 1", restore)
         for forbidden in ("loadRootFolders", "pushFolderHistoryEntry", "pushState"):
             self.assertNotIn(forbidden, restore)
+
+    def test_startup_reads_the_folder_view_from_the_url(self) -> None:
+        view = self._function_body("function folderViewFromUrl()")
+        self.assertIn("new URLSearchParams(window.location.search)", view)
+        self.assertIn('params.get("folder") || ""', view)
+        self.assertIn("FOLDER_HISTORY_CONTENT_FILTERS.has(filter) ? filter : \"all\"", view)
+        self.assertIn('positiveHistoryPage(params.get("folder_page"))', view)
+        self.assertIn('positiveHistoryPage(params.get("media_page"))', view)
+        self.assertIn("returnAnchor: null", view)
+        self.assertIn("scrollTop: 0", view)
+        # Scroll and collapse come only from an entry describing the same view.
+        self.assertIn("const current = catalogFolderHistoryEntry()", view)
+        for field in ("folder", "contentFilter", "childPage", "mediaPage"):
+            self.assertIn(f"current.{field} === view.{field}", view)
+        self.assertIn("view.childFoldersCollapsed = current.childFoldersCollapsed", view)
+        self.assertIn("view.scrollTop = current.scrollTop", view)
+
+    def test_startup_falls_back_to_root_for_a_missing_folder(self) -> None:
+        initial = self._function_body("async function openInitialFolderView()")
+        self.assertIn("const initial = folderViewFromUrl()", initial)
+        self.assertIn('initial.folder !== ""', initial)
+        self.assertIn("error?.status === 404 || error?.status === 400", initial)
+        self.assertIn("if (!folderNotFound) throw error", initial)
+        fallback = initial.index('await openFolder("", { historyMode: "replace" })')
+        message = initial.index('text("navigation.folderNotFound", { path: initial.folder })')
+        self.assertLess(fallback, message)
 
     def test_scroll_snapshot_is_debounced(self) -> None:
         schedule = self._function_body("function scheduleCatalogHistoryScrollSync()")

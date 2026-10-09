@@ -261,16 +261,19 @@ h2 { font-size: 17px; }
 
 /* Breadcrumb items are plain text links. The :root prefix keeps them flat
    against the theme-specific button rules. */
-:root .content .breadcrumb button {
+:root .content .breadcrumb button,
+:root .content .breadcrumb a {
   color: var(--muted);
   background: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   padding: 2px 0;
+  text-decoration: none;
 }
 
-:root .content .breadcrumb button:hover {
+:root .content .breadcrumb button:hover,
+:root .content .breadcrumb a:hover {
   color: var(--text);
   text-decoration: underline;
 }
@@ -1685,7 +1688,22 @@ body.modal-open {
 
 /* Step 7.1-folder-strip-r1d: one-column folder cards with right-anchored preview/statistics grid and bottom-left actions. */
 .folder-card {
+  position: relative;
   cursor: pointer;
+}
+
+/* The folder link covers the whole card below its buttons; the buttons stay
+   above it, so the card looks and behaves as before. */
+.folder-card-link {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.folder-card-actions,
+.folder-card .folder-rename-icon {
+  position: relative;
+  z-index: 1;
 }
 
 .folder-card-layout {
@@ -2083,13 +2101,20 @@ body.modal-open {
   font-size: 15px;
 }
 
+/* Tree items are links (disk candidates stay buttons); the link keeps the
+   button look it replaced. */
 .tree-node-main {
+  display: block;
   min-width: 0;
   padding: 3px 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
+  color: var(--text);
+  font: inherit;
   text-align: left;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .tree-node-main:hover {
