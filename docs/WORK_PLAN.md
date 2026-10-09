@@ -379,7 +379,8 @@ Noticeably smoother photo browsing.
 
 - Where the waiting occurs between the browser request and the displayed thumbnail.
 - Viewport handling.
-- Browser caching of thumbnail responses (currently `Cache-Control: no-store`).
+- Browser caching of thumbnail responses (currently `Cache-Control: no-store`). A possible solution is a thumbnail fingerprint in the URL with `Cache-Control: immutable`; beware of collisions between instances served on the same port.
+- Whether generating one thumbnail opens the database several times (reportedly three times), and whether that is unnecessary.
 - Limiting the number of concurrent browser requests.
 - Cancelling requests for thumbnails that are no longer on screen.
 - Prioritizing visible thumbnails.
@@ -424,3 +425,22 @@ Updating the whole catalog is slow for large catalogs, especially the first (col
 ### Approach
 
 First measure a cold run with a timing breakdown (the activation service output), and only then propose changes.
+
+## 28. Media pager above media cards — PENDING
+
+### Target
+
+Media pagination is available at the top center above the media cards as well as at the bottom, so the user does not have to scroll down to reach the next page.
+
+### Findings
+
+- Child-folder pagination already has a top and a bottom copy with shared state and navigation (task 2, `data-child-pager`, `syncChildPagerControls`).
+- Media pagination exists once and is wired through fixed IDs (`firstPage`, `prevPage`, `pageJumpInput`, …).
+- The change converts media pagination to the same pattern and adds a top copy, without new pagination logic.
+
+### To assess during planning
+
+- Behavior in Search and Favorites.
+- Updating the history tests that refer to the media pagination IDs.
+- Whether the top controls are shown when there is only one page.
+- Visual clutter in folders that contain both subfolders and media, where two top pagers will be visible.
