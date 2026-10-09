@@ -193,25 +193,32 @@ This is not an immediate implementation priority.
 
 The "hide after ready" part depends on the readiness contract established in task 4.
 
-## 19. Browser Back through media pages — PENDING
+## 19. Folder URLs and browser Back through pages — PENDING
 
 ### Context
 
-This is a follow-up discovered after task 3 was completed. It is not part of the completed folder-return contract.
+History entries are created with `history.pushState(state, "")` without a URL, so a folder has no address of its own and a page change inside a folder creates no history step. Both parts change the same history entries, so they share one design and are implemented in two steps, each validated separately.
 
-Current media-page navigation does not provide browser-history steps for previously viewed pages inside the same album.
+### Decisions
 
-### Decision
+1. URL content: folder, content filter, child-folder page, and media page. Default values are omitted, so the root stays `/` and a folder on default settings has only the folder parameter. Scroll position and collapsed state stay in the history state only, not in the URL. Encoding uses `URLSearchParams`. Existing query parameters (`catalog2_diagnostics`) are preserved.
+2. Back steps through both media pages and child-folder pages: `page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`. Changing the content filter does not create a history step.
+3. URLs apply to folder views only. Search and Favorites keep their current history behavior.
+4. Middle-click and Ctrl+click open a folder in a new tab from the folder tree, child-folder cards, and breadcrumb items (except the current folder).
+5. A URL with a folder that does not exist opens the root and shows a message that the folder was not found.
 
-Back behaves as in a browser:
+### Step 1 — PENDING
 
-`page 3 -> Back -> page 2 -> Back -> page 1 -> Back -> previous view`
+History steps for page changes; every folder history entry carries its URL.
 
-Back must not leave the album before reaching the first viewed page.
+### Step 2 — PENDING
+
+Loading the folder view from the URL at startup and after reload; links for middle-click/Ctrl+click.
 
 ### To assess during planning
 
-- Interaction with the completed History API contracts from task 3 (folder, Search, and Favorites history states, anchors, and snapshots).
+- Interaction with the completed History API contracts from task 3 (anchors, snapshots, `popstate` without loops).
+- Step 2 must not slow down startup (task 4 covers readiness separately).
 
 ## 20. Settings — cleanup and loading — PENDING
 
@@ -390,25 +397,9 @@ Noticeably smoother photo browsing.
 
 The dynamic-cache cleanup logic (removing the least recently used entries) is complete and does not change.
 
-## 26. Folder URLs — open a folder in another tab — PENDING
+## 26. Folder URLs — open a folder in another tab
 
-### Target
-
-- Allow opening the catalog in another tab on a different folder.
-- Middle-click (and Ctrl+click) on a folder in the tree opens it in a new tab.
-
-### Findings
-
-- Tree items are buttons, and history entries do not change the URL, so a folder has no address of its own.
-- The change is localized: the folder address in history entries, loading the folder from the address at startup, and links in the tree.
-
-### Coordination
-
-Task 19 changes the same history handling; implement this task after task 19.
-
-### Open question
-
-Whether the same applies to folder cards and breadcrumb navigation.
+This task was merged into task 19.
 
 ## 27. Catalog update performance — PENDING
 

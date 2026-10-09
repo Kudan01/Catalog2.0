@@ -159,6 +159,19 @@ class SearchFavoritesHistoryContractTests(unittest.TestCase):
         self.assertIn("restoreFavoritesHistoryEntry(entry)", body)
         self.assertNotIn("pushState", body)
 
+    def test_search_and_favorites_entries_drop_folder_url_parameters(self) -> None:
+        base_url = 'catalogUrlString(catalogBaseUrl())'
+        for signature, state_builder in (
+            ("function replaceSearchHistoryEntry()", "replaceState(searchHistoryState()"),
+            ("function pushSearchHistoryEntry()", "pushState(searchHistoryState()"),
+            ("function replaceFavoritesHistoryEntry()", "replaceState(favoritesHistoryState()"),
+            ("function pushFavoritesHistoryEntry()", "pushState(favoritesHistoryState()"),
+        ):
+            with self.subTest(writer=signature):
+                body = self._function_body(signature)
+                self.assertIn(f'window.history.{state_builder}, "", {base_url})', body)
+                self.assertNotIn("folderHistoryUrl", body)
+
     def test_scroll_uses_one_shared_debounced_history_handler(self) -> None:
         schedule = self._function_body("function scheduleCatalogHistoryScrollSync()")
         self.assertIn("syncCurrentCatalogHistorySnapshot()", schedule)

@@ -256,6 +256,96 @@ class FolderHistoryFrontendContractTests(unittest.TestCase):
         self.assertNotIn("pushFolderHistoryEntry", tabs)
         self.assertNotIn("pushFolderHistoryEntry", collapse)
 
+    def test_folder_page_changes_push_a_history_step(self) -> None:
+        helper = self._function_body("function pushFolderPageHistoryEntry()")
+        self.assertIn("pushFolderHistoryEntry(state.folder)", helper)
+        for signature, page_field in (
+            ("async function goToMediaPage(page)", "state.mediaPage"),
+            ("async function goToChildPage(page)", "state.childPage"),
+        ):
+            with self.subTest(navigation=signature):
+                body = self._function_body(signature)
+                flush = body.index("flushCatalogHistoryScrollSync()")
+                assign = body.index(f"{page_field} = targetPage;", flush)
+                self.assertLess(flush, assign)
+                self.assertIn("folderPageNavigationsPending += 1", body)
+                self.assertIn("folderPageNavigationsPending -= 1", body)
+                self.assertIn("suppressCatalogHistoryScrollSync()", body)
+                self.assertIn("pushFolderPageHistoryEntry()", body)
+                self.assertIn('state.view === "folder"', body)
+                self.assertIn("state.folder === folder", body)
+                self.assertIn(f"{page_field} === targetPage", body)
+                self.assertNotIn("pushSearchHistoryEntry", body)
+                self.assertNotIn("pushFavoritesHistoryEntry", body)
+                # Search and Favorites still only update their current entry.
+                self.assertIn("syncCurrentCatalogHistorySnapshot()", body)
+
+    def test_scroll_sync_is_suspended_while_a_page_loads(self) -> None:
+        schedule = self._function_body("function scheduleCatalogHistoryScrollSync()")
+        flush = self._function_body("function flushCatalogHistoryScrollSync()")
+        self.assertIn("let folderPageNavigationsPending = 0;", self.source)
+        self.assertEqual(2, schedule.count("if (folderPageNavigationsPending > 0) return;"))
+        self.assertIn("if (folderPageNavigationsPending > 0) return;", flush)
+
+    def test_folder_entries_carry_a_url_without_default_values(self) -> None:
+        self.assertIn(
+            'const FOLDER_URL_PARAMS = ["folder", "filter", "folder_page", "media_page"];',
+            self.source,
+        )
+        base = self._function_body("function catalogBaseUrl()")
+        self.assertIn("new URL(window.location.href)", base)
+        self.assertIn("for (const name of FOLDER_URL_PARAMS)", base)
+        self.assertIn("url.searchParams.delete(name)", base)
+
+        url = self._function_body("function folderHistoryUrl(entry)")
+        self.assertIn("const url = catalogBaseUrl()", url)
+        self.assertIn('if (entry.folder) url.searchParams.set("folder", entry.folder)', url)
+        self.assertIn('if (entry.contentFilter !== "all") url.searchParams.set("filter"', url)
+        self.assertIn('if (entry.childPage > 1) url.searchParams.set("folder_page"', url)
+        self.assertIn('if (entry.mediaPage > 1) url.searchParams.set("media_page"', url)
+
+        string = self._function_body("function catalogUrlString(url)")
+        self.assertIn("${url.pathname}${url.search}${url.hash}", string)
+
+        replace = self._function_body("function replaceFolderHistoryEntry(folder, returnAnchor = null)")
+        push = self._function_body("function pushFolderHistoryEntry(folder, returnAnchor = null)")
+        self.assertIn(
+            'window.history.replaceState(historyState, "", folderHistoryUrl(historyState.catalog))',
+            replace,
+        )
+        self.assertIn(
+            'window.history.pushState(historyState, "", folderHistoryUrl(historyState.catalog))',
+            push,
+        )
+
+    def test_back_between_pages_of_the_same_folder_restores_in_place(self) -> None:
+        popstate_start = self.source.index('window.addEventListener("popstate"')
+        popstate_end = self.source.index("\n});", popstate_start) + len("\n});")
+        popstate = self.source[popstate_start:popstate_end]
+        in_place = popstate.index("canRestoreFolderPageInPlace(entry)")
+        full = popstate.index('historyMode: "restore"')
+        self.assertLess(in_place, full)
+        self.assertIn("restoreFolderPageHistoryEntry(entry)", popstate)
+
+        condition = self._function_body("function canRestoreFolderPageInPlace(entry)")
+        self.assertIn('state.view === "folder"', condition)
+        self.assertIn("state.folder === entry.folder", condition)
+        self.assertIn("state.contentFilter === entry.contentFilter", condition)
+        self.assertIn("!entry.returnAnchor", condition)
+
+        restore = self._function_body("async function restoreFolderPageHistoryEntry(entry)")
+        self.assertIn("? () => loadCurrentFolder()", restore)
+        self.assertIn(": loadCurrentFolderMediaPage", restore)
+        self.assertIn("correctRestoredPagedViewState()", restore)
+        self.assertIn("restoreCatalogContentScroll(entry.scrollTop)", restore)
+        self.assertIn("replaceFolderHistoryEntry(folder)", restore)
+        self.assertIn("setChildFoldersCollapsed(entry.childFoldersCollapsed)", restore)
+        self.assertIn("isCurrent(", restore)
+        self.assertIn("folderPageNavigationsPending += 1", restore)
+        self.assertIn("folderPageNavigationsPending -= 1", restore)
+        for forbidden in ("loadRootFolders", "pushFolderHistoryEntry", "pushState"):
+            self.assertNotIn(forbidden, restore)
+
     def test_scroll_snapshot_is_debounced(self) -> None:
         schedule = self._function_body("function scheduleCatalogHistoryScrollSync()")
         self.assertIn("catalogHistoryScrollSuppressedUntil", schedule)

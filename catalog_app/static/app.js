@@ -632,6 +632,9 @@ const FOLDER_HISTORY_CONTENT_FILTERS = new Set([
 const CATALOG_HISTORY_SCROLL_DEBOUNCE_MS = 180;
 let catalogHistoryScrollTimer = null;
 let catalogHistoryScrollSuppressedUntil = 0;
+// While a folder page change or page restore is loading, state already holds the
+// target page, so scroll synchronization must not write into the current entry.
+let folderPageNavigationsPending = 0;
 
 function positiveHistoryPage(value) {
   const page = Math.trunc(Number(value));
@@ -819,28 +822,64 @@ function catalogHistoryEntry(value = window.history.state) {
     || catalogFavoritesHistoryEntry(value);
 }
 
+// Query parameters that describe a folder view in the address bar. Other
+// parameters (for example catalog2_diagnostics) are preserved.
+const FOLDER_URL_PARAMS = ["folder", "filter", "folder_page", "media_page"];
+
+function catalogBaseUrl() {
+  const url = new URL(window.location.href);
+  for (const name of FOLDER_URL_PARAMS) {
+    url.searchParams.delete(name);
+  }
+  return url;
+}
+
+function catalogUrlString(url) {
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+// Address of a folder history entry; default values are omitted, so the root
+// on default settings keeps the plain base address.
+function folderHistoryUrl(entry) {
+  const url = catalogBaseUrl();
+  if (entry.folder) url.searchParams.set("folder", entry.folder);
+  if (entry.contentFilter !== "all") url.searchParams.set("filter", entry.contentFilter);
+  if (entry.childPage > 1) url.searchParams.set("folder_page", String(entry.childPage));
+  if (entry.mediaPage > 1) url.searchParams.set("media_page", String(entry.mediaPage));
+  return catalogUrlString(url);
+}
+
 function replaceFolderHistoryEntry(folder, returnAnchor = null) {
-  window.history.replaceState(folderHistoryState(folder, returnAnchor), "");
+  const historyState = folderHistoryState(folder, returnAnchor);
+  window.history.replaceState(historyState, "", folderHistoryUrl(historyState.catalog));
 }
 
 function pushFolderHistoryEntry(folder, returnAnchor = null) {
-  window.history.pushState(folderHistoryState(folder, returnAnchor), "");
+  const historyState = folderHistoryState(folder, returnAnchor);
+  window.history.pushState(historyState, "", folderHistoryUrl(historyState.catalog));
 }
 
+// A page change inside a folder creates its own history step without an anchor.
+function pushFolderPageHistoryEntry() {
+  pushFolderHistoryEntry(state.folder);
+}
+
+// Search and Favorites entries must not inherit folder parameters from the
+// previous entry's address.
 function replaceSearchHistoryEntry() {
-  window.history.replaceState(searchHistoryState(), "");
+  window.history.replaceState(searchHistoryState(), "", catalogUrlString(catalogBaseUrl()));
 }
 
 function pushSearchHistoryEntry() {
-  window.history.pushState(searchHistoryState(), "");
+  window.history.pushState(searchHistoryState(), "", catalogUrlString(catalogBaseUrl()));
 }
 
 function replaceFavoritesHistoryEntry() {
-  window.history.replaceState(favoritesHistoryState(), "");
+  window.history.replaceState(favoritesHistoryState(), "", catalogUrlString(catalogBaseUrl()));
 }
 
 function pushFavoritesHistoryEntry() {
-  window.history.pushState(favoritesHistoryState(), "");
+  window.history.pushState(favoritesHistoryState(), "", catalogUrlString(catalogBaseUrl()));
 }
 
 function syncCurrentFolderHistorySnapshot({ clearReturnAnchor = true } = {}) {
@@ -885,11 +924,13 @@ function suppressCatalogHistoryScrollSync() {
 
 function scheduleCatalogHistoryScrollSync() {
   if (Date.now() < catalogHistoryScrollSuppressedUntil) return;
+  if (folderPageNavigationsPending > 0) return;
   if (catalogHistoryScrollTimer !== null) {
     window.clearTimeout(catalogHistoryScrollTimer);
   }
   catalogHistoryScrollTimer = window.setTimeout(() => {
     catalogHistoryScrollTimer = null;
+    if (folderPageNavigationsPending > 0) return;
     syncCurrentCatalogHistorySnapshot();
   }, CATALOG_HISTORY_SCROLL_DEBOUNCE_MS);
 }
@@ -898,6 +939,7 @@ function flushCatalogHistoryScrollSync() {
   if (catalogHistoryScrollTimer === null) return;
   window.clearTimeout(catalogHistoryScrollTimer);
   catalogHistoryScrollTimer = null;
+  if (folderPageNavigationsPending > 0) return;
   syncCurrentCatalogHistorySnapshot();
 }
 
@@ -7135,6 +7177,64 @@ function restoreChildFolderAnchor(anchor) {
   return true;
 }
 
+// Back/Forward between pages of the folder that is already shown, with the same
+// content filter and no return anchor. Loads only what a forward page change
+// loads (media only, or the folder content for child pages), never the tree.
+function canRestoreFolderPageInPlace(entry) {
+  return state.view === "folder"
+    && state.folder === entry.folder
+    && state.contentFilter === entry.contentFilter
+    && !entry.returnAnchor;
+}
+
+async function restoreFolderPageHistoryEntry(entry) {
+  const folder = entry.folder;
+  const childPageChanged = state.childPage !== entry.childPage;
+  const mediaPageChanged = state.mediaPage !== entry.mediaPage;
+  const loadChangedContent = childPageChanged
+    ? () => loadCurrentFolder()
+    : loadCurrentFolderMediaPage;
+  // The restore is stale when another navigation changed the view meanwhile.
+  const isCurrent = (childPage, mediaPage) => state.view === "folder"
+    && state.folder === folder
+    && state.contentFilter === entry.contentFilter
+    && state.childPage === childPage
+    && state.mediaPage === mediaPage;
+
+  folderPageNavigationsPending += 1;
+  try {
+    suppressCatalogHistoryScrollSync();
+    if (areChildFoldersCollapsed() !== entry.childFoldersCollapsed) {
+      setChildFoldersCollapsed(entry.childFoldersCollapsed);
+    }
+    state.childPage = entry.childPage;
+    state.mediaPage = entry.mediaPage;
+    if (childPageChanged || mediaPageChanged) {
+      await loadChangedContent();
+      if (!isCurrent(entry.childPage, entry.mediaPage)) return false;
+    }
+
+    // Pages outside the current range are corrected and loaded again.
+    const childPageBeforeCorrection = state.childPage;
+    if (correctRestoredPagedViewState()) {
+      const correctedChildPage = state.childPage;
+      const correctedMediaPage = state.mediaPage;
+      if (correctedChildPage !== childPageBeforeCorrection) {
+        await loadCurrentFolder();
+      } else {
+        await loadCurrentFolderMediaPage();
+      }
+      if (!isCurrent(correctedChildPage, correctedMediaPage)) return false;
+    }
+
+    restoreCatalogContentScroll(entry.scrollTop);
+    replaceFolderHistoryEntry(folder);
+    return true;
+  } finally {
+    folderPageNavigationsPending -= 1;
+  }
+}
+
 async function openFolder(path, options = {}) {
   flushCatalogHistoryScrollSync();
   const nextFolder = path || "";
@@ -7795,12 +7895,36 @@ async function goToMediaPage(page) {
     return;
   }
 
+  if (state.view !== "folder") {
+    // Search and Favorites keep one history entry per view.
+    state.mediaPage = targetPage;
+    scrollToCatalogTop();
+    const reloaded = await reloadSafely(loadCurrentFolder);
+    if (reloaded) syncCurrentCatalogHistorySnapshot();
+    return;
+  }
+
+  // In a folder, a media page change is a history step. The current entry
+  // keeps its page and scroll position for Back.
+  const folder = state.folder;
+  flushCatalogHistoryScrollSync();
   state.mediaPage = targetPage;
-  scrollToCatalogTop();
-  const reloaded = await reloadSafely(
-    state.view === "folder" ? loadCurrentFolderMediaPage : loadCurrentFolder,
-  );
-  if (reloaded) syncCurrentCatalogHistorySnapshot();
+  folderPageNavigationsPending += 1;
+  try {
+    suppressCatalogHistoryScrollSync();
+    scrollToCatalogTop();
+    const reloaded = await reloadSafely(loadCurrentFolderMediaPage);
+    if (
+      reloaded
+      && state.view === "folder"
+      && state.folder === folder
+      && state.mediaPage === targetPage
+    ) {
+      pushFolderPageHistoryEntry();
+    }
+  } finally {
+    folderPageNavigationsPending -= 1;
+  }
 }
 
 function setChildPagerVisible(visible) {
@@ -7880,13 +8004,20 @@ async function goToChildPage(page) {
     return;
   }
 
-  state.childPage = targetPage;
   if (state.view === "search" || state.view === "favorites") {
+    // Search and Favorites keep one history entry per view.
+    state.childPage = targetPage;
     scrollToCatalogTop();
     const reloaded = await reloadSafely(loadCurrentFolder);
     if (reloaded) syncCurrentCatalogHistorySnapshot();
     return;
   }
+
+  // In a folder, a child-folder page change is a history step. The current
+  // entry keeps its page and scroll position for Back.
+  const folder = state.folder;
+  flushCatalogHistoryScrollSync();
+  state.childPage = targetPage;
   const childPageMeasurement = beginChildPageMeasurement(state.folder, targetPage);
   const folderPreviewMeasurement = beginFolderPreviewNavigationMeasurement(
     state.folder,
@@ -7896,12 +8027,25 @@ async function goToChildPage(page) {
   if (folderPreviewMeasurement) {
     folderPreviewMeasurement.childPageMeasurement = childPageMeasurement;
   }
-  scrollToCatalogTop();
-  const reloaded = await reloadSafely(() => loadCurrentFolder({
-    folderPreviewMeasurement,
-    childPageMeasurement,
-  }));
-  if (reloaded) syncCurrentCatalogHistorySnapshot();
+  folderPageNavigationsPending += 1;
+  try {
+    suppressCatalogHistoryScrollSync();
+    scrollToCatalogTop();
+    const reloaded = await reloadSafely(() => loadCurrentFolder({
+      folderPreviewMeasurement,
+      childPageMeasurement,
+    }));
+    if (
+      reloaded
+      && state.view === "folder"
+      && state.folder === folder
+      && state.childPage === targetPage
+    ) {
+      pushFolderPageHistoryEntry();
+    }
+  } finally {
+    folderPageNavigationsPending -= 1;
+  }
 }
 
 function renderSearchHeader(data) {
@@ -9857,7 +10001,9 @@ window.addEventListener("resize", () => {
 window.addEventListener("popstate", (event) => {
   const entry = catalogHistoryEntry(event.state);
   if (!entry) return;
-  if (entry.view === "folder") {
+  if (entry.view === "folder" && canRestoreFolderPageInPlace(entry)) {
+    void reloadSafely(() => restoreFolderPageHistoryEntry(entry));
+  } else if (entry.view === "folder") {
     void reloadSafely(() => openFolder(entry.folder, {
       historyMode: "restore",
       targetEntryAnchor: entry.returnAnchor,
