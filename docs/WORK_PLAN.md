@@ -207,9 +207,9 @@ History entries are created with `history.pushState(state, "")` without a URL, s
 4. Middle-click and Ctrl+click open a folder in a new tab from the folder tree, child-folder cards, and breadcrumb items (except the current folder).
 5. A URL with a folder that does not exist opens the root and shows a message that the folder was not found.
 
-### Step 1 — PENDING
+### Step 1 — COMPLETED
 
-History steps for page changes; every folder history entry carries its URL.
+History steps for page changes; every folder history entry carries its URL. See `docs/DEVELOPMENT_LOG.md` (2026-10-09, step 1).
 
 ### Step 2 — PENDING
 

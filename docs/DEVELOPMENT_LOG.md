@@ -951,3 +951,33 @@ Licenses:
 - The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
 - Validated manually on Windows in Firefox in all themes.
 - Chrome and Edge were not validated (they have known issues tracked in tasks 5 and 6).
+
+## 2026-10-09 — Folder URLs and browser Back through pages, step 1
+
+### Changes
+
+- A media-page or child-folder-page change in a folder view now creates a history step (`pushFolderPageHistoryEntry`). The previous entry keeps its page, scroll position, and return anchor, so Back returns to the previous page of the same folder and only from the first visited page to the previous view. A new entry is pushed only when the load completed and the state still matches the target, so rapid clicks do not create duplicate or unshown steps.
+- Every folder history entry carries a URL (`folderHistoryUrl`) with the parameters `folder`, `filter`, `folder_page`, and `media_page`. Default values are omitted, so the root on default settings keeps the plain base address. Encoding uses `URLSearchParams`, and other query parameters (for example `catalog2_diagnostics`) are preserved.
+- Search and Favorites entries use the base address without folder parameters (`catalogBaseUrl`), so they do not inherit the previous folder entry's address. Their history and pagination behavior is unchanged.
+- Content-filter and collapse changes still only replace the current entry and its URL; they create no history step.
+- While a folder page change or page restore is loading, debounced scroll synchronization does not write into the current entry (`folderPageNavigationsPending`).
+- Back/Forward between pages of the folder already shown, with the same content filter and no return anchor, uses a light restore (`restoreFolderPageHistoryEntry`). It loads only the media page, or the folder content for a child-folder page change, and never reloads the folder tree. It restores the collapsed state and scroll position, corrects out-of-range pages, and only replaces the current entry. Other entries use the existing full restore through `openFolder(..., "restore")`, so anchors, snapshots, and `popstate` without loops behave as before.
+- The first entry at startup receives the URL of the view actually shown. Reloading the page (F5) still shows the root and rewrites the address to the root, because reading the folder view from the URL is step 2.
+
+### Reason
+
+- Task 19 step 1: let browser Back step through pages inside a folder and give each folder history entry its own address, as the basis for opening folders from URLs in step 2.
+
+### Files
+
+- `catalog_app/static/app.js`
+- `tests/test_folder_history.py`
+- `tests/test_search_favorites_history.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite passed on Windows.
+- Validated manually on Windows in Firefox: Back/Forward through media and child-folder pages, URLs without default values, anchors, scroll restoration, filter and collapse without history steps, rapid page clicks, Search and Favorites addresses and history, preservation of `catalog2_diagnostics`, the light restore without redrawing the folder tree, and F5 showing the root.
+- Chrome and Edge were not validated.
