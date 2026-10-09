@@ -402,21 +402,11 @@ Media pagination gained a top copy above the media cards using the child-folder 
 
 Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09).
 
-## 29. Folder card layout — PENDING
+## 29. Folder card layout — COMPLETED
 
-### Problem
+Folder cards (including Search and Favorites results) have one header row with the name, a summary with media and subfolder counts and a media-type ratio bar, and the actions, followed by full-width previews about 160 px wide whose number follows the card width. The statistics panel and the wide/compact card switching were removed, the breadcrumb is hidden on the root page, and `FOLDER_PREVIEW_REQUESTED_COUNT` is 12 (existing instances need one full folder-preview tree build).
 
-After the text counts were removed, folder cards keep an empty left column between the folder name and the buttons.
-
-### Constraints
-
-- A folder has 6 previews (`FOLDER_PREVIEW_REQUESTED_COUNT`).
-- The card switches between the wide and compact layout (`folderCardWideRequiredWidth`).
-- On the root page, the root name appears both in the breadcrumb and in the heading.
-
-### Approach
-
-Design and try the layout before implementation.
+Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09).
 
 ## 30. Photo modal — selection flash on navigation — PENDING
 

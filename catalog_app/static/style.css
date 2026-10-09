@@ -286,6 +286,10 @@ h2 { font-size: 17px; }
   text-decoration: none;
 }
 
+.breadcrumb[hidden] {
+  display: none;
+}
+
 .breadcrumb-separator {
   color: var(--muted);
 }
@@ -1640,29 +1644,31 @@ body.modal-open {
   }
 }
 
-/* Step 7.1-folder-strip-r1: folder previews are portrait-oriented and no longer clipped by a narrow right column. */
+/* Folder previews: one row of portrait thumbnails across the card width. The
+   thumbnail width is independent of the gallery density; JS renders only the
+   previews that fit (updateFolderPreviewStrips). */
 .folder-preview-strip {
+  --folder-preview-width: 160px;
   display: flex;
   flex-wrap: nowrap;
   justify-content: flex-start;
-  align-items: flex-start;
   gap: 10px;
-  margin-bottom: 0;
-  max-width: 100%;
-  overflow: visible;
+  min-width: 0;
+  margin-top: 12px;
+  overflow: hidden;
 }
 
 .folder-preview-thumb {
-  flex: 0 0 116px;
-  width: 116px;
-  height: auto;
+  flex: 0 0 var(--folder-preview-width);
+  width: var(--folder-preview-width);
   aspect-ratio: 2 / 3;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.14);
+  border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(0,0,0,.24);
+  background: var(--panel-2);
 }
 
+.folder-preview-thumb[hidden],
 .folder-preview-thumb.thumbnail-failed {
   display: none;
 }
@@ -1685,15 +1691,14 @@ body.modal-open {
   margin: 0;
 }
 
-
-/* Step 7.1-folder-strip-r1d: one-column folder cards with right-anchored preview/statistics grid and bottom-left actions. */
+/* Folder card: one header row (name, summary, actions) and the previews below. */
 .folder-card {
   position: relative;
   cursor: pointer;
 }
 
-/* The folder link covers the whole card below its buttons; the buttons stay
-   above it, so the card looks and behaves as before. */
+/* The folder link covers the whole card below its buttons; the buttons and the
+   summary (for its tooltip) stay above it. */
 .folder-card-link {
   position: absolute;
   inset: 0;
@@ -1701,28 +1706,26 @@ body.modal-open {
 }
 
 .folder-card-actions,
-.folder-card .folder-rename-icon {
+.folder-card .folder-rename-icon,
+.folder-card-summary {
   position: relative;
   z-index: 1;
 }
 
-.folder-card-layout {
-  display: grid;
-  grid-template-columns: minmax(300px, 420px) minmax(0, 1fr) max-content minmax(230px, 270px);
-  gap: 16px 18px;
-  align-items: stretch;
-}
-
-.folder-card-main {
+.folder-card-header {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
   min-width: 0;
-  max-width: 420px;
 }
 
-.folder-card:not(.has-folder-preview) .folder-card-main {
-  max-width: 460px;
+.folder-card-heading {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .folder-card-title-row {
@@ -1748,86 +1751,44 @@ body.modal-open {
   letter-spacing: .01em;
 }
 
-.folder-card-preview {
-  grid-column: 3;
-  min-width: 0;
-  max-width: 100%;
-  align-self: center;
-  justify-self: end;
-}
-
-.folder-card-preview:empty {
-  display: none;
-}
-
-
-.folder-card-insights {
-  grid-column: 4;
-  align-self: stretch;
-  justify-self: end;
-  width: 100%;
-  min-width: 230px;
-  max-width: 270px;
+.folder-card-summary {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 9px;
-  padding: 10px 12px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
-}
-
-.folder-insight-total {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-}
-
-.folder-insight-total strong {
-  font-size: 20px;
-  line-height: 1;
-  font-weight: 850;
-}
-
-.folder-insight-total span,
-.folder-insight-foot {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.folder-insight-bars {
-  display: grid;
+  flex: 0 1 260px;
   gap: 6px;
-  align-content: center;
-}
-
-.folder-insight-labelrow {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  min-width: 160px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.15;
+  font-size: 13px;
+  cursor: pointer;
 }
 
-.folder-insight-labelrow strong {
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.folder-insight-track {
-  height: 5px;
-  margin-top: 3px;
+/* Ratio of media types; the segments use the theme accent at different
+   strengths, so the bar follows every theme. */
+.folder-card-ratio {
+  display: flex;
+  height: 4px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255,255,255,.08);
+  background: var(--line);
 }
 
-.folder-insight-fill {
+.folder-card-ratio-segment {
   height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(240,109,50,.9), rgba(255,154,92,.55));
+}
+
+.folder-card-ratio-image {
+  background: var(--accent);
+}
+
+.folder-card-ratio-gif {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.folder-card-ratio-video {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.folder-card-ratio-other {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 /* Step 6.23v: visible folder action for the confirmed update-branch workflow. */
@@ -1863,10 +1824,10 @@ body.modal-open {
 
 .folder-card-actions {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 7px;
-  margin-top: auto;
-  padding-top: 12px;
+  margin-left: auto;
 }
 
 .folder-card-actions .favorite-action,
@@ -2187,32 +2148,12 @@ body.modal-open {
   .media-list {
     grid-template-columns: repeat(auto-fill, minmax(var(--media-card-min-width-narrow), 1fr));
   }
-
-  .folder-card-layout {
-    grid-template-columns: minmax(280px, 380px) minmax(0, 1fr) minmax(220px, 270px);
-  }
-
-  .folder-card-preview {
-    grid-column: 2;
-    justify-self: end;
-  }
-
-  .folder-card-insights {
-    grid-column: 3;
-    min-width: 220px;
-    max-width: 270px;
-  }
-
-  .folder-preview-thumb {
-    flex-basis: 100px;
-    width: 100px;
-  }
 }
 
 
 
 /* Step 7.1-folder-strip-r1h: content-width driven compact layout.
-   Compact mode is toggled by JS when the content column is too narrow or folder cards do not fit.
+   Compact mode is toggled by JS when the content column is too narrow.
    It is not tied to a fixed monitor width. */
 body.layout-compact .layout {
   grid-template-columns: 1fr;
@@ -2229,30 +2170,6 @@ body.layout-compact .content {
 
 body.layout-compact .top-job-status {
   display: none;
-}
-
-body.layout-compact .folder-card-layout,
-body.layout-compact .folder-card.has-folder-preview .folder-card-layout {
-  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
-  gap: 14px 16px;
-}
-
-body.layout-compact .folder-card-insights {
-  display: none;
-}
-
-body.layout-compact .folder-card-preview {
-  grid-column: 2;
-  justify-self: end;
-}
-
-body.layout-compact .folder-preview-strip {
-  justify-content: flex-end;
-}
-
-body.layout-compact .folder-preview-thumb {
-  flex-basis: 96px;
-  width: 96px;
 }
 
 @media (max-width: 850px) {
@@ -2283,40 +2200,6 @@ body.layout-compact .folder-preview-thumb {
   .media-preview--video-poster {
     height: 200px;
     min-height: 200px;
-  }
-
-  .folder-card-layout,
-  .folder-card.has-folder-preview .folder-card-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .folder-card-main,
-  .folder-card:not(.has-folder-preview) .folder-card-main {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
-  }
-
-  .folder-card-preview,
-  .folder-card-insights {
-    width: 100%;
-    max-width: none;
-    min-width: 0;
-    justify-self: stretch;
-  }
-
-  .folder-card-insights {
-    grid-column: 1;
-  }
-
-  .folder-preview-strip {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .folder-preview-thumb {
-    flex-basis: 88px;
-    width: 88px;
   }
 
   .media-thumbnail-fallback {
@@ -2381,7 +2264,6 @@ body.layout-compact .folder-preview-thumb {
 :root[data-theme="serious-light"] .job-panel,
 :root[data-theme="serious-light"] .management-section,
 :root[data-theme="serious-light"] .job-action-card,
-:root[data-theme="serious-light"] .folder-card-insights,
 :root[data-theme="serious-light"] .decision-sample {
   background: rgba(255, 255, 255, .54);
   border-color: rgba(139, 105, 74, .20);
@@ -2413,13 +2295,8 @@ body.layout-compact .folder-preview-thumb {
   border-color: rgba(200, 101, 47, .56);
 }
 
-:root[data-theme="serious-light"] .folder-insight-track,
 :root[data-theme="serious-light"] .subfolder-toggle-button:hover {
   background: rgba(139, 105, 74, .12);
-}
-
-:root[data-theme="serious-light"] .folder-insight-fill {
-  background: linear-gradient(90deg, rgba(200, 101, 47, .95), rgba(234, 154, 91, .68));
 }
 
 :root[data-theme="serious-light"] .media-modal {
@@ -2555,7 +2432,6 @@ body.layout-compact .folder-preview-thumb {
 :root[data-theme="serious-dark"] .job-panel,
 :root[data-theme="serious-dark"] .management-section,
 :root[data-theme="serious-dark"] .job-action-card,
-:root[data-theme="serious-dark"] .folder-card-insights,
 :root[data-theme="serious-dark"] .decision-sample {
   background: rgba(93, 211, 214, .045);
   border-color: rgba(93, 211, 214, .13);
@@ -2587,13 +2463,8 @@ body.layout-compact .folder-preview-thumb {
   border-color: rgba(93, 211, 214, .68);
 }
 
-:root[data-theme="serious-dark"] .folder-insight-track,
 :root[data-theme="serious-dark"] .subfolder-toggle-button:hover {
   background: rgba(149, 168, 189, .11);
-}
-
-:root[data-theme="serious-dark"] .folder-insight-fill {
-  background: linear-gradient(90deg, rgba(93, 211, 214, .98), rgba(96, 79, 191, .62));
 }
 
 :root[data-theme="serious-dark"] .media-modal {
@@ -2732,7 +2603,6 @@ body.layout-compact .folder-preview-thumb {
 :root[data-theme="vivid-content"] .job-panel,
 :root[data-theme="vivid-content"] .management-section,
 :root[data-theme="vivid-content"] .job-action-card,
-:root[data-theme="vivid-content"] .folder-card-insights,
 :root[data-theme="vivid-content"] .decision-sample {
   background: rgba(255, 92, 74, .060);
   border-color: rgba(255, 92, 74, .16);
@@ -2793,13 +2663,8 @@ body.layout-compact .folder-preview-thumb {
   text-shadow: 0 1px 0 rgba(0, 0, 0, .20);
 }
 
-:root[data-theme="vivid-content"] .folder-insight-track,
 :root[data-theme="vivid-content"] .subfolder-toggle-button:hover {
   background: rgba(255, 151, 73, .10);
-}
-
-:root[data-theme="vivid-content"] .folder-insight-fill {
-  background: linear-gradient(90deg, rgba(255, 73, 61, .98), rgba(255, 151, 73, .78));
 }
 
 :root[data-theme="vivid-content"] .media-modal {
@@ -2938,7 +2803,6 @@ body.layout-compact .folder-preview-thumb {
 :root[data-theme="dark-cinema"] .job-panel,
 :root[data-theme="dark-cinema"] .management-section,
 :root[data-theme="dark-cinema"] .job-action-card,
-:root[data-theme="dark-cinema"] .folder-card-insights,
 :root[data-theme="dark-cinema"] .decision-sample {
   background: rgba(166, 42, 70, .045);
   border-color: rgba(166, 42, 70, .30);
@@ -2998,13 +2862,8 @@ body.layout-compact .folder-preview-thumb {
   text-shadow: 0 1px 0 rgba(0, 0, 0, .34);
 }
 
-:root[data-theme="dark-cinema"] .folder-insight-track,
 :root[data-theme="dark-cinema"] .subfolder-toggle-button:hover {
   background: rgba(166, 42, 70, .14);
-}
-
-:root[data-theme="dark-cinema"] .folder-insight-fill {
-  background: linear-gradient(90deg, rgba(166, 42, 70, .92), rgba(96, 65, 105, .72));
 }
 
 :root[data-theme="dark-cinema"] .media-modal {

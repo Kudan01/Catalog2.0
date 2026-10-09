@@ -49,7 +49,8 @@ class FolderLinkContractTests(unittest.TestCase):
         render = self._function_body("function renderChildFolders(data)")
         self.assertIn('<a class="folder-card-link" href="${escapeHtml(folderLinkUrl(folder.rel_path))}"', render)
         self.assertIn('aria-label="${escapeHtml(folder.name)}"', render)
-        self.assertIn('bindFolderLink(card.querySelector(".folder-card-link"), () => openFolder(folder.rel_path, {', render)
+        self.assertIn('const openFromCard = () => openFolder(folder.rel_path, {', render)
+        self.assertIn('bindFolderLink(card.querySelector(".folder-card-link"), openFromCard)', render)
         self.assertIn("sourceEntryAnchor: folder.rel_path", render)
         self.assertNotIn('card.addEventListener("click"', render)
 
@@ -66,7 +67,7 @@ class FolderLinkContractTests(unittest.TestCase):
         self.assertIn("position: absolute", overlay)
         self.assertIn("inset: 0", overlay)
         self.assertIn("position: relative", self._css_rule(".folder-card {"))
-        raised = self._css_rule(".folder-card-actions,\n.folder-card .folder-rename-icon {")
+        raised = self._css_rule(".folder-card-actions,\n.folder-card .folder-rename-icon,\n.folder-card-summary {")
         self.assertIn("z-index: 1", raised)
 
         tree = self._css_rule(".tree-node-main {")

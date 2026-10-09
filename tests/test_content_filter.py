@@ -86,8 +86,8 @@ class ContentFilterFrontendContractTests(unittest.TestCase):
     def test_search_folder_cards_reuse_existing_preview_renderer(self) -> None:
         card = self._function_body("function folderResultCard(folder)")
         self.assertIn("folderPreviewMarkup(folder)", card)
-        self.assertIn("bindFolderPreviewImageErrors(card)", card)
-        self.assertIn("folderInsightMarkup(folder)", card)
+        self.assertIn("card._folderPreviews", card)
+        self.assertIn("folderCardSummaryMarkup(folder)", card)
         self.assertIn("folder.rel_path", card)
 
     def test_search_collapse_is_temporary_and_only_available_for_all(self) -> None:

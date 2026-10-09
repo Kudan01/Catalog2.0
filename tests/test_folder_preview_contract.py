@@ -29,8 +29,8 @@ class FolderPreviewProductionContractTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     parser.parse_args(["folder-preview-build-tree", option, "2"])
 
-    def test_production_contract_constants_are_six_and_zero(self) -> None:
-        self.assertEqual(6, FOLDER_PREVIEW_REQUESTED_COUNT)
+    def test_production_contract_constants_are_twelve_and_zero(self) -> None:
+        self.assertEqual(12, FOLDER_PREVIEW_REQUESTED_COUNT)
         self.assertEqual(0, FOLDER_PREVIEW_SELECTION_VARIANT)
 
         cli_source = (ROOT / "catalog_app" / "cli.py").read_text(encoding="utf-8")

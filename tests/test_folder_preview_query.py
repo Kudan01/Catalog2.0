@@ -16,7 +16,10 @@ from catalog_app.api import (
     folder_preview_cache_resource,
     thumbnail_media_resource,
 )
-from catalog_app.folder_preview_candidates import effective_folder_preview_rows
+from catalog_app.folder_preview_candidates import (
+    FOLDER_PREVIEW_REQUESTED_COUNT,
+    effective_folder_preview_rows,
+)
 from catalog_app.config import load_config
 from catalog_app.database import initialize_database
 from catalog_app.diagnostics import (
@@ -106,16 +109,20 @@ class FolderPreviewQueryTests(unittest.TestCase):
                 self.assertEqual(0, is_file_mock.call_count)
                 self.assertGreater(effective_rows.call_count, 0)
                 for call in effective_rows.call_args_list:
-                    self.assertEqual(6, call.kwargs["requested_count"])
+                    self.assertEqual(FOLDER_PREVIEW_REQUESTED_COUNT, call.kwargs["requested_count"])
                     self.assertEqual(0, call.kwargs["variant"])
             finally:
                 connection.close()
 
         self.assertEqual({first_id, second_id}, set(result))
         self.assertEqual(
+            # With 12 requested previews every stored direct row is selected.
+            # Media availability is not filtered here (the query does not read
+            # media_files), so unavailable.jpg is returned as well.
             [
                 "auto-1.jpg.webp",
                 "auto-2.jpg.webp",
+                "unavailable.jpg.webp",
                 "wrong-kind.jpg.webp",
                 "missing-cache.jpg.webp",
                 "parent-1.gif.webp",

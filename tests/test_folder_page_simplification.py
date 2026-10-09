@@ -95,7 +95,7 @@ class FolderPageSimplificationTests(unittest.TestCase):
             self.assertNotIn("folder-card-detail-meta", card)
             self.assertNotIn("count.directLabel", card)
             self.assertNotIn("count.recursiveLabel", card)
-            self.assertIn("folderInsightMarkup(folder)", card)
+            self.assertIn("folderCardSummaryMarkup(folder)", card)
         self.assertIn('text("meta.unavailable")', search)
         self.assertNotIn(".folder-card-primary-meta", self.css)
         self.assertNotIn(".folder-card-detail-meta", self.css)

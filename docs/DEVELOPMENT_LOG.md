@@ -1015,3 +1015,41 @@ Licenses:
 - The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
 - Validated manually on Windows in Firefox: reload restores the folder, page, and scroll position; middle-click and Ctrl+click open folders in a new tab from the tree, cards, and breadcrumb; plain clicks and anchors behave as before; card buttons work; a missing folder in the address opens the root with a message; the appearance is unchanged in all themes.
 - Chrome and Edge were not validated.
+
+## 2026-10-09 — Folder card layout
+
+### Changes
+
+- Folder cards (child folders and Search/Favorites results) have one header row: the folder name with the rename icon (and the path line for Search/Favorites results), a summary, and the actions (favorite, more) on the right. The folder previews follow below across the full card width.
+- The summary (`folderCardSummaryMarkup`) shows the total media count and the subfolder count, a thin bar with the ratio of media types, and the exact counts per type in a tooltip. It replaces the former statistics panel (`folderInsightMarkup`), which was removed together with its CSS and theme rules. Unavailable Search results keep the "Unavailable" text instead of the summary.
+- Previews are about 160 px wide at the 2:3 aspect ratio, independent of the gallery density. `updateFolderPreviewStrips` measures the strip width once for all cards and shows only the previews that fit. Thumbnails are created only when they become visible, so hidden previews are never requested; on narrowing they are only hidden, so widening again does not request them again. Strips update after rendering child folders, Search, and Favorites and on resize through a `ResizeObserver` throttled with `requestAnimationFrame`. Folders with fewer previews show fewer.
+- The card link from task 19, the card buttons, and return anchors are unchanged. The summary sits above the link for its tooltip; a plain click on it still opens the folder.
+- The wide/compact card switching (`folderCardWideRequiredWidth`, `folderCardWideLayoutFits`) and the card-specific responsive rules were removed; compact mode now only hides the sidebar when the content column is narrow.
+- The breadcrumb is hidden on the root page, where it only repeated the page title; it stays visible in subfolders, Search, and Favorites.
+- `FOLDER_PREVIEW_REQUESTED_COUNT` changed from 6 to 12 (the schema and `_preview_count` already allowed 1–12). Existing instances need one full folder-preview tree build ("Prepare all previews" or `folder-preview-build-tree`), which updates changed selections, reuses existing tiles, and generates only missing ones. The evenly spaced selection of 12 previews is not a superset of the former 6; tiles that drop out of a selection move to the dynamic cache and follow its normal cleanup, and the protected cache grows accordingly.
+- The new styles use only theme variables; the ratio bar uses the theme accent at different strengths.
+
+### Reason
+
+- Task 29: after the text counts were removed in task 28, folder cards kept an empty column; the new layout uses the card width for more previews and a compact summary.
+
+### Files
+
+- `catalog_app/folder_preview_candidates.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/style.css`
+- `tests/test_folder_card_layout.py`
+- `tests/test_folder_preview_contract.py`
+- `tests/test_folder_preview_query.py`
+- `tests/test_content_filter.py`
+- `tests/test_folder_links.py`
+- `tests/test_folder_page_simplification.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite and `tools/check_i18n_translations.py` passed on Windows.
+- Validated manually on Windows in Firefox: the one-row card header; the preview count following the width at 1920 px and higher resolutions; recalculation on window resize without repeated downloads (checked in the network panel); a narrow window; the summary tooltip; click, middle-click, and anchors; cards in Search and Favorites; the hidden breadcrumb on the root page; and all five themes.
+- After "Prepare all previews", folders show up to 12 previews, and browsing large folders with media on an HDD stays smooth.
+- Chrome and Edge were not validated.

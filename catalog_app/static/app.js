@@ -6108,10 +6108,6 @@ function safeCount(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
-function formatCount(value) {
-  return localizedInteger(safeCount(value));
-}
-
 function folderRecursiveCounts(folder) {
   const r = folder.recursive || {};
   return {
@@ -6142,43 +6138,33 @@ function folderPrimarySummary(folder) {
   return parts.length ? parts.join(" · ") : text("folderCard.primaryEmpty");
 }
 
-function folderInsightBar(label, value, maxValue) {
-  const safeValue = safeCount(value);
-  const safeMax = Math.max(1, safeCount(maxValue));
-  const percent = safeValue > 0 ? Math.max(6, Math.round((safeValue / safeMax) * 100)) : 0;
-
-  return `
-    <div class="folder-insight-item">
-      <div class="folder-insight-labelrow">
-        <span>${escapeHtml(label)}</span>
-        <strong>${escapeHtml(formatCount(safeValue))}</strong>
-      </div>
-      <div class="folder-insight-track" aria-hidden="true">
-        <div class="folder-insight-fill" style="width:${percent}%"></div>
-      </div>
-    </div>
-  `;
-}
-
-function folderInsightMarkup(folder) {
+// Folder card summary: total media and subfolders, a thin bar with the ratio
+// of media types, and the exact counts per type in a tooltip.
+function folderCardSummaryMarkup(folder) {
   const r = folderRecursiveCounts(folder);
   const mediaTotal = r.images + r.gifs + r.videos + r.other;
-  const maxValue = Math.max(r.images, r.gifs, r.videos, r.other, 1);
+  const parts = [mediaTotal
+    ? localizedCount(mediaTotal, "count.media.one", "count.media.few", "count.media.many")
+    : text("folderCard.primaryEmpty")];
+  if (r.folders) parts.push(localizedFolderCount(r.folders));
+
+  const types = [
+    ["image", r.images],
+    ["gif", r.gifs],
+    ["video", r.videos],
+    ["other", r.other],
+  ].filter(([, count]) => count > 0);
+  const tooltip = types.map(([type, count]) => localizedMediaCount(count, type)).join(" · ");
+  const segments = types.map(([type, count]) => {
+    const percent = (count / mediaTotal) * 100;
+    return `<span class="folder-card-ratio-segment folder-card-ratio-${type}" style="width:${percent.toFixed(2)}%"></span>`;
+  }).join("");
 
   return `
-    <aside class="folder-card-insights" aria-label="${escapeHtml(text("aria.folderContentSummary"))}">
-      <div class="folder-insight-total">
-        <strong>${escapeHtml(formatCount(mediaTotal))}</strong>
-        <span>${escapeHtml(text("folderCard.totalMedia"))}</span>
-      </div>
-      <div class="folder-insight-bars">
-        ${folderInsightBar(text("folderCard.photos"), r.images, maxValue)}
-        ${folderInsightBar(text("folderCard.gifs"), r.gifs, maxValue)}
-        ${folderInsightBar(text("folderCard.videos"), r.videos, maxValue)}
-        ${folderInsightBar(text("folderCard.other"), r.other, maxValue)}
-      </div>
-      <div class="folder-insight-foot">${escapeHtml(text("folderCard.recursiveFolders", { count: formatCount(r.folders) }))}</div>
-    </aside>
+    <div class="folder-card-summary"${tooltip ? ` title="${escapeHtml(tooltip)}"` : ""}>
+      <span class="folder-card-summary-text">${escapeHtml(parts.join(" · "))}</span>
+      ${mediaTotal ? `<span class="folder-card-ratio" aria-hidden="true">${segments}</span>` : ""}
+    </div>
   `;
 }
 
@@ -7038,50 +7024,6 @@ function treeMoreNote() {
   return note;
 }
 
-function folderCardWideRequiredWidth(card) {
-  const layout = card.querySelector(".folder-card-layout");
-  const main = card.querySelector(".folder-card-main");
-  const preview = card.querySelector(".folder-card-preview");
-  const previewStrip = card.querySelector(".folder-preview-strip");
-  const insights = card.querySelector(".folder-card-insights");
-
-  if (!layout || !main || !preview || !previewStrip || !insights) {
-    return 0;
-  }
-
-  const style = window.getComputedStyle(layout);
-  const columnGap = parseFloat(style.columnGap || style.gap || "0") || 0;
-  const mainWidth = Math.max(main.scrollWidth, main.getBoundingClientRect().width, 300);
-  const previewWidth = Math.max(previewStrip.scrollWidth, preview.getBoundingClientRect().width);
-  const insightsWidth = Math.max(insights.scrollWidth, insights.getBoundingClientRect().width, 230);
-
-  // Wide card structure: text | flexible spacer | previews | statistics.
-  // The spacer may collapse, but the three content blocks and gaps must fit.
-  return mainWidth + previewWidth + insightsWidth + columnGap * 3;
-}
-
-function folderCardWideLayoutFits() {
-  const content = document.querySelector(".content");
-  const cards = Array.from(document.querySelectorAll(".folder-card.has-folder-preview"));
-
-  if (!content || !cards.length) {
-    return true;
-  }
-
-  const availableWidth = content.clientWidth;
-  const tolerance = 8;
-
-  for (const card of cards) {
-    const requiredWidth = folderCardWideRequiredWidth(card);
-
-    if (requiredWidth && requiredWidth > availableWidth + tolerance) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 function contentAreaNeedsCompact() {
   const content = document.querySelector(".content");
 
@@ -7100,11 +7042,11 @@ function updateResponsiveLayoutMode() {
   const body = document.body;
   if (!body) return;
 
-  // Always test the full layout first. This makes compact mode depend on the
-  // actual content column width instead of a fixed monitor-width breakpoint.
+  // Always test the full layout first. Compact mode (no sidebar) depends on the
+  // actual content column width; folder cards adapt to any width on their own.
   body.classList.remove("layout-compact");
 
-  if (contentAreaNeedsCompact() || !folderCardWideLayoutFits()) {
+  if (contentAreaNeedsCompact()) {
     body.classList.add("layout-compact");
   }
 }
@@ -7796,6 +7738,8 @@ function renderFolder(folder, breadcrumb) {
   }
 
   els.breadcrumb.replaceChildren();
+  // On the root page the breadcrumb only repeats the page title.
+  els.breadcrumb.hidden = breadcrumb.length <= 1;
 
   breadcrumb.forEach((item, index) => {
     const targetEntryAnchor = breadcrumb[index + 1]?.rel_path || null;
@@ -7831,6 +7775,7 @@ function renderFavoritesHeader(data) {
   els.folderCounts.appendChild(countLine(text("count.recursiveLabel"), text("count.favoritesTotal", { total: data.total })));
 
   els.breadcrumb.replaceChildren();
+  els.breadcrumb.hidden = false;
   const rootButton = document.createElement("button");
   rootButton.type = "button";
   rootButton.textContent = text("app.root");
@@ -7864,6 +7809,7 @@ function renderFavoritesResults(data) {
     for (const folder of folderData.items) {
       els.childFolders.appendChild(folderResultCard(folder));
     }
+    updateFolderPreviewStrips();
     if (foldersOnly && folderData.items.length === 0) {
       els.childFolders.appendChild(emptyText(text("empty.favorites")));
     }
@@ -8126,6 +8072,7 @@ function renderSearchHeader(data) {
   })));
 
   els.breadcrumb.replaceChildren();
+  els.breadcrumb.hidden = false;
   const rootButton = document.createElement("button");
   rootButton.type = "button";
   rootButton.textContent = text("app.root");
@@ -8176,6 +8123,7 @@ function renderSearchResults(data) {
     for (const folder of folderResults) {
       els.childFolders.appendChild(folderResultCard(folder));
     }
+    updateFolderPreviewStrips();
     if (foldersOnly) {
       resetChildFoldersCollapseUi();
     } else if (data.type === "all") {
@@ -8229,19 +8177,18 @@ function folderResultCard(folder) {
   const previewHtml = isAvailable ? folderPreviewMarkup(folder) : "";
   card.className = `card folder-card${previewHtml ? " has-folder-preview" : ""}${isAvailable ? "" : " folder-missing"}`;
   card.innerHTML = `
-    <div class="folder-card-layout">
-      <div class="folder-card-main">
+    <div class="folder-card-header">
+      <div class="folder-card-heading">
         <div class="row-title folder-card-title">${escapeHtml(folder.name)}</div>
         <div class="row-path">${escapeHtml(folder.rel_path)}</div>
-        ${isAvailable ? "" : `<div class="row-meta">${escapeHtml(text("meta.unavailable"))}</div>`}
-        <div class="folder-card-actions"></div>
       </div>
-      ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
-      ${isAvailable ? folderInsightMarkup(folder) : ""}
+      ${isAvailable ? folderCardSummaryMarkup(folder) : `<div class="row-meta">${escapeHtml(text("meta.unavailable"))}</div>`}
+      <div class="folder-card-actions"></div>
     </div>
+    ${previewHtml}
   `;
+  card._folderPreviews = isAvailable && Array.isArray(folder.folder_previews) ? folder.folder_previews : [];
   card.querySelector(".folder-card-actions").appendChild(folderFavoriteButton(folder));
-  bindFolderPreviewImageErrors(card);
   if (isAvailable) {
     card.addEventListener("click", () => openFolder(folder.rel_path));
   }
@@ -8260,25 +8207,72 @@ function folderPreviewUrl(preview) {
   });
 }
 
+// Empty preview strip; updateFolderPreviewStrips fills it with as many
+// previews as fit the card width.
 function folderPreviewMarkup(folder) {
   const previews = Array.isArray(folder.folder_previews) ? folder.folder_previews : [];
   if (!previews.length) return "";
 
-  return `
-    <div class="folder-preview-strip" aria-label="${escapeHtml(text("folderPreview.stripLabel"))}">
-      ${previews.map((preview) => `
-        <div class="folder-preview-thumb" data-thumbnail-preview>
-          <img
-            class="folder-preview-image"
-            src="${escapeHtml(folderPreviewUrl(preview))}"
-            alt=""
-            loading="lazy"
-            decoding="async"
-          >
-        </div>
-      `).join("")}
-    </div>
-  `;
+  return `<div class="folder-preview-strip" aria-label="${escapeHtml(text("folderPreview.stripLabel"))}"></div>`;
+}
+
+function folderPreviewThumb(preview) {
+  const box = document.createElement("div");
+  box.className = "folder-preview-thumb";
+  box.dataset.thumbnailPreview = "";
+  const image = document.createElement("img");
+  image.className = "folder-preview-image";
+  image.alt = "";
+  image.loading = "lazy";
+  image.decoding = "async";
+  image.src = folderPreviewUrl(preview);
+  box.appendChild(image);
+  bindFolderPreviewImageErrors(box);
+  return box;
+}
+
+function folderPreviewSlotCount(strip) {
+  const style = window.getComputedStyle(strip);
+  const gap = parseFloat(style.columnGap || style.gap || "0") || 0;
+  const thumbWidth = parseFloat(style.getPropertyValue("--folder-preview-width")) || 160;
+  return Math.max(1, Math.floor((strip.clientWidth + gap) / (thumbWidth + gap)));
+}
+
+// Shows as many previews as fit the card width. All cards share one width, so
+// one measurement is enough. Missing thumbnails are created only when they
+// become visible (so hidden previews are never requested); extra ones are only
+// hidden, so a later widening does not request them again.
+function updateFolderPreviewStrips() {
+  if (!els.childFolders) return;
+  const strips = Array.from(els.childFolders.querySelectorAll(".folder-preview-strip"));
+  const measured = strips.find(strip => strip.clientWidth > 0);
+  if (!measured) return;
+  const slots = folderPreviewSlotCount(measured);
+
+  for (const strip of strips) {
+    const previews = strip.closest(".folder-card")?._folderPreviews || [];
+    const shown = Math.min(slots, previews.length);
+    for (let index = strip.children.length; index < shown; index += 1) {
+      strip.appendChild(folderPreviewThumb(previews[index]));
+    }
+    Array.from(strip.children).forEach((thumb, index) => {
+      thumb.hidden = index >= shown;
+    });
+  }
+}
+
+let folderPreviewStripFrame = 0;
+
+function scheduleFolderPreviewStripUpdate() {
+  if (folderPreviewStripFrame) return;
+  folderPreviewStripFrame = window.requestAnimationFrame(() => {
+    folderPreviewStripFrame = 0;
+    updateFolderPreviewStrips();
+  });
+}
+
+if (els.childFolders && "ResizeObserver" in window) {
+  new ResizeObserver(scheduleFolderPreviewStripUpdate).observe(els.childFolders);
 }
 
 function bindFolderPreviewImageErrors(card) {
@@ -8466,19 +8460,20 @@ function renderChildFolders(data) {
     // open the folder in a new tab while the buttons keep working.
     card.innerHTML = `
       <a class="folder-card-link" href="${escapeHtml(folderLinkUrl(folder.rel_path))}" aria-label="${escapeHtml(folder.name)}"></a>
-      <div class="folder-card-layout">
-        <div class="folder-card-main">
+      <div class="folder-card-header">
+        <div class="folder-card-heading">
           <div class="folder-card-title-row">
             <div class="row-title folder-card-title">${escapeHtml(folder.name)}</div>
             ${folderCanBeRenamed(folder) ? folderRenameIconMarkup() : ""}
           </div>
           ${folderFilesystemProblemMarkup(folder)}
-          <div class="folder-card-actions"></div>
         </div>
-        ${previewHtml ? `<div class="folder-card-preview">${previewHtml}</div>` : ""}
-        ${folderInsightMarkup(folder)}
+        ${folderCardSummaryMarkup(folder)}
+        <div class="folder-card-actions"></div>
       </div>
+      ${previewHtml}
     `;
+    card._folderPreviews = Array.isArray(folder.folder_previews) ? folder.folder_previews : [];
     const actions = card.querySelector(".folder-card-actions");
     if (folder.is_active_catalog_folder !== false) {
       actions.appendChild(folderFavoriteButton(folder));
@@ -8495,14 +8490,17 @@ function renderChildFolders(data) {
         openFolderRenameModal(folder);
       });
     }
-    bindFolderPreviewImageErrors(card);
-    bindFolderLink(card.querySelector(".folder-card-link"), () => openFolder(folder.rel_path, {
+    const openFromCard = () => openFolder(folder.rel_path, {
       sourceEntryAnchor: folder.rel_path,
-    }));
+    });
+    bindFolderLink(card.querySelector(".folder-card-link"), openFromCard);
+    // The summary sits above the link for its tooltip; a plain click still opens.
+    bindFolderLink(card.querySelector(".folder-card-summary"), openFromCard);
     els.childFolders.appendChild(card);
   }
 
   updateChildFoldersCollapseState();
+  updateFolderPreviewStrips();
   scheduleResponsiveLayoutUpdate();
   diagnosticOperationEnd("frontend.render.child_folders", operation, {
     rendered: data.folders.length,
