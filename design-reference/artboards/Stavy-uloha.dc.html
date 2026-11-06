@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Catalog – běžící úloha</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#12151c}
+a{color:#c9cfdb;text-decoration:none}a:hover{color:#ffffff}
+.hb{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;min-width:40px;padding:0 14px;border-radius:9px;border:1px solid #2c3242;background:#1a1e27;color:#e6e9f0;font:inherit;font-size:14px;cursor:pointer;box-sizing:border-box}
+.ic{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:0;background:transparent;color:#9aa3b5;font:inherit;cursor:pointer}
+.cap{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7f889b;font-weight:600}
+.strip{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:#151922;border:1px solid #232836}
+.search{flex:1;min-width:0;height:42px;border-radius:10px;border:1px solid #2c3242;background:#1a1e27;display:flex;align-items:center;padding:0 14px;color:#7f889b;font-size:14px;box-sizing:border-box}
+.chip{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:18px;border:1px solid #2c3242;background:#1a1e27;color:#dfe3ec;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;box-sizing:border-box}
+.chip:hover{border-color:#5b6478}
+.pop{background:#171b24;border:1px solid #3a4152;border-radius:12px;padding:14px 16px;box-shadow:0 16px 40px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:10px;width:340px;box-sizing:border-box}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:13px}
+.row span:first-child{color:#9aa3b5}
+.num{font-variant-numeric:tabular-nums}
+.dot{width:8px;height:8px;border-radius:50%}
+.st{display:flex;flex-direction:column;gap:10px}
+</style>
+</helmet>
+<div style="width: 1440px; min-height: 1860px; box-sizing: border-box; padding: 40px 32px 48px; background: #12151c; color: #eef1f6; font-family: Inter, system-ui, sans-serif; font-size: 14px">
+
+<div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Běžící úloha</h1>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 24px">
+
+<section aria-label="První verze" style="display: flex; flex-direction: column; gap: 30px">
+<div style="padding-bottom: 12px; border-bottom: 1px solid #232836">
+<div style="font-size: 18px; font-weight: 600">První verze</div>
+</div>
+
+<div class="st">
+<span class="cap">Úloha běží</span>
+<div class="strip">
+<div class="search">Hledat název nebo cestu…</div>
+<button class="chip" type="button" aria-expanded="false" aria-label="Aktualizace katalogu běží 4 minuty 12 sekund, zobrazit podrobnosti"><span class="dot" aria-hidden="true" style="background: {{ accent }}"></span>Aktualizace katalogu běží<span class="num" style="color: #9aa3b5">4:12</span></button>
+<button class="hb" type="button">Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Klik na štítek</span>
+<div style="display: flex; justify-content: flex-end">
+<div class="pop" role="dialog" aria-label="Podrobnosti úlohy">
+<div style="display: flex; align-items: center; gap: 8px"><span class="dot" aria-hidden="true" style="background: {{ accent }}"></span><span style="font-weight: 600; flex: 1">Aktualizace katalogu</span><button class="ic" type="button" aria-label="Zavřít"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+<div class="row"><span>Rozsah</span><span>Celý katalog</span></div>
+<div class="row"><span>Spuštěno</span><span class="num">11:41</span></div>
+<div class="row"><span>Běží</span><span class="num">4 min 12 s</span></div>
+<div style="font-size: 12px; color: #9aa3b5; border-top: 1px solid #232836; padding-top: 10px">Během úlohy jde katalog dál procházet.</div>
+</div>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Kolidující akce je zakázaná</span>
+<div style="display: flex; justify-content: flex-end">
+<div class="pop" role="menu" aria-label="Další akce složky" style="width: 300px; padding: 6px">
+<button type="button" role="menuitem" style="text-align: left; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: #dfe3ec; font: inherit; font-size: 13px; cursor: pointer">Otevřít ve Windows</button>
+<div role="menuitem" aria-disabled="true" style="padding: 10px 12px; border-radius: 8px; font-size: 13px; color: #6c7486">Aktualizovat tuto složku<div style="font-size: 12px; color: #9aa3b5; margin-top: 3px">Už běží jiná úloha: Aktualizace katalogu</div></div>
+<div role="menuitem" aria-disabled="true" style="padding: 10px 12px; border-radius: 8px; font-size: 13px; color: #6c7486">Přepočítat náhledy</div>
+</div>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Hotovo</span>
+<div style="position: relative; height: 470px; border-radius: 12px; border: 1px solid #2c3242; overflow: hidden; background: #12151c">
+<div class="strip" style="border-radius: 0; border-width: 0 0 1px 0">
+<div class="search">Hledat název nebo cestu…</div>
+<span class="chip" role="status" style="cursor: default; border-color: #2c5a45; background: #16241e; color: #bfe8d3"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>Aktualizace katalogu dokončena</span>
+<button class="hb" type="button">Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+<div style="padding: 16px 18px">
+<div style="font-size: 13px; color: #9aa3b5">Hlavní stránka › <span style="color: #eef1f6">Fotky</span></div>
+<div style="font-size: 26px; font-weight: 600; margin-top: 6px">Fotky</div>
+<div style="margin-top: 14px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px">
+<span style="height: 120px; border-radius: 6px; background: #3b3f4c"></span><span style="height: 120px; border-radius: 6px; background: #4a4038"></span><span style="height: 120px; border-radius: 6px; background: #34424a"></span><span style="height: 120px; border-radius: 6px; background: #463a45"></span><span style="height: 120px; border-radius: 6px; background: #3d4636"></span>
+<span style="height: 120px; border-radius: 6px; background: #4b4a3a"></span><span style="height: 120px; border-radius: 6px; background: #3a3f55"></span><span style="height: 120px; border-radius: 6px; background: #50413c"></span><span style="height: 120px; border-radius: 6px; background: #3b3f4c"></span><span style="height: 120px; border-radius: 6px; background: #34424a"></span>
+</div>
+</div>
+<div role="status" style="position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); width: 480px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; background: #20252f; border: 1px solid #3a4152; box-shadow: 0 12px 32px rgba(0,0,0,.55)">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9fb4d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path></svg>
+<span style="flex: 1; font-size: 13px; color: #dfe3ec">Katalog se změnil. Obsah této složky může být jiný.</span>
+<button class="hb" type="button" style="height: 32px">Obnovit</button>
+<button class="ic" type="button" aria-label="Zavřít"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Chyba</span>
+<div class="strip">
+<div class="search">Hledat název nebo cestu…</div>
+<button class="chip" type="button" style="border-color: #6b2f26; background: #2a1714; color: #f4c3b8"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v5.5"></path><path d="M12 16.5v.01"></path></svg>Aktualizace katalogu selhala</button>
+<button class="hb" type="button">Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+</div>
+</section>
+
+<section aria-label="Cílový stav" style="display: flex; flex-direction: column; gap: 30px; padding: 0 0 0 40px; border-left: 1px dashed #2c3242">
+<div style="padding-bottom: 12px; border-bottom: 1px solid #232836">
+<div style="display: flex; align-items: center; gap: 10px"><span style="font-size: 18px; font-weight: 600">Cílový stav</span><span style="font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 4px; background: #232836; color: #c9cfdb">Samostatný úkol pro backend</span></div>
+</div>
+
+<div class="st">
+<span class="cap">Fáze se známým koncem</span>
+<div class="strip">
+<div class="search">Hledat název nebo cestu…</div>
+<button class="chip" type="button" style="position: relative; overflow: hidden"><span aria-hidden="true" style="position: absolute; left: 0; bottom: 0; height: 3px; width: 45%; background: {{ accent }}"></span>Aktualizace katalogu<span class="num" style="color: #ffffff; font-weight: 600">45 %</span></button>
+<button class="hb" type="button">Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Fáze bez známého konce</span>
+<div class="strip">
+<div class="search">Hledat název nebo cestu…</div>
+<button class="chip" type="button"><span class="dot" aria-hidden="true" style="background: {{ accent }}"></span>Procházím soubory…<span class="num" style="color: #9aa3b5">12 400</span></button>
+<button class="hb" type="button">Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+</div>
+
+<div class="st">
+<span class="cap">Klik na štítek</span>
+<div style="display: flex; justify-content: flex-end">
+<div class="pop" role="dialog" aria-label="Podrobnosti úlohy" style="width: 360px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="font-weight: 600; flex: 1">Aktualizace katalogu</span><button class="ic" type="button" aria-label="Zavřít"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
+<div style="height: 6px; border-radius: 3px; background: #232836; overflow: hidden" role="progressbar" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100" aria-label="Průběh"><div style="width: 45%; height: 100%; background: {{ accent }}"></div></div>
+<div class="row"><span>Fáze</span><span>Čtení rozměrů médií (2 / 3)</span></div>
+<div class="row"><span>Zpracováno</span><span class="num">18 240 / 40 512</span></div>
+<div class="row"><span>Běží</span><span class="num">4 min 12 s</span></div>
+<div class="row"><span>Zbývá asi</span><span class="num">5 min</span></div>
+</div>
+</div>
+</div>
+</section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#f06d32","options":["#f06d32","#4f8cff","#2fb38a"]},"$preview":{"width":1440,"height":1860}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#f06d32' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Catalog – načítání</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#12151c}
+a{color:#c9cfdb;text-decoration:none}a:hover{color:#ffffff}
+.hb{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;min-width:40px;padding:0 14px;border-radius:9px;border:1px solid #2c3242;background:#1a1e27;color:#e6e9f0;font:inherit;font-size:14px;cursor:pointer;box-sizing:border-box}
+.ic{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:0;background:transparent;color:#9aa3b5;font:inherit;cursor:pointer}
+.tab{background:none;border:0;border-bottom:2px solid transparent;color:#9aa3b5;font:inherit;font-size:14px;padding:8px 2px;cursor:pointer}
+.sk{background:#1c2029;border-radius:6px;position:relative;overflow:hidden}
+.cap{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7f889b;font-weight:600}
+</style>
+</helmet>
+<div style="width: 1440px; min-height: 1800px; background: #12151c; color: #eef1f6; font-family: Inter, system-ui, sans-serif; font-size: 14px">
+
+<header style="border-bottom: 1px solid #232836; background: #151922; position: relative">
+<div style="padding: 14px 32px; display: flex; align-items: center; gap: 18px; box-sizing: border-box">
+<button class="hb" type="button" aria-label="Strom složek" style="padding: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"></path></svg></button>
+<div style="display: flex; flex-direction: column; line-height: 1">
+<span style="font-size: 40px; font-weight: 700; letter-spacing: -0.01em; color: {{ accent }}">Catalog 2.0</span>
+<a href="https://github.com/Kudan01/Catalog2.0" style="font-size: 11px; color: #9aa3b5; margin-top: 3px">GitHub: Kudan01</a>
+</div>
+<div style="flex: 1 1 420px; max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 4px; height: 42px; padding: 0 4px 0 14px; border-radius: 10px; border: 1px solid #2c3242; background: #1a1e27; box-sizing: border-box">
+<label for="q1" style="position: absolute; left: -9999px">Hledat</label>
+<input id="q1" type="search" placeholder="Hledat název nebo cestu…" style="flex: 1; min-width: 0; background: none; border: 0; color: #eef1f6; font: inherit; font-size: 14px; outline: none">
+<button class="ic" type="button" aria-label="Hledat jen v aktuální složce"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></button>
+<button class="ic" type="button" aria-label="Hledat" style="color: #c9cfdb"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg></button>
+</div>
+<div style="display: flex; gap: 8px">
+<button class="hb" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"></path></svg>Oblíbené</button>
+<button class="hb" type="button">Nastavení</button>
+</div>
+</div>
+<div role="progressbar" aria-label="Načítání složky" style="position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden">
+<span class="bar" style="position: absolute; top: 0; left: 30%; width: 35%; height: 2px; background: {{ accent }}"></span>
+</div>
+</header>
+
+<main style="padding: 22px 32px 48px">
+
+<nav aria-label="Drobečková navigace" style="font-size: 13px; color: #9aa3b5; display: flex; gap: 8px">
+<a href="#">Hlavní stránka</a><span aria-hidden="true">›</span><span style="color: #eef1f6; font-weight: 500">Fotky</span>
+</nav>
+<div style="display: flex; align-items: center; gap: 6px; margin-top: 8px">
+<h1 style="margin: 0 6px 0 0; font-size: 30px; font-weight: 600; color: #ffffff">Fotky</h1>
+<button class="ic" type="button" aria-label="Přejmenovat složku"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg></button>
+<button class="ic" type="button" aria-label="Přidat složku do oblíbených"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"></path></svg></button>
+<button class="ic" type="button" aria-label="Další akce složky" style="font-size: 18px">⋯</button>
+</div>
+<p style="margin: 4px 0 0; color: #9aa3b5; font-size: 13px">8 960 fotek · 60 videí · 8 podsložek</p>
+
+<div style="display: flex; align-items: center; gap: 22px; margin-top: 16px; border-bottom: 1px solid #232836">
+<button class="tab" type="button" style="color: #f3f5f9; border-bottom-color: {{ accent }}; font-weight: 500">Vše</button>
+<button class="tab" type="button">Složky</button>
+<button class="tab" type="button">Fotky</button>
+<button class="tab" type="button">GIFy</button>
+<button class="tab" type="button">Videa</button>
+<button class="tab" type="button">Ostatní</button>
+<span style="margin-left: auto; font-size: 13px; color: #c9cfdb; padding: 4px 6px">‹ 1 / 10 ›</span>
+</div>
+
+<section aria-label="Podsložky se načítají" aria-busy="true" style="margin-top: 22px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px">
+<sc-for list="{{ cards }}" as="c" hint-placeholder-count="4">
+<div>
+<div style="display: grid; grid-template-columns: 2fr 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 4px; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden">
+<span class="sk" style="grid-row: 1 / 3; border-radius: 0"></span>
+<span class="sk" style="border-radius: 0"></span>
+<span class="sk" style="border-radius: 0"></span>
+<span class="sk" style="border-radius: 0"></span>
+<span class="sk" style="border-radius: 0"></span>
+</div>
+<div style="margin-top: 10px; font-size: 15px; font-weight: 600; color: #ffffff">{{ c.name }}</div>
+<div style="font-size: 13px; color: #9aa3b5; margin-top: 2px">{{ c.meta }}</div>
+</div>
+</sc-for>
+</section>
+
+<section aria-label="Média se načítají" style="margin-top: 34px; padding-top: 18px; border-top: 1px solid #232836">
+<div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px">
+<h2 style="margin: 0; font-size: 17px; font-weight: 600">Média</h2>
+<span style="font-size: 13px; color: #9aa3b5">60 položek</span>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{ tiles }}" as="t" hint-placeholder-count="18">
+<div class="{{ t.cls }}" style="{{ t.style }}">
+<sc-if value="{{ t.loaded }}" hint-placeholder-val="{{ false }}">
+<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" style="display: block; width: 100%; height: 100%" aria-hidden="true"><circle cx="50" cy="38" r="13" fill="#ffffff" fill-opacity=".16"></circle><path d="M28 100 C31 72 40 56 50 56 C60 56 69 72 72 100 Z" fill="#ffffff" fill-opacity=".16"></path></svg>
+</sc-if>
+<sc-if value="{{ t.error }}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px; box-sizing: border-box; text-align: center">
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9aa3b5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Náhled se nepodařilo načíst"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 15l5-5 4 4"></path><path d="M14 12l2-2 5 5"></path><path d="M4 4l16 16"></path></svg>
+<span style="font-size: 12px; color: #c9cfdb; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">IMG_20230419.jpg</span>
+<span style="font-size: 11px; color: #9aa3b5">Náhled není k dispozici</span>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<span aria-hidden="true" style="flex: 1000 1 0; height: 0"></span>
+</div>
+</section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#f06d32","options":["#f06d32","#4f8cff","#2fb38a"]},"$preview":{"width":1440,"height":1800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#f06d32';
+    const tints = ['#3b3f4c', '#4a4038', '#34424a', '#463a45', '#3d4636', '#4b4a3a', '#3a3f55', '#50413c'];
+    const cards = [
+      ['Telefon 2023', '5 102 fotek · 40 videí · 3 podsložky'],
+      ['Fotoaparát – Itálie', '1 840 fotek · 12 videí'],
+      ['Rodina', '2 018 fotek · 8 videí'],
+      ['Oslavy 2024', '412 fotek · 9 videí']
+    ].map((d) => ({ name: d[0], meta: d[1] }));
+    const ratios = [0.67, 1.5, 0.75, 1.78, 1.5, 0.67, 0.67, 1.33, 1.5, 0.56, 1.78, 0.75, 1.5, 0.67, 1, 1.5, 0.67, 0.75];
+    const loaded = [0, 1, 2, 4, 5, 8];
+    const rowH = 260;
+    const tiles = ratios.map((r, i) => {
+      const isLoaded = loaded.indexOf(i) >= 0;
+      const isError = i === 7;
+      const bg = isLoaded ? tints[(i * 7) % tints.length] : (isError ? '#1a1e27' : '#1c2029');
+      return {
+        loaded: isLoaded,
+        error: isError,
+        cls: isLoaded || isError ? '' : 'sk',
+        style: 'position: relative; overflow: hidden; border-radius: 6px; flex: ' + r + ' 1 ' + Math.round(r * rowH) + 'px; aspect-ratio: ' + r + '; background: ' + bg + (isError ? '; border: 1px solid #2c3242; box-sizing: border-box' : '')
+      };
+    });
+    return { accent: accent, cards: cards, tiles: tiles };
+  }
+}
+</script>
+</body>
+</html>

@@ -77,6 +77,8 @@ python catalog2.py setup-instance `
 
 The catalog folder must be outside the source data tree. Setup does not merge with or overwrite an existing catalog destination.
 
+For large collections, place the catalog folder (database and thumbnail cache) on an SSD. The source media can stay on an HDD. This is a recommendation, not a requirement.
+
 A created instance contains its own runtime data and a generated launcher:
 
 ```text
@@ -155,3 +157,17 @@ Video preview generation requires FFmpeg and FFprobe.
 This repository is published primarily as a personal portfolio and reference project.
 
 Catalog 2.0 was designed, tested, and iteratively developed by **Kudan01** with the assistance of generative AI tools.
+
+## How this project is built
+
+Catalog 2.0 is an experiment in structured, AI-assisted development rather than ad-hoc prompting. The code is written by an AI coding agent (Claude Code); product decisions, review, and validation stay with the author.
+
+- **Design before code.** Screens and their states (loading, empty, errors, narrow windows) are designed and agreed in an interactive design tool first. Decisions are recorded with their rationale before implementation starts.
+- **A written plan.** [`docs/WORK_PLAN.md`](docs/WORK_PLAN.md) breaks the work into tasks with concrete values and "done when" criteria. Open product questions are marked as decisions instead of being guessed.
+- **Rules for the agent.** [`CLAUDE.md`](CLAUDE.md) defines how the agent works: source-media safety, no transition layers before 1.0, UI and text rules, and when it must stop and ask.
+- **A development log.** [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md) records what was done, how it was validated, and anonymized measurements.
+- **Human validation.** The agent runs in an isolated container without access to the app runtime; automated tests and manual checks run on Windows, and every change is reviewed and committed by the author.
+
+## License
+
+Catalog 2.0 is released under the [MIT License](LICENSE).

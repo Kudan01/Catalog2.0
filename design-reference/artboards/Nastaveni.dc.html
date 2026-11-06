@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Catalog – nastavení</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#0b0d11}
+.hb{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;min-width:40px;padding:0 16px;border-radius:9px;border:1px solid #2c3242;background:#1a1e27;color:#e6e9f0;font:inherit;font-size:14px;cursor:pointer;box-sizing:border-box;white-space:nowrap}
+.hb:hover{border-color:#5b6478}
+.hb:disabled{color:#6c7486;cursor:default;border-color:#2c3242}
+.ic{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:0;background:transparent;color:#9aa3b5;font:inherit;cursor:pointer}
+.ic:hover{background:#232836;color:#ffffff}
+.in{height:40px;box-sizing:border-box;padding:0 12px;border-radius:9px;border:1px solid #2c3242;background:#12151c;color:#eef1f6;font:inherit;font-size:14px}
+.blk{padding:22px 0;border-top:1px solid #232836}
+.blk:first-child{border-top:0;padding-top:0}
+.hd{display:flex;align-items:baseline;gap:10px;margin:0 0 4px}
+.h3{margin:0;font-size:15px;font-weight:600;color:#ffffff}
+.ds{margin:0 0 12px;font-size:13px;color:#9aa3b5;max-width:464px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ok{font-size:12px;font-weight:500;color:#8fd4b0}
+.w{width:360px}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; background: rgba(8,10,14,.92); color: #eef1f6; font-family: Inter, system-ui, sans-serif; font-size: 14px; display: flex; align-items: center; justify-content: center">
+<div role="dialog" aria-modal="true" aria-label="Nastavení" style="width: 940px; height: 680px; display: flex; flex-direction: column; background: #171b24; border: 1px solid #2c3242; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.6); overflow: hidden">
+<div style="display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid #232836">
+<h2 style="margin: 0; font-size: 20px; font-weight: 600; flex: 1">Nastavení</h2>
+<button class="ic" type="button" aria-label="Zavřít nastavení"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+<div style="flex: 1; min-height: 0; display: flex">
+<nav aria-label="Sekce nastavení" style="width: 210px; flex: none; padding: 14px 10px; border-right: 1px solid #232836; display: flex; flex-direction: column; gap: 2px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4">
+<button type="button" aria-current="{{ t.current }}" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.name }}</button>
+</sc-for>
+</nav>
+<div style="flex: 1; min-width: 0; padding: 24px 28px; overflow: auto">
+
+<sc-if value="{{ s0 }}" hint-placeholder-val="{{ true }}">
+<div>
+<div class="blk">
+<div class="hd" style="margin-bottom: 10px"><label class="h3" for="ct">Název katalogu</label><sc-if value="{{ svTitle }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<input id="ct" class="in" type="text" style="width: 464px" defaultValue="Catalog 2.0" onBlur="{{ saveTitle }}">
+</div>
+<div class="blk" style="display: flex; gap: 24px">
+<div>
+<div class="hd" style="margin-bottom: 10px"><label class="h3" for="lng">Jazyk</label><sc-if value="{{ svLang }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<select id="lng" class="in" onChange="{{ saveLang }}" style="width: 220px"><option>Čeština</option><option>English</option></select>
+</div>
+<div>
+<div class="hd" style="margin-bottom: 10px"><label class="h3" for="pps">Položek na stránku</label><sc-if value="{{ svPage }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<select id="pps" class="in" onChange="{{ savePage }}" style="width: 220px"><option>24</option><option selected="{{ true }}">48</option><option>96</option><option>192</option></select>
+</div>
+</div>
+<div class="blk">
+<div class="hd"><h3 class="h3" id="thl">Vzhled</h3><sc-if value="{{ svTheme }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<p class="ds">Barevné téma celé aplikace.</p>
+<div role="radiogroup" aria-labelledby="thl" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 560px">
+<sc-for list="{{ themes }}" as="th" hint-placeholder-count="6">
+<button type="button" role="radio" aria-checked="{{ th.on }}" onClick="{{ th.pick }}" style="{{ th.style }}"><span aria-hidden="true" style="width: 14px; height: 14px; flex: none; border-radius: 50%; background: {{ th.color }}; border: 1px solid rgba(255,255,255,.25)"></span>{{ th.name }}</button>
+</sc-for>
+</div>
+<sc-if value="{{ custom }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top: 12px; max-width: 560px; box-sizing: border-box; display: grid; grid-template-columns: 1fr 200px; gap: 18px; padding: 16px; border-radius: 10px; border: 1px solid #2c3242; background: #12151c">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<sc-for list="{{ colors }}" as="c" hint-placeholder-count="4">
+<div style="display: flex; align-items: center; gap: 10px">
+<input id="{{ c.id }}" type="color" value="{{ c.v }}" onInput="{{ c.set }}" style="width: 36px; height: 30px; padding: 0; border: 1px solid #2c3242; border-radius: 6px; background: none; cursor: pointer">
+<label for="{{ c.id }}" style="flex: 1; font-size: 13px; color: #c9cfdb">{{ c.name }}</label>
+<span style="font-size: 12px; color: #9aa3b5; font-variant-numeric: tabular-nums">{{ c.v }}</span>
+</div>
+</sc-for>
+<sc-if value="{{ lowContrast }}" hint-placeholder-val="{{ false }}">
+<span role="alert" style="font-size: 12px; color: #f0c48a">Text je na pozadí špatně čitelný.</span>
+</sc-if>
+<button class="hb" type="button" onClick="{{ resetColors }}" style="align-self: flex-start; height: 34px; font-size: 13px">Obnovit výchozí</button>
+</div>
+<div aria-label="Náhled vlastních barev" style="border-radius: 8px; overflow: hidden; border: 1px solid #2c3242; background: {{ cBg }}">
+<div style="padding: 10px; background: {{ cSurface }}; font-weight: 700; font-size: 16px; color: {{ cAccent }}">Catalog 2.0</div>
+<div style="padding: 10px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 13px; color: {{ cText }}">Fotky · 8 960 fotek</span>
+<span style="display: flex; gap: 4px"><span style="flex: 2; height: 40px; border-radius: 4px; background: {{ cSurface }}"></span><span style="flex: 1; height: 40px; border-radius: 4px; background: {{ cSurface }}"></span></span>
+<span style="align-self: flex-start; font-size: 12px; padding: 4px 8px; border-bottom: 2px solid {{ cAccent }}; color: {{ cText }}">Vše</span>
+</div>
+</div>
+</div>
+</sc-if>
+</div>
+
+</div>
+</sc-if>
+
+<sc-if value="{{ s1 }}" hint-placeholder-val="{{ false }}">
+<div>
+<div class="blk">
+<div class="hd"><h3 class="h3">Aktualizace katalogu</h3></div>
+<p class="ds">Najde nové, změněné a smazané soubory ve zdrojové složce. Zdrojové soubory se nemění.</p>
+<p style="margin: 0 0 14px; font-size: 13px; color: #c9cfdb">Naposledy aktualizováno 6. 11. 2026 v 11:41</p>
+<button class="hb" type="button" style="background: {{ accent }}; border-color: {{ accent }}; color: #ffffff; font-weight: 500">Aktualizovat katalog</button>
+</div>
+<div class="blk">
+<div class="hd"><h3 class="h3">Náhledy katalogu</h3></div>
+<p class="ds">Vytvoří znovu náhledy složek a chybějící náhledy médií.</p>
+<button class="hb" type="button">Přepočítat náhledy katalogu</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s2 }}" hint-placeholder-val="{{ false }}">
+<div>
+<div class="blk">
+<div class="hd"><label class="h3" for="src">Zdrojová složka</label><sc-if value="{{ srcSaved }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<p class="ds">Složka s vašimi fotkami a videi.</p>
+<div class="row">
+<input id="src" class="in w" type="text" defaultValue="D:\Média" onInput="{{ srcEdit }}">
+<button class="hb" type="button" onClick="{{ verify }}">Ověřit</button>
+<button class="hb" type="button" onClick="{{ saveSrc }}" disabled="{{ cantSave }}">Uložit</button>
+</div>
+<sc-if value="{{ verified }}" hint-placeholder-val="{{ false }}">
+<p role="status" style="margin: 10px 0 0; font-size: 13px; color: #8fd4b0">✓ Složka je dostupná a odpovídá katalogu.</p>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ s3 }}" hint-placeholder-val="{{ false }}">
+<div>
+<div class="blk">
+<div class="hd"><h3 class="h3">Využití cache</h3></div>
+<p class="ds">Náhledy fotek a videí uložené na disku.</p>
+<div class="w">
+<div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px"><span style="color: #c9cfdb">Běžné náhledy</span><span style="font-variant-numeric: tabular-nums">12,4 GB z 20 GB</span></div>
+<div role="progressbar" aria-label="Využití běžné cache" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100" style="height: 8px; border-radius: 4px; background: #232836; overflow: hidden"><div style="width: 62%; height: 100%; background: #9aa3b5"></div></div>
+<div style="display: flex; justify-content: space-between; font-size: 13px; margin-top: 12px"><span style="color: #c9cfdb">Chráněné náhledy (složky a připnuté)</span><span style="font-variant-numeric: tabular-nums">0,8 GB</span></div>
+</div>
+</div>
+<div class="blk">
+<div class="hd"><label class="h3" for="lim">Limit běžných náhledů</label><sc-if value="{{ limSaved }}" hint-placeholder-val="{{ false }}"><span class="ok" role="status">✓ Uloženo</span></sc-if></div>
+<p class="ds">Kolik místa mohou běžné náhledy zabrat. Chráněné náhledy se do limitu nepočítají.</p>
+<div class="row">
+<input id="lim" class="in" type="text" inputMode="numeric" defaultValue="20" style="width: 120px">
+<span style="font-size: 14px; color: #9aa3b5">GB</span>
+<button class="hb" type="button" onClick="{{ saveLim }}">Uložit</button>
+</div>
+</div>
+<div class="blk">
+<div class="hd"><h3 class="h3">Úklid</h3></div>
+<p class="ds">Smaže náhledy, na které už nic v katalogu neodkazuje.</p>
+<button class="hb" type="button">Vyčistit nepoužívané náhledy</button>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#f06d32","options":["#f06d32","#4f8cff","#2fb38a"]},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { tab: 0, theme: 0, saved: null, verified: false, cc: {} }; }
+  renderVals() {
+    const accent = this.props.accent ?? '#f06d32';
+    const tab = this.state.tab;
+    const flash = (k) => { this.setState({ saved: k }); clearTimeout(this._t); this._t = setTimeout(() => this.setState({ saved: null }), 2500); };
+    const tabs = ['Obecné', 'Aktualizace', 'Zdrojová složka', 'Náhledy a cache'].map((n, i) => ({
+      name: n,
+      current: i === tab ? 'page' : 'false',
+      pick: () => this.setState({ tab: i }),
+      style: 'text-align: left; height: 40px; padding: 0 12px; border: 0; border-radius: 8px; font: inherit; font-size: 14px; cursor: pointer; ' + (i === tab ? 'background: #232836; color: #ffffff; box-shadow: inset 3px 0 0 ' + accent : 'background: transparent; color: #c9cfdb')
+    }));
+    const def = { bg: '#12151c', surface: '#1a1e27', text: '#eef1f6', accent: '#f06d32' };
+    const cc = Object.assign({}, def, this.state.cc);
+    const lum = (h) => { const n = parseInt(h.slice(1), 16); const f = (x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }; return 0.2126 * f(n >> 16 & 255) + 0.7152 * f(n >> 8 & 255) + 0.0722 * f(n & 255); };
+    const l1 = lum(cc.text), l2 = lum(cc.bg);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    const themes = [['Classic Orange', '#f06d32'], ['Warm Light', '#efe7da'], ['Midnight Blue', '#2b4a8a'], ['Dark Red', '#9c2f2f'], ['Cinema Noir', '#111111'], ['Vlastní…', 'conic-gradient(#f06d32, #4f8cff, #2fb38a, #f06d32)']].map((d, i) => ({
+      name: d[0], color: d[1], on: i === this.state.theme ? 'true' : 'false',
+      pick: () => { this.setState({ theme: i }); flash('theme'); },
+      style: 'display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; text-align: left; border-radius: 9px; font: inherit; font-size: 14px; cursor: pointer; color: #eef1f6; background: #12151c; border: 1px solid ' + (i === this.state.theme ? accent : '#2c3242')
+    }));
+    const colors = [['bg', 'Pozadí'], ['surface', 'Plochy'], ['text', 'Text'], ['accent', 'Akcent']].map((d) => ({
+      id: 'cc-' + d[0], name: d[1], v: cc[d[0]],
+      set: (e) => { const n = Object.assign({}, this.state.cc); n[d[0]] = e.target.value; this.setState({ cc: n }); flash('theme'); }
+    }));
+    const sv = this.state.saved;
+    return {
+      accent: accent, tabs: tabs, themes: themes, colors: colors,
+      s0: tab === 0, s1: tab === 1, s2: tab === 2, s3: tab === 3,
+      custom: this.state.theme === 5, lowContrast: ratio < 4.5,
+      resetColors: () => this.setState({ cc: {} }),
+      cBg: cc.bg, cSurface: cc.surface, cText: cc.text, cAccent: cc.accent,
+      svTitle: sv === 'title', svTheme: sv === 'theme', svLang: sv === 'lang', svPage: sv === 'page', srcSaved: sv === 'src', limSaved: sv === 'lim',
+      saveTitle: () => flash('title'), saveLang: () => flash('lang'), savePage: () => flash('page'), saveLim: () => flash('lim'),
+      verified: this.state.verified, cantSave: !this.state.verified,
+      verify: () => this.setState({ verified: true }),
+      srcEdit: () => this.setState({ verified: false }),
+      saveSrc: () => { this.setState({ verified: false }); flash('src'); }
+    };
+  }
+}
+</script>
+</body>
+</html>

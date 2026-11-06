@@ -10,6 +10,31 @@ Statuses:
 - `DECISION REQUIRED` — a product/behavior contract must be agreed before implementation.
 - `DEFERRED` — intentionally postponed beyond the 1.0 release.
 
+## Design reference
+
+The 1.0 redesign and the related product decisions were agreed on 2026-11-06. They are stored outside version control in `design-reference/` (ignored by Git):
+
+- `design-reference/catalog-redesign-rozhodnuti.md` — the full decision record (in Czech) with rationale. Section numbers in this plan such as "decisions §5" refer to it.
+- `design-reference/artboards/*.dc.html` — the interactive design source for each screen (exact colors, sizes, texts, states); `design-reference/README.md` maps files to screens.
+- `design-reference/screenshots/` — exported images of the artboards.
+
+This plan states the requirements with concrete values. When this plan and the design reference disagree, stop and ask; do not choose silently. The design uses placeholder images and invented names; real behavior is validated on data.
+
+Task steps use the form "Done when: …". A task is complete only when every step's condition holds and the Windows validation listed in the task has been reported by the user.
+
+## Release 1.0 — order of work
+
+All work below belongs to 1.0. Only support for non-Windows systems is deferred (task 15). Development and debugging use a small sample instance; the full collection is used only at the end as a performance check. Schema and tile changes are not migrated; instances are recreated (project rule: no transition layers before 1.0).
+
+1. **Performance quick fixes:** task 4 step A, task 25 step A.
+2. **Frontend refactor before the redesign:** task 14 (modules, `style.css` cleanup, color tokens, browser tests), task 39 (UI texts).
+3. **Redesign:** tasks 31 (with 27), 32, 33, 34, 35, 36 — in this order; each is separately verifiable.
+4. **Settings, rename, modal fixes:** tasks 20, 21, 22, 30.
+5. **Catalog resilience:** task 37.
+6. **Enhancements:** task 38.
+7. **Distribution, startup and shutdown:** tasks 23, 18, task 4 step B.
+8. **Release:** tasks 5, 6, 11, 12, 13.
+
 ## 1. Media pagination — COMPLETED
 
 Independent page-size handling for All, Photos, Videos, GIFs, Other, and Folders was implemented and validated. Search remains on its separate fixed page size of 50.
@@ -36,22 +61,31 @@ The later question about Back/Forward between media pages inside an already open
 
 Catalog can visually appear to be running before the main content is actually ready. Global folder/media counts are not a readiness signal for the main gallery.
 
-The main content currently waits for `/api/folder`, `/api/folders`, and `/api/media`; a slow request can therefore leave the main area empty.
+The main content currently waits for `/api/folder`, `/api/folders`, and `/api/media`; a slow request can therefore leave the main area empty. pyvips/libvips is loaded only when the first thumbnail is requested, which delays the first tiles after startup by about a minute.
 
-### Target
+### Step A — load pyvips at server start (block 1)
 
-- Remove any need for manual refresh.
-- Either open the browser only after the main content is ready, or show an unambiguous initialization state until actual readiness.
-- A loading indicator must not merely hide an unresolved performance problem.
+- Import and initialize pyvips/libvips during server startup, before the server reports readiness.
+- Done when: after a fresh start, the first folder's photo tiles appear without the initial one-minute wait (validated on Windows with media on an HDD).
 
-## 5. Chrome / Edge — Settings UI — PENDING
+### Step B — startup page (block 7, after task 23)
+
+- The server starts immediately and the browser opens a startup page at once: logo, a progress bar, "Catalog se spouští…" / "Catalog is starting…" and the current step (for example "Připravuji náhledy"). Design: artboard "Spouštění" (decisions §7d).
+- The page switches automatically when the main content is actually ready: one catalog → that catalog; several → the catalog chooser (task 23); none → the new-catalog wizard (task 23).
+- No console window is visible to the user (replaces the original idea in task 18 of showing progress in the PowerShell window).
+- Done when: no manual refresh is ever needed after start, and the startup page never shows a gallery that is not ready.
+
+### Constraint
+
+A loading indicator must not merely hide an unresolved performance problem.
+
+## 5. Chrome / Edge — Settings UI and form controls — PENDING
 
 ### Problem / validation scope
 
-- Some fields/selects have problematic backgrounds or readability in Chromium browsers.
-- Verify all themes.
-- Verify Chrome, Edge, and Firefox.
-- Verify focus, disabled, and dropdown states.
+- Some fields/selects have problematic backgrounds or readability in Chromium browsers. Cause found during design review: `style.css` has no rules for `option`; Firefox inherits the select colors, Chrome and Edge draw the open list with their own light background.
+- The fix is part of task 14 (each theme sets `color-scheme` and option colors through the color tokens). This task validates it.
+- Verify all themes (including the light theme "Warm Light"), Chrome, Edge, and Firefox; focus, disabled, and open-dropdown states.
 
 ## 6. Chrome / Edge — video hover preview — PENDING
 
@@ -74,6 +108,8 @@ See `docs/DEVELOPMENT_LOG.md` for measurements and implementation details.
 Production folder previews were unified on `requested_count = 6` and `variant = 0`. The production CLI no longer creates alternate count/variant states. Existing selection semantics and stored preview/cache data remained compatible.
 
 Reroll was not implemented for 1.0.
+
+Note: the preview count and selection change again in tasks 33–35 (nine places per folder).
 
 ## 9. Cache management — COMPLETED
 
@@ -118,50 +154,68 @@ Source originals must not be modified.
 ## 12. Public GitHub / release hygiene — PENDING
 
 - Remove personal paths, data, and test artifacts.
-- Review `README.md`.
-- Review `.gitignore`.
+- Review `README.md`; the installation section is rewritten for the portable ZIP (task 23).
+- Review `.gitignore` (`design-reference/` stays ignored).
+- `LICENSE` (MIT) exists; verify that third-party notices required by task 23 are included in the release ZIP.
 - Review repository description/topics.
 - Add screenshots if needed.
-- Produce a release ZIP without database, cache, config, `.venv`, or other local instance data.
+- Publish the release ZIP as a GitHub Release asset; the ZIP contains no database, cache, config, `.venv`, or other local instance data.
 
 ## 13. Complete final regression — PENDING
 
 Validate the final release across:
 
-- new-instance setup and existing-instance update, including local `.venv`;
-- multiple independent instances;
-- Scan / Update;
-- photos, GIFs, video, and other media;
-- folder previews including `auto` / `auto_parent`;
+- portable ZIP: first start, new-catalog wizard, catalog chooser, several catalogs, desktop shortcuts, program update by unpacking a newer ZIP over the program folder, moving the whole folder to a USB drive with a different drive letter (task 23);
+- multiple catalogs running at the same time and a second start of a running catalog;
+- automatic shutdown after the last Catalog tab is closed, the notification-area icon, and "Ukončit Catalog" (task 18);
+- Scan / Update, including media dimensions and video duration (task 31);
+- photos, GIFs, video (playable and non-playable in the browser), and other media;
+- folder previews: nine places, replacement of obviously bad photos, smart crop, manual pins and crop focus (tasks 34, 35, 38);
 - Favorites for media and folders;
 - folder and media rename, including case-only rename (task 22);
-- Settings loading and consistent apply behavior, including language switching (tasks 20 and 21);
-- cache management;
-- `data_root` change;
-- media pagination including independent All page size;
-- child-folder pagers above and below cards;
+- Settings: sections, apply model, language switching without reload (tasks 20, 21);
+- cache management and cleanup;
+- source folder change and unavailable source (tasks 20, 33, 37);
+- one pagination with page sizes 24/48/96/192 (task 33);
 - History API / browser Back / breadcrumb / anchor return;
-- Search;
-- all themes;
+- Search grouped by folder and "Zobrazit vše" (task 36);
+- page states: loading, empty states, unavailable source, missing folder, running task, narrow window (task 33);
+- catalog resilience scenarios (task 37);
+- all themes, including the light theme;
 - Firefox, Chrome, and Edge;
-- performance regression scenarios after task 7: startup, root, a large internal folder, return to an already visited page, and folder-preview loading.
+- performance regression scenarios: startup, root, a large internal folder, return to an already visited page, and folder-preview loading.
 
-## 14. Structural refactor of large modules — PENDING
+## 14. Frontend refactor before the redesign — PENDING
 
-- Target oversized modules such as `app.js`, `api.py`, and other similarly large files.
-- Treat this as a separate phase.
-- Do not mix it with functional fixes.
-- Prefer stronger automated-test coverage before the refactor.
-- Do not perform it as a last-minute risky change immediately before release.
+Block 2. Behavior must not change in this task; the redesign follows in tasks 31–36.
+
+### Step 1 — split `app.js`
+
+- Split `catalog_app/static/app.js` (about 10,000 lines) into modules: API client, history/URLs, folder page, media grid, modal, settings, jobs.
+- Done when: the automated suite and the browser tests from step 3 pass and the app behaves identically on Windows.
+
+### Step 2 — clean up `style.css` and introduce color tokens
+
+- Remove the 45 accumulated "Step/Phase" layers of overridden rules.
+- Convert every color to a named token set (background, header, surfaces, inputs, two border levels, three text levels, accent, success, warning, error, info, modal overlay). Today `style.css` has only 7 color variables, 128 hard-coded colors, and 242 per-theme override rules. A theme is a different set of token values.
+- Each theme also sets `color-scheme` (light/dark) and the colors of `option` lists (fixes task 5).
+- An active input has exactly one focus ring in the accent color; the browser's default outline is not drawn on top of it.
+- Done when: all five themes look as before in Firefox, Chrome, and Edge, no hard-coded colors remain outside the token definitions, and no per-theme override rules remain except token values.
+
+### Step 3 — browser tests
+
+- Add Playwright tests run on Windows: open a folder, number of tiles, Back, F5 (reload restores the view).
+- They gradually replace tests that only search for text in `app.js`.
+- Done when: the tests run with one documented command in `docs/DEVELOPMENT.md` and pass.
+
+### Coordination
+
+The backend modules (`api.py` and others) stay out of this task; split them only when a later task requires it.
 
 ## 15. Post-1.0 options — DEFERRED
 
-Possible later work:
-
-- user-friendly Windows distribution — see task 23;
-- second launcher / shortcut;
-- broader theme and language extensibility;
-- new product features.
+- Support for systems other than Windows (separate packages per system; the code contains Windows-specific parts such as the launcher and "open in Windows").
+- New product features not listed in this plan.
 
 ## 16. Search — fixes and usability — COMPLETED
 
@@ -177,21 +231,20 @@ The completed behavior was functionally validated.
 
 ## 18. Launcher / runtime lifecycle — PENDING
 
+Block 7, together with task 23. Decisions §7d.
+
 ### Target
 
-- On startup, keep the launcher / PowerShell window visible and use it to communicate initialization progress briefly.
-- After the main UI is actually ready, hide the launcher window automatically so only Catalog remains visible in the browser.
-- When Catalog is closed, terminate the local server/runtime and launcher process cleanly so no launcher window or orphaned background process remains.
+- No console window is visible to the user; startup progress is shown in the browser (task 4 step B).
+- **Automatic shutdown:** every open Catalog page reports to the server periodically (heartbeat, for example every 30 s). When no Catalog page has reported for about 15 minutes, the server shuts down cleanly. If a job is running (catalog update, preview preparation), the server waits for it to finish first. Closing the browser tab is therefore enough.
+- **Notification-area icon** (Windows tray) owned by the server process, with "Otevřít Catalog" and "Ukončit".
+- **"Ukončit Catalog"** in Settings.
+- Shutdown leaves no orphaned background process or window.
+- A second start of a running catalog only opens the browser (already implemented in `launcher.py`; keep it). Different catalogs take the configured port or the next free one (already implemented; keep it).
 
 ### Constraint
 
-Choose the exact hide/shutdown mechanism only after inspecting the current launcher and server lifecycle.
-
-This is not an immediate implementation priority.
-
-### Coordination
-
-The "hide after ready" part depends on the readiness contract established in task 4.
+Choose the exact mechanisms (heartbeat endpoint, tray library) after inspecting the current launcher and server lifecycle. The development command `serve` (`run_server`) keeps its strict behavior.
 
 ## 19. Folder URLs and browser Back through pages — COMPLETED
 
@@ -199,113 +252,125 @@ Step 1 (COMPLETED): page changes inside a folder create history steps, and every
 
 Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09, steps 1 and 2).
 
-## 20. Settings — cleanup and loading — PENDING
+## 20. Settings — redesign, cleanup and loading — PENDING
 
-Required for the 1.0 release.
+Required for 1.0. Decisions §7b; artboard "Nastavení (interaktivní)".
 
-### Progress
+### Structure
 
-- Completed: Settings form values are filled from a lightweight runtime-settings endpoint without waiting for cache statistics (see `docs/DEVELOPMENT_LOG.md`, 2026-10-07).
-- Remaining: cleanup of testing/diagnostic leftovers; the cache summary itself still loads with the original cost.
+- Separate modal of fixed size; left column with four sections, one shown at a time: **Obecné**, **Aktualizace**, **Zdrojová složka**, **Náhledy a cache**. The General section fits without scrolling in its default state.
+- Every block uses one pattern: heading, at most one short description sentence (as wide as the fields), control. Fields align: the catalog-name field is as wide as Language and Items per page side by side (464 px in the design).
+- **Obecné:** catalog name; theme (five themes and "Vlastní…" in a three-column grid; the custom-color editor is task 38); language; **items per page** — one value for all filters with the options 24 / 48 / 96 / 192, default 48 (multiples of 12 keep folder cards in full rows at 1–4 columns). This replaces today's per-filter page sizes, the fixed 48 for "All", and Search's fixed 50.
+- **Aktualizace:** "Aktualizace katalogu" (description: finds new, changed, and deleted files; source files are not changed; time of the last update; primary button "Aktualizovat katalog" in the accent color) and "Náhledy katalogu" ("Přepočítat náhledy katalogu").
+- **Zdrojová složka:** description "Složka s vašimi fotkami a videi."; path, "Ověřit", "Uložit" (enabled only after a successful verification; editing the path requires verifying again); after verification "✓ Složka je dostupná a odpovídá katalogu." Nothing else runs after saving: `source_root_setting_verify` already compares a sample of catalog folders with the new path and refuses a low match. This section is the target of "Změnit v Nastavení" from the unavailable-source notice (task 33).
+- **Náhledy a cache:** usage of the regular cache with a bar and the protected thumbnails; regular-cache limit in GB with "Uložit" (description: how much space regular thumbnails may use; protected ones are not counted); "Úklid" with "Vyčistit nepoužívané náhledy", which runs the dynamic-cache cleanup and then the protected-orphan check and clean; it deletes only thumbnails that nothing in the catalog references.
 
-### Problem
+### Remove from the UI
 
-- The Settings section still contains leftovers from testing and diagnostics.
-- When Settings is opened for the first time after startup, the values in the Pagination and Media sections take a long time to load, even though the catalog content is already loaded.
+- Tile size (replaced by the media-size slider, task 32).
+- Thumbnail parameters (photo, GIF, video sizes, FFmpeg timeout) — they stay only in `config.json`; changing them breaks the layout and requires regenerating the cache.
+- Thumbnail service, Diagnostics, and the service output — testing leftovers. The same actions stay available in `cli.py` (`scan-preview`, `scan-stage`, `scan-activate`, `update-branch`, …). Recomputing previews of one folder is in the folder's ⋯ menu.
 
-### Target
+### Loading
 
-- The final Settings UI contains no testing or diagnostic leftovers.
-- When the catalog is loaded, Settings opens with complete content instead of filling in sections progressively.
+- Cache statistics are computed only when "Náhledy a cache" is opened; the other sections open immediately with complete values.
+- Investigate which requests Settings issues and why the cache summary is slow; a loading indicator must not hide an unresolved performance problem.
 
-### Investigation
+### Done when
 
-- Determine which requests Settings issues when it opens and why displaying the data takes so long.
-- A loading indicator must not merely hide an unresolved performance problem (same principle as task 4).
+The modal matches the artboard, the removed items are gone from the UI (and their now-unused frontend code is removed), and every section opens with complete content.
 
-### Coordination
+## 21. Settings — consistent apply behavior — PENDING
 
-- Task 5 covers Settings appearance in Chromium browsers.
-- Task 4 covers the general startup/readiness contract.
+Required for 1.0. The decision was made on 2026-11-06 (decisions §7b).
 
-## 21. Settings — consistent apply behavior — DECISION REQUIRED
+### Apply model
 
-Required for the 1.0 release.
+- Safe changes apply and save immediately: theme, language, items per page; the catalog name on leaving the field or Enter. A short "✓ Uloženo" appears next to the block heading for a few seconds.
+- Changes with consequences require "Uložit": source folder (after verification) and cache limit.
 
-### Problem
+### Language
 
-- Settings changes do not behave consistently: some take effect immediately, others only after Save.
-- Switching the language updates part of the UI immediately, but some texts remain in the previous language until the page is reloaded or the user navigates elsewhere.
+- Switching the language re-renders the whole UI (header, tree panel, folder page, open modal, Settings, notices, task chip) without a reload or navigation.
 
-### Product decision
+### Done when
 
-- Define one apply model for Settings: all changes on Save, all changes immediately, or an explicitly defined set of exceptions.
-- Define exactly which parts of the UI must be re-rendered when the language changes.
-
-### Target
-
-After the decision, all Settings changes behave according to the agreed model and the whole UI reflects them without a manual page reload.
+Every Settings control follows the model above and a language switch leaves no text in the previous language.
 
 ## 22. Folder and media rename — behavior and UI — PENDING
 
-Required for the 1.0 release.
+Required for 1.0. Decisions §7c; implemented in the interactive design (folder header, folder card, modal).
 
-### Investigation
+### Current state (verified)
 
-- Determine why rename does not allow changing only the letter case of a folder or media name. Verify on Windows, where the filesystem is case-insensitive.
-- Determine whether renaming a folder or a media item renames the source data on disk or only the catalog record. Verify from the implementation, then confirm on Windows.
+A separate dialog with a developer workflow: "Ověřit změnu" → sections Impact, Paths, Technical checks, Blocking errors, Warnings → "Přejmenovat". The physical folder or file on disk is renamed, and the catalog updates the paths of the whole branch, Favorites, and previews.
 
 ### Target
 
-- Simplify the rename dialog from a UI/UX perspective.
-- Remove diagnostic messages from the rename dialog.
+- **Rename in place, no dialog:** the pencil next to the folder name in the folder header turns the heading into an input of the same size; the pencil on a folder card turns the name under the collage into an input (the card's star and pencil are hidden meanwhile); in the modal toolbar the file name becomes an input with the extension shown separately and not editable. Next to the input: ✓ (save) and ✕ (cancel) icons; Enter saves, Esc cancels.
+- **Verification and execution run automatically:** keep the backend `plan` + `execute` steps; Enter runs `plan` and, if it passes, `execute`. The user never sees the technical sections.
+- **Errors in one sentence under the input**, no technical details:
+  - "Složka s tímto názvem už existuje."
+  - "Název nesmí obsahovat znaky \ / : * ? " < > |" — checked while typing.
+  - "Název nesmí končit tečkou ani mezerou." — checked while typing.
+  - "Název nesmí být prázdný."
+  - "Složku nejde přejmenovat, protože je otevřená v jiném programu."
+  - "Zdrojová složka není dostupná."
+- **Case-only rename must work** (foto → Foto): investigate why it is refused today (Windows treats such names as equal) and fix it.
+- **No page reload:** the heading, breadcrumb, and URL change in place; "✓ Přejmenováno" appears briefly next to the name. While the operation runs (it can take a while for large folders), the input shows "Přejmenovávám…" and is disabled.
+- An unavailable folder (unavailable source, folder missing on disk) shows no pencil.
 
 ### Constraint
 
-Source-media changes are allowed only as explicit user-initiated operations. If the investigation shows that the intended behavior differs from the current one, the resulting contract is a product decision to be agreed before implementation.
+Source-media changes are allowed only as explicit user-initiated operations.
 
-### Coordination
+### Done when
 
-Rename is part of the final regression in task 13.
+Folder rename from the header and from a card and file rename from the modal work as above on Windows, including a case-only rename, and the old dialog and its diagnostic texts are removed.
 
-## 23. Windows end-user distribution — DECISION REQUIRED
+## 23. Windows distribution, catalogs and first start — PENDING
 
-This is a requirement and planning topic, not an implementation task. Do not choose a packaging technology or implement any part of it until the decisions below are made.
+Required for 1.0 (decided 2026-11-06). Decisions §7d; artboards "Spouštění", "Průvodce prvním spuštěním (interaktivní)", "Rozcestník – výběr katalogu (interaktivní)".
 
-### Problem
+### Program and data are separate (replaces today's `setup-instance` model)
 
-The current public workflow requires an installed Python, creating a `.venv`, and using the CLI for `setup-instance` and `update-instance`. A regular Windows user should not have to work with the CLI, Python, or a virtual environment.
+Today `setup-instance` creates `Catalog2_<name>` next to the source folder with its own copy of the program (`.venv`, `app`) and `Start Catalog.bat`; every catalog is updated separately. New model:
 
-### Target
+- **One program:** a portable ZIP unpacked anywhere the user can write (desktop, `D:\Programy`, a USB drive; not `Program Files`). It contains `Catalog.exe` and a program folder with Python and libvips. No CLI, no Python installation.
+- **Catalogs are data only** (database, thumbnails, settings) with a user-given name and no technical prefix. Default location **next to the program**: `Catalog 2.0\Katalogy\<name>`, so the whole folder can be carried on a USB drive; "Změnit…" chooses another location. The program keeps the list of catalogs next to itself.
+- **Program update:** unpack the newer ZIP over the program folder; `Katalogy` stays untouched and all catalogs keep working. Not an online self-update.
+- **FFmpeg is not bundled:** with an explanation and the user's consent it is downloaded from the official source and verified with a checksum (first start or first need). Without it photos work and videos have no thumbnails.
+- **Licenses:** Python (bundle, include its license); libvips (`pyvips-binary`, LGPL: bundle as a separate replaceable library, include its license and a link to its source code); Catalog itself is MIT (`LICENSE`). Inventory all other redistributed components before release; the ZIP includes all required license texts and notices.
+- **Packaging technology** (how `Catalog.exe` is built) is not decided here: propose it after the license inventory, against these requirements.
+- The ZIP is published as a GitHub Release asset (task 12); the source stays in the repository.
 
-- A user-friendly Windows distribution, ideally a downloadable ZIP/portable package with an EXE or an equivalent launcher.
-- Without the CLI, the user can create a new Catalog instance, start it normally, and later update it to a newer version.
+### New-catalog wizard (in the browser)
 
-### Constraints
+Shown on the first start and from "+ Nový katalog". Four steps with a step indicator:
 
-- Preserve the current model of separate instances and their persistent data.
-- An update must not lose or unnecessarily replace config, database, cache, runtime state, or source media.
-- "Update capability" does not mean an automatic online self-update.
+1. **Nový katalog:** name; location pre-filled next to the program with "Změnit…"; note "Běžné náhledy jsou omezené na 20 GB, limit změníte později v Nastavení." (default `thumbnail_cache_limit_gb` = 20).
+2. **Zdrojová složka:** "Procházet…" opens the native Windows folder picker through the local server (the browser cannot reveal a real path); manual entry as a fallback; verification.
+3. **Videa:** FFmpeg download with consent, or "Teď ne".
+4. **První načtení:** file counter "Prochází soubory…", then a summary, the checkbox "Vytvořit zástupce „Catalog 2.0“ na ploše", and "Otevřít katalog".
 
-### Open decisions
+### Catalog chooser
 
-- Packaging technology. PyInstaller, embedded Python, an installer, and other options remain open.
-- Update UX, for example running an updater from a newer release package versus updating from within the application.
-- How FFmpeg/FFprobe is distributed. Bundling it is not automatically an approved solution; it is an open technical and licensing question.
-- How libvips (required by pyvips since task 10) is distributed: bundled in the release package (for example via `pyvips[binary]`), or downloaded after first start similarly to FFmpeg. pyvips is MIT-licensed; `pyvips-binary` is LGPL-3.0-or-later (see its THIRD-PARTY-NOTICES). Both variants are subject to the license inventory below.
-- Whether this belongs to the 1.0 release or post-1.0 work.
+- Shown when there is more than one catalog; with one catalog it is skipped.
+- List: small collage, name, counts, when last opened, source folder; clicking a row opens the catalog. Page buttons: "+ Nový katalog" and "Přidat existující…" (pick a catalog folder, for example from a USB drive or after moving it).
+- ⋯ menu per catalog: Přejmenovat, Otevřít složku katalogu, **Vytvořit zástupce na ploše** (the shortcut opens this catalog directly), Odebrat… → dialog with "Jen odebrat ze seznamu" (data stays, can be added back) and "Smazat katalog" (data and thumbnails; photos and videos are never deleted).
 
-### License compliance (prerequisite)
+### Appearance and language of the startup screens
 
-- Before choosing a distribution approach, inventory all redistributed components and verify their license/distribution terms, especially the Python runtime, Python dependencies, libvips, FFmpeg/FFprobe, and any packaging tool.
-- The resulting release must include the required licenses, notices, and attribution.
-- Verify the license of Catalog itself for public distribution; packaging must not leave the project's licensing state unclear.
+- Startup page, chooser, and wizard **always use the default theme** (Classic Orange); a catalog's own theme applies only after it is opened.
+- **Default language: English.** A dropdown language selector in the top right of the chooser and the wizard (globe icon, current language name, chevron; the list shows each language in its own language). Afterwards the language chosen in the catalog applies.
 
-### Coordination
+### Drive letter change
 
-- Task 11 covers final version metadata.
-- Task 12 covers the release ZIP and public release hygiene.
-- Task 18 covers launcher/runtime lifecycle.
+When the source folder is on the same drive as the catalog (typically a USB drive), the catalog stores the source path relative to its own drive. On another computer it tries the same path on the drive where it now lives, verifies it with the existing catalog-match check, and continues without asking on success. Otherwise the unavailable-source notice with "Změnit v Nastavení" appears (task 33).
+
+### Done when
+
+A user with no Python installed unpacks the ZIP, creates two catalogs through the wizard, opens each from the chooser and from a catalog shortcut, updates the program by unpacking a newer ZIP, and carries the folder to another computer on a USB drive with a different drive letter — all validated on Windows.
 
 ## 24. Video thumbnail generation performance — COMPLETED
 
@@ -357,15 +422,16 @@ Preserve the output contract from task 10 (WebP quality 82, target sizes from co
 - Generation became faster after the move to pyvips (task 10), but browsing feels almost unchanged. Something other than the generation itself is therefore probably the bottleneck.
 - Follows up on task 7.
 
-### Target
+### Step A — browser caching (block 1)
 
-Noticeably smoother photo browsing.
+- Today thumbnail responses use `Cache-Control: no-store`, so every return to a folder reads them from disk again.
+- Give each thumbnail URL a fingerprint (for example the thumbnail id and algorithm version) and an instance identifier, and serve it with `Cache-Control: immutable` and a long max-age. The instance identifier prevents collisions between catalogs served on the same port.
+- Done when: returning to an already visited folder shows its tiles without new thumbnail requests to the server (verified in the browser's network panel on Windows).
 
-### To investigate (not decisions)
+### Step B — remaining investigation (not decisions)
 
 - Where the waiting occurs between the browser request and the displayed thumbnail.
 - Viewport handling.
-- Browser caching of thumbnail responses (currently `Cache-Control: no-store`). A possible solution is a thumbnail fingerprint in the URL with `Cache-Control: immutable`; beware of collisions between instances served on the same port.
 - Whether generating one thumbnail opens the database several times (reportedly three times), and whether that is unnecessary.
 - Limiting the number of concurrent browser requests.
 - Cancelling requests for thumbnails that are no longer on screen.
@@ -376,11 +442,17 @@ Noticeably smoother photo browsing.
 
 The dynamic-cache cleanup logic (removing the least recently used entries) is complete and does not change.
 
+### README
+
+Recommend in `README.md` keeping the catalog folder (database and cache) on an SSD for large collections; media may stay on an HDD (already added on 2026-11-06).
+
 ## 26. Folder URLs — open a folder in another tab
 
 This task was merged into task 19.
 
 ## 27. Catalog update performance — PENDING
+
+Done together with task 31, because both change the file walk.
 
 ### Problem
 
@@ -402,11 +474,15 @@ Media pagination gained a top copy above the media cards using the child-folder 
 
 Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09).
 
+Note: the folder page is redesigned again in tasks 32 and 33.
+
 ## 29. Folder card layout — COMPLETED
 
 Folder cards (including Search and Favorites results) have one header row with the name, a summary with media and subfolder counts and a media-type ratio bar, and the actions, followed by full-width previews about 160 px wide whose number follows the card width. The statistics panel and the wide/compact card switching were removed, the breadcrumb is hidden on the root page, and `FOLDER_PREVIEW_REQUESTED_COUNT` is 12 (existing instances need one full folder-preview tree build).
 
 Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_LOG.md` (2026-10-09).
+
+Note: replaced by the collage cards of task 33 (`FOLDER_PREVIEW_REQUESTED_COUNT` 12 → 9).
 
 ## 30. Photo modal — selection flash on navigation — PENDING
 
@@ -414,6 +490,211 @@ Validated in Firefox; Chrome and Edge were not validated. See `docs/DEVELOPMENT_
 
 When clicking the edge of the photo modal to navigate to the previous or next photo, the old photo briefly flashes blue like a browser selection. The modal code has not changed.
 
-### Possible solution
+### Solution
 
-`user-select: none` on the photo area.
+`user-select: none` on the photo area. In the new modal (task 32) clicking the photo does nothing, which also removes the trigger.
+
+## 31. Redesign step 1 — media dimensions, video duration, larger photo tiles — PENDING
+
+Block 3, first redesign step. Decisions §1, §5, §7, §8. Includes task 27.
+
+- **Read media dimensions** (width and height) during the catalog update: only the file header for images; `ffprobe` for videos. Store them in the database. Only new and changed files are read on later updates. The first run on a large collection on an HDD takes noticeable time (tens of minutes to hours); measure it.
+- **Read video duration** in the same `ffprobe` call and store it; it is shown in the modal info line (task 32).
+- **Photo tile height 560 px** with a width limit for panoramas (today `image_thumb_size` is at most 300 × 400 px, so a landscape photo has only 300 × 200 px). 560 px covers the largest media row (360 px) at 150 % display scaling (540 px). About a quarter more space per tile than 500 px; generation time is dominated by reading the original. Tiles are never upscaled (`size="down"` stays); a smaller original keeps its size. Increase the photo-tile algorithm version so tiles are regenerated once. Video posters stay as they are (`video_preview_width` 1024 → 1024 × 576).
+- Estimate the cache size on the sample instance.
+- Done when: dimensions and duration are in the database after an update, new photo tiles are 560 px high, and the measured update time on the full collection is reported.
+
+## 32. Redesign step 2 — justified media rows and the new modal — PENDING
+
+Block 3. Decisions §5, §7; interactive artboard "Stránka složky (interaktivní)".
+
+### Media rows
+
+- Every item in a row has the same height; the width follows the original's aspect ratio from the database (task 31); no crop. The row height adjusts slightly so the row fills the width; the last row is not stretched.
+- **Extreme aspect ratios are clamped to 1:2.5 … 3:1**; only those items are cropped (centered) in the grid. Phone screenshots (~1:2.2) are not cropped; panoramas (4:1–8:1) become 3:1 (about 780 px at 260 px height). The modal always shows the whole photo. Layout rule only; generation is not affected.
+- No frames and no text; on hover a star in the top right and the file name at the bottom. Video: a play icon in the center drawn by Catalog (all formats including AVI). GIF: a "GIF" label.
+- **Media-size slider** in the Media section header; it changes media only (folders keep a fixed look). Row heights **180 / 220 / 260 / 310 / 360 px**, default 260 (approved). The chosen value is remembered.
+- The row height is at most (content width − gap) / 2.5 so at least two items fit (narrow window, task 33).
+
+### Modal
+
+- Covers the whole window above the page; closing returns to the same place.
+- **A photo opens fitted to the window.** Zoom: − [%] + (clicking the percentage fits to the window), "1:1" = original size.
+- **Navigation only with the arrows** at the sides; click area over the full height of the edge (96 px; 56 px in narrow windows). Clicking the photo does nothing (task 30). ←/→ keys navigate.
+- **Closing:** the ✕ button, Esc, and a click on the dark area around the photo (not on the photo, the arrows, the toolbar, or a video and its controls).
+- **Toolbar of icons with tooltips**, from the left: favorite (star), pin (pin) | open the original in the default application (↗; for a video "Otevřít v přehrávači"), open the source folder (folder icon) | − % + 1:1 | close. "Open original" opens the file in the system default application (`/api/open-original`), not in the browser.
+- **Info line:** position / total, path, dimensions; video duration.
+- **Rename in the toolbar:** task 22.
+- The thumbnail strip is not used.
+
+### Video in the modal
+
+- Arrows navigate photos and videos in one sequence in grid order (today the video modal breaks navigation: `openVideoModal` clears `imageItems`). Leaving a video stops it.
+- A video the browser can play (`is_html_playable`, `media_types.py`): the browser's built-in controls; it starts automatically with sound (the click is a user action); mute and volume are remembered.
+- A video the browser cannot play (for example AVI): the modal opens too (today a click starts the system player directly), showing a large poster, the sentence "Tento formát nejde přehrát v prohlížeči.", and the primary button "Přehrát v přehrávači" (`/api/open-original`).
+- Keys: ←/→ always navigate, Space plays/pauses; the modal keeps focus so the arrows do not seek in the video.
+- The toolbar has no zoom group for video; the video fits the window, full screen through the player controls.
+
+### Done when
+
+Media rows, the slider, the modal, and video behave as in the interactive artboard on Windows in Firefox.
+
+## 33. Redesign step 3 — folder collage, one pagination, tree panel, header, page states — PENDING
+
+Block 3. Decisions §2, §3, §6, §11; artboards "Stránka složky (interaktivní)", "Stavy – načítání", "Stavy – prázdné a nedostupné", "Stavy – běžící úloha", "Stavy – úzké okno 960 px", "Úzké okno pod 900 px – hlavička".
+
+### Page layout
+
+- **Content width:** at most 1600 px, centered. One CSS value.
+- **Header** (fixed height, never wraps — wrapping would push the page down when the task chip appears):
+  - left: ☰ (tree) and the logo "Catalog 2.0" — 40 px, bold, in the theme accent (renameable); under it a small GitHub link;
+  - center: the search field as the main element; "Jen aktuální složka" as a folder-icon toggle inside the field (highlighted with the accent); search with the magnifier in the field or Enter; no separate Search button;
+  - right: Oblíbené (navigates to the view) and Nastavení; header buttons are 40 px;
+  - task status: hidden when nothing runs; see "Running task" below.
+- **Accent color** only for the logo and active states (active filter, selected item, toggles), not for ordinary buttons.
+- **Tree:** a drawer under ☰ over the content (the page does not move): "Najít složku" field, sections Oblíbené složky, Naposledy navštívené, and the tree without icons with item counts.
+- **Folder header:** breadcrumb; name (30 px) with borderless icons: pencil (rename, task 22), star (favorite), ⋯ (open in Windows, update, recompute previews). Under the name one line of non-zero counts.
+- **Filter row:** Vše / Složky / Fotky / GIFy / Videa / Ostatní as underlined tabs; tabs with zero items are greyed out and disabled (not hidden), so the row never changes layout — `folder_detail` already returns per-type counts. On the right a compact pager "‹ 3 / 10 ›" (click the number → input to jump, Enter confirms, Esc cancels), hidden with a single page.
+
+### Folder collage cards
+
+- Grid `repeat(auto-fill, minmax(min(340px, 100%), 1fr))` (about 4 per row at 1920 px; 2 at 960 px; 1 below 720 px).
+- Each card: 1 large preview + 4 small (grid `2fr 1fr 1fr` / 2 rows, card ratio 4:3), name and counts below; star and pencil appear on hover.
+- All folder previews are cropped to one portrait ratio (uniform look, fixed height). Media are not cropped.
+- **Nine previews per folder** (`FOLDER_PREVIEW_REQUESTED_COUNT` 12 → 9): place 1 main, 2–5 secondary (the 4 small ones), 6–9 only in rotation.
+- **Rotation:** main preview only. Moving the mouse left to right over the large preview steps through all nine (not timed); a bar with nine segments at the bottom shows the position. Hovering a small preview shows it in the large frame. Small previews do not change. Places 6–9 load only on hover.
+- **Parent folders:** places are still divided among subfolders by size (`_weighted_select_rows_by_source`, square root of the media count); within a subfolder's share its manually pinned photos have priority (task 35).
+
+### One pagination
+
+- One list: subfolders first, then media; one pager; one URL parameter `page` (replaces `folder_page` and `media_page`).
+- Items per page from Settings (24 / 48 / 96 / 192, default 48; task 20).
+- The button for collapsing subfolders is removed (the filters replace it).
+- Compact pager in the filter row at the top, full pager at the bottom (« ‹ [3] / 10 › »). Keyboard shortcuts Page Up / Page Down for the previous/next page.
+
+### Page states
+
+Principle: content never jumps. Space is reserved in advance; notices that appear while the user is browsing float over the content.
+
+- **Loading:** breadcrumb, name, counts, and filters render immediately from the API; tiles are skeletons with the final shape (folder cards 4:3, media rows with real widths from the database). A thin indeterminate bar under the header appears only after 300 ms. A loaded tile fades in over 150 ms; no animations with `prefers-reduced-motion`. A tile that fails to load shows a grey area with an icon and the file name, "Náhled není k dispozici"; the item still opens. An API error replaces the grid with "Obsah složky se nepodařilo načíst." and "Zkusit znovu". During a cold start the task area shows "Připravuji náhledy…" until the server reports readiness (requires the readiness signal of task 4).
+- **Empty states** (calm icon, one sentence, at most one action):
+  - folder without subfolders and media: "Složka je prázdná" + a link back to the parent folder;
+  - filter without results (only reachable from a URL or history, because zero tabs are disabled): "V této složce nejsou žádné GIFy" + "Zobrazit vše";
+  - empty catalog of a new instance: "Katalog je prázdný" + "Aktualizovat katalog";
+  - folder no longer in the catalog: the root opens with the message "Složka z adresy nebyla nalezena: …" (task 19, already implemented).
+- **Unavailable source** (not an empty state): `source_root_status` (checked on every load, nothing cached) reports that `data_root` does not exist, is not a folder, or cannot be opened. Causes vary, so none is guessed. One application-wide notice above the breadcrumb, shown on page load only: "Zdrojová složka **{path}** není dostupná. Zkontrolujte, že je disk nebo síťové umístění připojené." + "Obsah se zobrazuje z katalogu; originály teď nejde otevřít." Actions "Zkusit znovu" (reload) and "Změnit v Nastavení" (task 20). The folder shows a "Nedostupné" label.
+- **Folder missing on disk while the source is available** (`missing`, `not_directory`, `link_or_junction`): a notice for that folder only, "Složka už na disku neexistuje. Mohla být smazána nebo přesunuta mimo Catalog." + "Aktualizovat tuto složku"; label "Nedostupné"; catalog content stays.
+- **Running task (first version, no backend change):** data from `/api/jobs/status` (`current_job`: kind, scope, state, `started_at`, error, result), polled every second; only one job at a time (`_ensure_start_allowed`).
+  - Chip "Aktualizace katalogu běží 4:12" (elapsed time computed from `started_at`) between the search field and the buttons; clicking it opens a panel with scope, start time, and elapsed time.
+  - Conflicting actions are disabled with the explanation "Už běží jiná úloha: …" (the backend also refuses them with `JobBusyError`).
+  - When finished: "Aktualizace katalogu dokončena" for 4 s and a floating notice at the bottom center of the window, "Katalog se změnil. Obsah této složky může být jiný." with "Obnovit" and ✕. This replaces today's automatic `refreshCurrentViewAndTree` after an update; the page never rearranges itself under the user.
+  - Error: the chip stays in the error color until the user opens it; the panel shows the backend error text translated through its message key.
+  - Screen readers hear only the start and the end (`aria-live="polite"`).
+  - Optional in this step, without backend change: during the walk phase a file counter "Prochází soubory… 12 000" from `latest_scan.staged` (WAL mode, the scan commits in batches of 1000); poll it about every 5 s because the count scans the index. Percentages, estimates, and cancellation are task 38.
+- **Narrow window** (the real case is a window snapped to half of a 1920 px monitor, 960 px):
+  - below 1280 px: Oblíbené and Nastavení become icons with tooltips; the search field narrows;
+  - below 900 px: search hides behind a magnifier icon and expands over the whole header (Esc or a back arrow closes it); the filter tabs scroll horizontally;
+  - folder cards follow the grid rule above; media rows follow the row-height rule of task 32; in the modal the toolbar wraps and the arrow areas shrink to 56 px;
+  - guaranteed support from 768 px; below that nothing may break.
+
+### Done when
+
+The folder page and all states match the artboards on Windows in Firefox, the URL contains only `page`, and no state makes the content jump.
+
+## 34. Redesign step 4 — replace obviously bad photos in folder previews — PENDING
+
+Block 3. Decisions §3 (variant C, approved 2026-11-06).
+
+- The nine photos are chosen evenly across the folder, as today.
+- From the tiles that are created for the card anyway, compute a fixed rule "obviously bad photo": nearly uniform (wall, ceiling, covered lens), nearly black, or nearly white. Videos are judged by their poster.
+- An obviously bad photo is replaced by its neighbor in the same folder; if that one is bad too, by the next one, up to a fixed limit per folder.
+- The rule is the same for every user, set conservatively to catch only obvious cases (it must not reject, for example, a snowy landscape or a night sky). The user sets nothing.
+- Cost: 9 reads per folder plus replacements only.
+- Rejected alternatives: choosing the best 9 of 27 candidates (about 3× longer first preparation); precomputing from embedded EXIF thumbnails (depends on whether files have them).
+- Done when: on the sample instance, folder cards contain no black frames, walls, or blank areas, and normal photos such as snow scenes are kept.
+
+## 35. Redesign step 5 — manual pinning of folder previews and crop focus — PENDING
+
+Block 3. Decisions §4; interactive artboard (pin panel in the modal).
+
+### Pinning
+
+- In the modal the pin icon "Připnout do náhledu složky" opens a drop-down panel anchored under the button: choose the level (the photo's own folder or one of its parents) and a plan of the nine places (main, 4 secondary, 4 in rotation). The rotation row (places 6–9) spans the full width of the collage; its tiles have the same shape as the small previews. Clicking a place pins the current item; clicking again releases it. A pinned place is marked everywhere with a dot in the accent color (also the main place). Text under the plan: "Kliknutím na místo fotku připnete, dalším kliknutím ji uvolníte. Tažením posunete výřez, dvojklikem ho vrátíte na střed."
+- Rules:
+  1. automatic recomputation (catalog update, new albums, preview preparation) never changes pinned places; it fills only unpinned places, without duplicates;
+  2. only the user releases pins: per place, or "Obnovit automatický výběr…" for a folder — an unobtrusive link with a confirmation in the panel ("Uvolnit připnutá místa (N) ve složce X? Nahradí je automatický výběr.");
+  3. when a pinned item disappears, the place returns to automatic selection (a preview never stays empty);
+  4. pinning or releasing recomputes that folder and its parents immediately; the user never starts recomputation manually.
+- The database already supports it (`folder_preview_items`, type `manual`, position). Verify: the link survives a file rename; manual places' tiles are protected in the protected cache (task 9); the final preview is composed from manual and automatic places.
+
+### Crop focus (last part of this task)
+
+- In the pin panel a pinned photo can be moved inside its place by dragging (the frame stays; the image moves); a double click returns it to the center. The focus is saved and the folder card changes immediately. Only in the panel, not on the cards (accidental drags).
+- Technically: two columns with the crop focus of manual places in `folder_preview_items`, applied with CSS `object-position`; thumbnails and cache are not regenerated.
+
+### Done when
+
+Pinning, releasing, the reset confirmation, and crop focus work as in the interactive artboard, and an update never changes pinned places.
+
+## 36. Search results grouped by folder; Favorites — PENDING
+
+Block 3. Decisions §7a; artboard "Výsledky hledání".
+
+### Current state (verified)
+
+`search_page` matches the text against the whole path (`path_key LIKE`, folder and file names) and the media type; results are ordered by path; filters and folder scope exist; folders and media have separate pagination. Favorites (`favorites.json`, with the date added) have the same structure.
+
+### Search
+
+- Same template as the folder page: header, filters, one pagination, collage cards for folders.
+- Instead of the breadcrumb: "Výsledky pro „{text}“" + a scope label ("v celém katalogu" / "ve složce {name} ✕" — the ✕ widens the search to the whole catalog) + a count line.
+- **Found folders** as collage cards; the match in the name is underlined in the accent color; the parent path below the name.
+- **Found media grouped by folder:** each folder with a match is one group: a path line (link to the folder), the number of matches, "Zobrazit vše →", and **one row of sample items** (clipped to the width). **Pagination is by groups** (for example 20 groups per page), not by items — necessary for large collections (one search can find 100,000 photos).
+- **"Zobrazit vše →"** opens the search limited to that folder (existing scope) with normal pagination over all its matches.
+- **Match highlighting:** a match in the path is underlined in the path line; a match in a file name is underlined in the name shown on hover.
+- Order by path (predictable; no relevance ranking).
+- **The modal from results** navigates within the results; the info line shows the full path and "Ukázat ve složce" (anchors `/api/search/anchor` and `/api/favorites/anchor` exist).
+- **Empty result:** "Nic nenalezeno pro „{text}“"; with a folder scope also "Hledat v celém katalogu".
+- **Backend:** a new grouped query — folders with matches + counts + the first N samples per folder, paginated by groups (SQLite `GROUP BY` and window functions).
+
+### Favorites
+
+- No grouping; one list of folders and media (Favorites are usually small).
+- Empty: "Zatím nemáte žádné oblíbené. Přidáte je hvězdičkou u složky nebo fotky."
+- An unavailable item stays in the list with the "Nedostupné" label and can be removed with the star.
+
+### Done when
+
+A search with many matches shows every folder group within a few pages, "Zobrazit vše" lists all matches of one folder, and both work on the full collection with acceptable response times.
+
+## 37. Catalog resilience — PENDING
+
+Block 5. Decisions §7d. Situations caused outside Catalog.
+
+- **Catalog folder missing** (deleted or moved in Explorer): in the chooser (task 23) a dashed frame, the label "Nenalezen" / "Not found", the text "Složka katalogu byla přesunuta nebo smazána", the button "Najít…", and in the ⋯ menu only "Jen odebrat ze seznamu".
+- **Damaged database** (for example after a power failure): an understandable error and "Vytvořit katalog znovu" — the media are read again from the source. To keep Favorites, pins, crop focus, and settings, **back them up automatically** (for example at every start, keeping the last few copies) and restore them into the recreated catalog.
+- **Full disk with the catalog:** missing thumbnails appear as "Náhled není k dispozici" tiles; an update ends with the error "Na disku s katalogem došlo místo." **Verify** that the update's staging phase leaves the original catalog untouched in this case.
+- Done when: each scenario is reproduced on Windows and behaves as described.
+
+## 38. Enhancements — PENDING
+
+Block 6, after the core works. Each item is independent; if one stalls, it must not delay the others.
+
+1. **Job progress** (backend): extend `RuntimeJob` with phase, done / total, and the time of the last change; the job thread updates them and `snapshot()` reads them under the lock. Percentages only for phases with a known total (activation, previews); the file walk has only a counter. The frontend computes the remaining-time estimate from the rate and shows it only after the rate stabilizes (about 30 s of data). UI: chip "Aktualizace katalogu 45 %" with a thin progress line, "Procházím soubory… 12 400" for phases without a total, and a panel with phase, processed x / y, elapsed time, and remaining time. Design: artboard "Stavy – běžící úloha", right column.
+2. **Safe cancellation of long jobs** ("Zastavit" button in the task panel): a job stops at a safe point and leaves the catalog consistent.
+3. **Smart crop for automatic preview places:** when a preview tile is created, determine the crop center with pyvips `smartcrop` (`interest="attention"`) and use it instead of the center (`object-position`). A few milliseconds per photo; nothing extra is read.
+4. **Custom color scheme** (draft; decide whether to keep it once task 14 step 2 is done; may be dropped): "Vlastní…" in Settings › Vzhled opens an editor of four base colors (background, surfaces, text, accent) with a live preview, a readability warning when text/background contrast is below 4.5:1 ("Text je na pozadí špatně čitelný."), and "Obnovit výchozí". The other tokens (borders, muted text, …) are derived; status colors (success, warning, error, info) stay fixed. Design: artboard "Nastavení (interaktivní)".
+
+## 39. UI texts — one voice, translation rules, human backend messages — PENDING
+
+Block 2, together with task 14. Decisions §12.
+
+- **Formal address (vykání) everywhere** in Czech. Today `cs.json` mostly uses the informal form (about 15 texts, for example "Zadej hledaný text.", "Připoj zdrojový disk…") — rewrite them. Buttons use the infinitive ("Zkusit znovu", "Obnovit", "Aktualizovat tuto složku").
+- **Rules for every new or changed text:**
+  1. one complete sentence per key, never composed from fragments (word order differs between languages);
+  2. variables (path, name, count) only as placeholders inside the sentence;
+  3. buttons and labels are designed to fit a longer translation.
+- Counts use the existing `count.*.one/few/other` forms.
+- Every key exists in `cs.json` and `en.json` (checked by `tools/check_i18n_translations.py`).
+- **Backend messages shown to users are human:** no internal terms such as "dynamic cache položky", "DB", "reference"; one sentence about what happened and, where useful, what to do.
+- Done when: the translation check passes, no informal Czech text remains, and no user-visible message contains internal terms.
