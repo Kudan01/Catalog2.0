@@ -26,7 +26,7 @@ Task steps use the form "Done when: …". A task is complete only when every ste
 
 All work below belongs to 1.0. Only support for non-Windows systems is deferred (task 15). Development and debugging use a small sample instance; the full collection is used only at the end as a performance check. Schema and tile changes are not migrated; instances are recreated (project rule: no transition layers before 1.0).
 
-1. **Performance quick fixes:** task 4 step A, task 25 step A.
+1. **Performance quick fixes:** task 4 step A, task 25 step A and the cache-size and catalog-count fix (completed); task 25 step B (anchor database connection).
 2. **Frontend refactor before the redesign:** task 14 (modules, `style.css` cleanup, color tokens, browser tests), task 39 (UI texts).
 3. **Redesign:** tasks 31 (with 27), 32, 33, 34, 35, 36 — in this order; each is separately verifiable.
 4. **Settings, rename, modal fixes:** tasks 20, 21, 22, 30.
@@ -61,16 +61,25 @@ The later question about Back/Forward between media pages inside an already open
 
 Catalog can visually appear to be running before the main content is actually ready. Global folder/media counts are not a readiness signal for the main gallery.
 
-The main content currently waits for `/api/folder`, `/api/folders`, and `/api/media`; a slow request can therefore leave the main area empty. pyvips/libvips is loaded only when the first thumbnail is requested, which delays the first tiles after startup by about a minute.
+The main content waits for `/api/folder`, `/api/folders`, and `/api/media`; a slow request can therefore leave the main area empty.
 
-### Step A — load pyvips at server start (block 1)
+### Cause of the slow start (found 2026-11-11)
 
-- Import and initialize pyvips/libvips during server startup, before the server reports readiness.
-- Done when: after a fresh start, the first folder's photo tiles appear without the initial one-minute wait (validated on Windows with media on an HDD).
+The original assumption that loading pyvips delayed the first tiles by about a minute was wrong: pyvips loads in under a second. The measured causes were:
+
+- After every generated photo tile, the automatic dynamic-cache check summed `thumbnails.file_size_bytes` over the whole table twice (total and per cache class). On a large catalog with a cold database this cost seconds per tile and made concurrent thumbnail requests queue on the disk.
+- `/api/status` and the job status counted all rows of `folders` and `media_files` on every call, and the frontend waited for `/api/status` before opening the folder view (about 13 s at startup).
+
+Both were fixed together with task 25 (see `docs/DEVELOPMENT_LOG.md`, 2026-11-11).
+
+### Step A — load pyvips at server start (block 1) — COMPLETED
+
+- pyvips/libvips is loaded and warmed up during server startup, before the server reports readiness.
+- Validated on Windows; this alone did not shorten the start (see the cause above).
 
 ### Step B — startup page (block 7, after task 23)
 
-- The server starts immediately and the browser opens a startup page at once: logo, a progress bar, "Catalog se spouští…" / "Catalog is starting…" and the current step (for example "Připravuji náhledy"). Design: artboard "Spouštění" (decisions §7d).
+- The server starts immediately and the browser opens a startup page at once: logo, a progress bar, "Catalog is starting…" and the current step (for example "Preparing previews"). Design: artboard "Spouštění" (decisions §7d).
 - The page switches automatically when the main content is actually ready: one catalog → that catalog; several → the catalog chooser (task 23); none → the new-catalog wizard (task 23).
 - No console window is visible to the user (replaces the original idea in task 18 of showing progress in the PowerShell window).
 - Done when: no manual refresh is ever needed after start, and the startup page never shows a gallery that is not ready.
@@ -151,6 +160,12 @@ Source originals must not be modified.
 - Remove obsolete development-version labels.
 - No functional changes belong in this task.
 
+### Versioning rules (decided 2026-11-06)
+
+- **Program version** follows semantic versioning: `1.0.1` fixes only, `1.1.0` new features, `2.0.0` incompatible changes. Pre-releases use a suffix (`1.1.0-beta.1`) and are published as GitHub pre-releases; the in-app update check ignores them.
+- **Catalog format version** is a separate integer stored in each catalog database. It increases only when the database format changes; only then does the catalog upgrade (with backup) run. A program refuses to open a catalog with a newer format version (task 23).
+- The program version, the catalog format version, and the release checksum are available to the in-app update check.
+
 ## 12. Public GitHub / release hygiene — PENDING
 
 - Remove personal paths, data, and test artifacts.
@@ -159,15 +174,18 @@ Source originals must not be modified.
 - `LICENSE` (MIT) exists; verify that third-party notices required by task 23 are included in the release ZIP.
 - Review repository description/topics.
 - Add screenshots if needed.
-- Publish the release ZIP as a GitHub Release asset; the ZIP contains no database, cache, config, `.venv`, or other local instance data.
+- Publish the release ZIP as a GitHub Release asset together with its checksum; the ZIP contains no database, cache, config, `.venv`, or other local instance data.
+- **Branches and releases:** `main` is always in a working state; each task is done in its own short-lived branch (for example `task-31-media-dimensions`) and merged into `main` only after validation on Windows; a release is a version tag on `main` with the ZIP attached. Users receive only published releases, never work in progress. Prepare the exact steps and, if useful, a GitHub Actions workflow that builds the ZIP and checksum from a tag.
+- The author's own catalog runs only on released versions; development uses the sample instance.
 
 ## 13. Complete final regression — PENDING
 
 Validate the final release across:
 
-- portable ZIP: first start, new-catalog wizard, catalog chooser, several catalogs, desktop shortcuts, program update by unpacking a newer ZIP over the program folder, moving the whole folder to a USB drive with a different drive letter (task 23);
+- portable ZIP: first start, new-catalog wizard, catalog chooser, several catalogs, desktop shortcuts, program update from the app (check, download, verify, switch, restart; failure leaves the current version running), manual update by unpacking a newer ZIP, automatic cleanup of old program versions, moving the whole folder to a USB drive with a different drive letter (task 23);
+- before a release that changes the catalog format: upgrade of a catalog created by the previous released version, including the backup and the failure path;
 - multiple catalogs running at the same time and a second start of a running catalog;
-- automatic shutdown after the last Catalog tab is closed, the notification-area icon, and "Ukončit Catalog" (task 18);
+- automatic shutdown after the last Catalog tab is closed, the notification-area icon, and "Quit Catalog" (task 18);
 - Scan / Update, including media dimensions and video duration (task 31);
 - photos, GIFs, video (playable and non-playable in the browser), and other media;
 - folder previews: nine places, replacement of obviously bad photos, smart crop, manual pins and crop focus (tasks 34, 35, 38);
@@ -178,7 +196,7 @@ Validate the final release across:
 - source folder change and unavailable source (tasks 20, 33, 37);
 - one pagination with page sizes 24/48/96/192 (task 33);
 - History API / browser Back / breadcrumb / anchor return;
-- Search grouped by folder and "Zobrazit vše" (task 36);
+- Search grouped by folder and "Show all" (task 36);
 - page states: loading, empty states, unavailable source, missing folder, running task, narrow window (task 33);
 - catalog resilience scenarios (task 37);
 - all themes, including the light theme;
@@ -237,8 +255,8 @@ Block 7, together with task 23. Decisions §7d.
 
 - No console window is visible to the user; startup progress is shown in the browser (task 4 step B).
 - **Automatic shutdown:** every open Catalog page reports to the server periodically (heartbeat, for example every 30 s). When no Catalog page has reported for about 15 minutes, the server shuts down cleanly. If a job is running (catalog update, preview preparation), the server waits for it to finish first. Closing the browser tab is therefore enough.
-- **Notification-area icon** (Windows tray) owned by the server process, with "Otevřít Catalog" and "Ukončit".
-- **"Ukončit Catalog"** in Settings.
+- **Notification-area icon** (Windows tray) owned by the server process, with "Open Catalog" and "Quit".
+- **"Quit Catalog"** in Settings.
 - Shutdown leaves no orphaned background process or window.
 - A second start of a running catalog only opens the browser (already implemented in `launcher.py`; keep it). Different catalogs take the configured port or the next free one (already implemented; keep it).
 
@@ -258,12 +276,13 @@ Required for 1.0. Decisions §7b; artboard "Nastavení (interaktivní)".
 
 ### Structure
 
-- Separate modal of fixed size; left column with four sections, one shown at a time: **Obecné**, **Aktualizace**, **Zdrojová složka**, **Náhledy a cache**. The General section fits without scrolling in its default state.
+- Separate modal of fixed size; left column with four sections, one shown at a time: **General**, **Updates**, **Source folder**, **Thumbnails and cache**. The General section fits without scrolling in its default state.
+- Primary action buttons in a section have one minimum width (260 px in the design) so they line up.
 - Every block uses one pattern: heading, at most one short description sentence (as wide as the fields), control. Fields align: the catalog-name field is as wide as Language and Items per page side by side (464 px in the design).
-- **Obecné:** catalog name; theme (five themes and "Vlastní…" in a three-column grid; the custom-color editor is task 38); language; **items per page** — one value for all filters with the options 24 / 48 / 96 / 192, default 48 (multiples of 12 keep folder cards in full rows at 1–4 columns). This replaces today's per-filter page sizes, the fixed 48 for "All", and Search's fixed 50.
-- **Aktualizace:** "Aktualizace katalogu" (description: finds new, changed, and deleted files; source files are not changed; time of the last update; primary button "Aktualizovat katalog" in the accent color) and "Náhledy katalogu" ("Přepočítat náhledy katalogu").
-- **Zdrojová složka:** description "Složka s vašimi fotkami a videi."; path, "Ověřit", "Uložit" (enabled only after a successful verification; editing the path requires verifying again); after verification "✓ Složka je dostupná a odpovídá katalogu." Nothing else runs after saving: `source_root_setting_verify` already compares a sample of catalog folders with the new path and refuses a low match. This section is the target of "Změnit v Nastavení" from the unavailable-source notice (task 33).
-- **Náhledy a cache:** usage of the regular cache with a bar and the protected thumbnails; regular-cache limit in GB with "Uložit" (description: how much space regular thumbnails may use; protected ones are not counted); "Úklid" with "Vyčistit nepoužívané náhledy", which runs the dynamic-cache cleanup and then the protected-orphan check and clean; it deletes only thumbnails that nothing in the catalog references.
+- **General:** catalog name; theme (five themes and "Custom…" in a three-column grid; the custom-color editor is task 38); language; **items per page** — one value for all filters with the options 24 / 48 / 96 / 192, default 48 (multiples of 12 keep folder cards in full rows at 1–4 columns). This replaces today's per-filter page sizes, the fixed 48 for "All", and Search's fixed 50.
+- **Updates:** "Catalog update" (description: finds new, changed, and deleted files; source files are not changed; time of the last update; primary button "Update catalog" in the accent color) and "Catalog previews" ("Recalculate catalog previews"), and "Program version" (current version, "Check for a new version"; behavior in task 23). The program-version block uses distinct wording ("new version", not "update") so it is not confused with the catalog update.
+- **Source folder:** description "The folder with your photos and videos."; path, "Verify", "Save" (enabled only after a successful verification; editing the path requires verifying again); after verification "✓ The folder is available and matches the catalog." Nothing else runs after saving: `source_root_setting_verify` already compares a sample of catalog folders with the new path and refuses a low match. This section is the target of "Change in Settings" from the unavailable-source notice (task 33).
+- **Thumbnails and cache:** usage of the regular cache with a bar and the protected thumbnails; regular-cache limit in GB with "Save" (description: how much space regular thumbnails may use; protected ones are not counted); "Cleanup" with "Clean unused previews", which runs the dynamic-cache cleanup and then the protected-orphan check and clean; it deletes only thumbnails that nothing in the catalog references.
 
 ### Remove from the UI
 
@@ -273,7 +292,7 @@ Required for 1.0. Decisions §7b; artboard "Nastavení (interaktivní)".
 
 ### Loading
 
-- Cache statistics are computed only when "Náhledy a cache" is opened; the other sections open immediately with complete values.
+- Cache statistics are computed only when "Thumbnails and cache" is opened; the other sections open immediately with complete values.
 - Investigate which requests Settings issues and why the cache summary is slow; a loading indicator must not hide an unresolved performance problem.
 
 ### Done when
@@ -286,8 +305,8 @@ Required for 1.0. The decision was made on 2026-11-06 (decisions §7b).
 
 ### Apply model
 
-- Safe changes apply and save immediately: theme, language, items per page; the catalog name on leaving the field or Enter. A short "✓ Uloženo" appears next to the block heading for a few seconds.
-- Changes with consequences require "Uložit": source folder (after verification) and cache limit.
+- Safe changes apply and save immediately: theme, language, items per page; the catalog name on leaving the field or Enter. A short "✓ Saved" appears next to the block heading for a few seconds.
+- Changes with consequences require "Save": source folder (after verification) and cache limit.
 
 ### Language
 
@@ -303,21 +322,21 @@ Required for 1.0. Decisions §7c; implemented in the interactive design (folder 
 
 ### Current state (verified)
 
-A separate dialog with a developer workflow: "Ověřit změnu" → sections Impact, Paths, Technical checks, Blocking errors, Warnings → "Přejmenovat". The physical folder or file on disk is renamed, and the catalog updates the paths of the whole branch, Favorites, and previews.
+A separate dialog with a developer workflow: "Verify change" → sections Impact, Paths, Technical checks, Blocking errors, Warnings → "Rename". The physical folder or file on disk is renamed, and the catalog updates the paths of the whole branch, Favorites, and previews.
 
 ### Target
 
 - **Rename in place, no dialog:** the pencil next to the folder name in the folder header turns the heading into an input of the same size; the pencil on a folder card turns the name under the collage into an input (the card's star and pencil are hidden meanwhile); in the modal toolbar the file name becomes an input with the extension shown separately and not editable. Next to the input: ✓ (save) and ✕ (cancel) icons; Enter saves, Esc cancels.
 - **Verification and execution run automatically:** keep the backend `plan` + `execute` steps; Enter runs `plan` and, if it passes, `execute`. The user never sees the technical sections.
 - **Errors in one sentence under the input**, no technical details:
-  - "Složka s tímto názvem už existuje."
-  - "Název nesmí obsahovat znaky \ / : * ? " < > |" — checked while typing.
-  - "Název nesmí končit tečkou ani mezerou." — checked while typing.
-  - "Název nesmí být prázdný."
-  - "Složku nejde přejmenovat, protože je otevřená v jiném programu."
-  - "Zdrojová složka není dostupná."
+  - "A folder with this name already exists."
+  - "The name must not contain the characters \ / : * ? " < > |" — checked while typing.
+  - "The name must not end with a period or a space." — checked while typing.
+  - "The name must not be empty."
+  - "The folder cannot be renamed because it is open in another program."
+  - "The source folder is not available."
 - **Case-only rename must work** (foto → Foto): investigate why it is refused today (Windows treats such names as equal) and fix it.
-- **No page reload:** the heading, breadcrumb, and URL change in place; "✓ Přejmenováno" appears briefly next to the name. While the operation runs (it can take a while for large folders), the input shows "Přejmenovávám…" and is disabled.
+- **No page reload:** the heading, breadcrumb, and URL change in place; "✓ Renamed" appears briefly next to the name. While the operation runs (it can take a while for large folders), the input shows "Renaming…" and is disabled.
 - An unavailable folder (unavailable source, folder missing on disk) shows no pencil.
 
 ### Constraint
@@ -336,9 +355,11 @@ Required for 1.0 (decided 2026-11-06). Decisions §7d; artboards "Spouštění",
 
 Today `setup-instance` creates `Catalog2_<name>` next to the source folder with its own copy of the program (`.venv`, `app`) and `Start Catalog.bat`; every catalog is updated separately. New model:
 
-- **One program:** a portable ZIP unpacked anywhere the user can write (desktop, `D:\Programy`, a USB drive; not `Program Files`). It contains `Catalog.exe` and a program folder with Python and libvips. No CLI, no Python installation.
-- **Catalogs are data only** (database, thumbnails, settings) with a user-given name and no technical prefix. Default location **next to the program**: `Catalog 2.0\Katalogy\<name>`, so the whole folder can be carried on a USB drive; "Změnit…" chooses another location. The program keeps the list of catalogs next to itself.
-- **Program update:** unpack the newer ZIP over the program folder; `Katalogy` stays untouched and all catalogs keep working. Not an online self-update.
+- **One program:** a portable ZIP unpacked anywhere the user can write (desktop, `D:\Programs`, a USB drive; not `Program Files`). It contains `Catalog.exe` and the program in a **versioned subfolder** (`program\<version>\`, for example `program\1.0.0\`) with Python and libvips. No CLI, no Python installation. `Catalog.exe` starts the newest valid version present.
+- **Catalogs are data only** (database, thumbnails, settings) with a user-given name and no technical prefix. Default location **next to the program**: `Catalog 2.0\Catalogs\<name>`, so the whole folder can be carried on a USB drive; "Change…" chooses another location. The program keeps the list of catalogs next to itself. Names of folders and files that the program creates on disk (`program`, `Catalogs`, …) are English and fixed; they never follow the UI language. Only the user-given catalog name is used as entered.
+- **Program update from the app (user-initiated, decided 2026-11-06):** Settings › Updates › "Program version" shows the current version and "Check for a new version". The check looks only at **published GitHub Releases** (never at commits; pre-releases are ignored). Results: "You have the latest version", or "Version {version} is available" with a short summary of changes and "Download and install". Installing: download the release ZIP over HTTPS from GitHub, verify it against the checksum published with the release, unpack the new `program\<version>\` **next to** the current one, and switch only after successful verification; a small separate updater process does the switch (Windows does not allow replacing files of a running program), then Catalog restarts. If anything fails, the current version stays untouched and keeps running. There is no automatic background check — Catalog contacts the internet only when the user clicks. The program version belongs to the whole application, so the same check is also at the bottom of the catalog chooser: "Catalog 2.0 · version 1.0.0 · Check for a new version" (users with one catalog never see the chooser and use Settings). Design: artboards "Nastavení (interaktivní)" (section Updates) and "Rozcestník – výběr katalogu (interaktivní)".
+- **Manual update stays possible:** unpack a newer ZIP over the program folder; the new versioned subfolder is added and `Catalog.exe` uses it. Leftover files of older versions cannot interfere because each version lives in its own subfolder. `Catalogs` stays untouched.
+- **Automatic cleanup of program versions:** at most two versions are kept — the current one and the previous one (fallback). After a new version has started successfully once, versions older than the previous one are deleted automatically. If the user deletes the newest version manually, `Catalog.exe` starts the newest remaining one; catalogs already converted to a newer format are shown as "Newer version" in the chooser and nothing is damaged.
 - **FFmpeg is not bundled:** with an explanation and the user's consent it is downloaded from the official source and verified with a checksum (first start or first need). Without it photos work and videos have no thumbnails.
 - **Licenses:** Python (bundle, include its license); libvips (`pyvips-binary`, LGPL: bundle as a separate replaceable library, include its license and a link to its source code); Catalog itself is MIT (`LICENSE`). Inventory all other redistributed components before release; the ZIP includes all required license texts and notices.
 - **Packaging technology** (how `Catalog.exe` is built) is not decided here: propose it after the license inventory, against these requirements.
@@ -346,18 +367,18 @@ Today `setup-instance` creates `Catalog2_<name>` next to the source folder with 
 
 ### New-catalog wizard (in the browser)
 
-Shown on the first start and from "+ Nový katalog". Four steps with a step indicator:
+Shown on the first start and from "+ New catalog". Four steps with a step indicator:
 
-1. **Nový katalog:** name; location pre-filled next to the program with "Změnit…"; note "Běžné náhledy jsou omezené na 20 GB, limit změníte později v Nastavení." (default `thumbnail_cache_limit_gb` = 20).
-2. **Zdrojová složka:** "Procházet…" opens the native Windows folder picker through the local server (the browser cannot reveal a real path); manual entry as a fallback; verification.
-3. **Videa:** FFmpeg download with consent, or "Teď ne".
-4. **První načtení:** file counter "Prochází soubory…", then a summary, the checkbox "Vytvořit zástupce „Catalog 2.0“ na ploše", and "Otevřít katalog".
+1. **New catalog:** name (empty, placeholder "For example: Family photos"; required to continue); location built automatically as `<program folder>\Catalogs\<name>` and updated while the name is typed; "Change…" picks another parent folder, after which the location follows the name under that folder; note "Regular previews are limited to 20 GB; you can change the limit later in Settings." (default `thumbnail_cache_limit_gb` = 20).
+2. **Source folder:** "Browse…" opens the native Windows folder picker through the local server (the browser cannot reveal a real path); manual entry as a fallback; verification.
+3. **Videos:** FFmpeg download with consent, or "Not now".
+4. **First load:** file counter "Scanning files…", then a summary, the checkbox "Create a “Catalog 2.0” shortcut on the desktop", and "Open catalog".
 
 ### Catalog chooser
 
 - Shown when there is more than one catalog; with one catalog it is skipped.
-- List: small collage, name, counts, when last opened, source folder; clicking a row opens the catalog. Page buttons: "+ Nový katalog" and "Přidat existující…" (pick a catalog folder, for example from a USB drive or after moving it).
-- ⋯ menu per catalog: Přejmenovat, Otevřít složku katalogu, **Vytvořit zástupce na ploše** (the shortcut opens this catalog directly), Odebrat… → dialog with "Jen odebrat ze seznamu" (data stays, can be added back) and "Smazat katalog" (data and thumbnails; photos and videos are never deleted).
+- List: small collage, name, counts, when last opened, source folder; clicking a row opens the catalog. Page buttons: "+ New catalog" and "Add existing…" (pick a catalog folder, for example from a USB drive or after moving it).
+- ⋯ menu per catalog: Rename, Open catalog folder, **Create desktop shortcut** (the shortcut opens this catalog directly), Remove… → dialog with "Remove from list only" (data stays, can be added back) and "Delete catalog" (data and thumbnails; photos and videos are never deleted).
 
 ### Appearance and language of the startup screens
 
@@ -366,11 +387,15 @@ Shown on the first start and from "+ Nový katalog". Four steps with a step indi
 
 ### Drive letter change
 
-When the source folder is on the same drive as the catalog (typically a USB drive), the catalog stores the source path relative to its own drive. On another computer it tries the same path on the drive where it now lives, verifies it with the existing catalog-match check, and continues without asking on success. Otherwise the unavailable-source notice with "Změnit v Nastavení" appears (task 33).
+When the source folder is on the same drive as the catalog (typically a USB drive), the catalog stores the source path relative to its own drive. On another computer it tries the same path on the drive where it now lives, verifies it with the existing catalog-match check, and continues without asking on success. Otherwise the unavailable-source notice with "Change in Settings" appears (task 33).
+
+### Catalog format upgrade (after 1.0)
+
+When a newer program opens a catalog created by an older version, it first backs up the catalog database, then upgrades it automatically (the CLI already has `db-upgrade`). The startup page shows "Updating catalog “{name}” to the new version…" with progress and "A backup was created before the update." (artboard "Spouštění – převod katalogu na novou verzi"). If the upgrade fails, the backup is restored and a page explains it: "The catalog could not be updated" + "Catalog “{name}” was restored from the backup; nothing was lost. Try running the update again." with "Back to catalog selection" and "Try again" (artboard "Převod katalogu se nepovedl"). A catalog created by a *newer* program version is not opened: in the chooser it shows the label "Newer version" and "This catalog was created by a newer version of Catalog. Update the program."; its ⋯ menu offers only "Remove from list only". Before 1.0 no upgrade code is written (instances are recreated); the version check and the chooser state are part of 1.0.
 
 ### Done when
 
-A user with no Python installed unpacks the ZIP, creates two catalogs through the wizard, opens each from the chooser and from a catalog shortcut, updates the program by unpacking a newer ZIP, and carries the folder to another computer on a USB drive with a different drive letter — all validated on Windows.
+A user with no Python installed unpacks the ZIP, creates two catalogs through the wizard, opens each from the chooser and from a catalog shortcut, updates the program from Settings and once by unpacking a newer ZIP, and carries the folder to another computer on a USB drive with a different drive letter — all validated on Windows.
 
 ## 24. Video thumbnail generation performance — COMPLETED
 
@@ -419,18 +444,27 @@ Preserve the output contract from task 10 (WebP quality 82, target sizes from co
 ### Problem
 
 - Photo thumbnails are generated on demand while browsing; this is intentional, and thumbnails appearing progressively is expected.
-- Generation became faster after the move to pyvips (task 10), but browsing feels almost unchanged. Something other than the generation itself is therefore probably the bottleneck.
+- Generation became faster after the move to pyvips (task 10), but browsing felt almost unchanged. The main bottleneck was the cache-size check after every generated tile (see task 4, "Cause of the slow start"); it was fixed on 2026-11-11.
 - Follows up on task 7.
 
-### Step A — browser caching (block 1)
+### Step A — browser caching (block 1) — COMPLETED
 
-- Today thumbnail responses use `Cache-Control: no-store`, so every return to a folder reads them from disk again.
-- Give each thumbnail URL a fingerprint (for example the thumbnail id and algorithm version) and an instance identifier, and serve it with `Cache-Control: immutable` and a long max-age. The instance identifier prevents collisions between catalogs served on the same port.
-- Done when: returning to an already visited folder shows its tiles without new thumbnail requests to the server (verified in the browser's network panel on Windows).
+- Thumbnail URLs carry a fingerprint (an instance-specific cache key plus the media identity) and are served with `Cache-Control: immutable` and a long max-age. Validated on Windows: returning to a visited folder loads tiles from the browser cache without requests to the server.
 
-### Step B — remaining investigation (not decisions)
+### Cache size and catalog counts without full-table scans (block 1) — COMPLETED
 
-- Where the waiting occurs between the browser request and the displayed thumbnail.
+- The thumbnail cache size per class and the catalog folder/media counts are stored and kept up to date in the same transaction as the change; they are recomputed exactly only in explicit cache cleanup and at catalog update. Details in `docs/DEVELOPMENT_LOG.md` (2026-11-11).
+- A covering index on `thumbnails` was considered for the folder-preview query and is not needed: after the fix the query takes a few milliseconds. The remaining per-thumbnail point lookups need almost all columns, so a covering index would duplicate most of the table.
+
+### Step B — anchor database connection (block 1)
+
+- Measured on 2026-11-11: occasional `/api/folders` requests spend 0.5–0.8 s opening the database connection while their SQL takes about 10 ms. The cost lands on the first statement of the new connection (`PRAGMA application_id` in the connection check). The likely cause is that the server opens a new connection per request and holds none permanently: when the last connection closes, SQLite checkpoints and deletes the WAL and shared-memory files, and a request opening a connection at that moment waits for the lock with growing back-off; recreating the files on the next open may add to it.
+- Keep one idle read-only connection open for the lifetime of the server so that the last connection never closes during normal operation; automatic WAL checkpoints continue as before.
+- Done when: a new diagnostic measurement after restarting Windows shows no `/api/folders` requests dominated by `db_connect`, and `PRAGMA application_id` is no longer among the most expensive statements.
+
+### Step C — remaining investigation (not decisions)
+
+- Where the waiting occurs between the browser request and the displayed thumbnail; folder previews wait mostly in the browser queue behind photo tiles (measured 2026-11-11).
 - Viewport handling.
 - Whether generating one thumbnail opens the database several times (reportedly three times), and whether that is unnecessary.
 - Limiting the number of concurrent browser requests.
@@ -440,7 +474,7 @@ Preserve the output contract from task 10 (WebP quality 82, target sizes from co
 
 ### Constraint
 
-The dynamic-cache cleanup logic (removing the least recently used entries) is complete and does not change.
+The dynamic-cache cleanup keeps its principle: it removes the least recently used entries. How the cleanup is carried out may change when that improves performance. Since 2026-11-11 it starts when the dynamic cache exceeds its limit and cleans down to 90 % of the limit, so the full selection does not repeat after every new tile.
 
 ### README
 
@@ -522,7 +556,7 @@ Block 3. Decisions §5, §7; interactive artboard "Stránka složky (interaktivn
 - **A photo opens fitted to the window.** Zoom: − [%] + (clicking the percentage fits to the window), "1:1" = original size.
 - **Navigation only with the arrows** at the sides; click area over the full height of the edge (96 px; 56 px in narrow windows). Clicking the photo does nothing (task 30). ←/→ keys navigate.
 - **Closing:** the ✕ button, Esc, and a click on the dark area around the photo (not on the photo, the arrows, the toolbar, or a video and its controls).
-- **Toolbar of icons with tooltips**, from the left: favorite (star), pin (pin) | open the original in the default application (↗; for a video "Otevřít v přehrávači"), open the source folder (folder icon) | − % + 1:1 | close. "Open original" opens the file in the system default application (`/api/open-original`), not in the browser.
+- **Toolbar of icons with tooltips**, from the left: favorite (star), pin (pin) | open the original in the default application (↗; for a video "Open in player"), open the source folder (folder icon) | − % + 1:1 | close. "Open original" opens the file in the system default application (`/api/open-original`), not in the browser.
 - **Info line:** position / total, path, dimensions; video duration.
 - **Rename in the toolbar:** task 22.
 - The thumbnail strip is not used.
@@ -531,7 +565,7 @@ Block 3. Decisions §5, §7; interactive artboard "Stránka složky (interaktivn
 
 - Arrows navigate photos and videos in one sequence in grid order (today the video modal breaks navigation: `openVideoModal` clears `imageItems`). Leaving a video stops it.
 - A video the browser can play (`is_html_playable`, `media_types.py`): the browser's built-in controls; it starts automatically with sound (the click is a user action); mute and volume are remembered.
-- A video the browser cannot play (for example AVI): the modal opens too (today a click starts the system player directly), showing a large poster, the sentence "Tento formát nejde přehrát v prohlížeči.", and the primary button "Přehrát v přehrávači" (`/api/open-original`).
+- A video the browser cannot play (for example AVI): the modal opens too (today a click starts the system player directly), showing a large poster, the sentence "This format cannot be played in the browser.", and the primary button "Play in player" (`/api/open-original`).
 - Keys: ←/→ always navigate, Space plays/pauses; the modal keeps focus so the arrows do not seek in the video.
 - The toolbar has no zoom group for video; the video fits the window, full screen through the player controls.
 
@@ -548,13 +582,13 @@ Block 3. Decisions §2, §3, §6, §11; artboards "Stránka složky (interaktivn
 - **Content width:** at most 1600 px, centered. One CSS value.
 - **Header** (fixed height, never wraps — wrapping would push the page down when the task chip appears):
   - left: ☰ (tree) and the logo "Catalog 2.0" — 40 px, bold, in the theme accent (renameable); under it a small GitHub link;
-  - center: the search field as the main element; "Jen aktuální složka" as a folder-icon toggle inside the field (highlighted with the accent); search with the magnifier in the field or Enter; no separate Search button;
-  - right: Oblíbené (navigates to the view) and Nastavení; header buttons are 40 px;
+  - center: the search field as the main element; "Current folder only" as a folder-icon toggle inside the field (highlighted with the accent); search with the magnifier in the field or Enter; no separate Search button;
+  - right: Favorites (navigates to the view) and Settings; header buttons are 40 px;
   - task status: hidden when nothing runs; see "Running task" below.
 - **Accent color** only for the logo and active states (active filter, selected item, toggles), not for ordinary buttons.
-- **Tree:** a drawer under ☰ over the content (the page does not move): "Najít složku" field, sections Oblíbené složky, Naposledy navštívené, and the tree without icons with item counts.
+- **Tree:** a drawer under ☰ over the content (the page does not move): "Find folder" field, sections Favorite folders, Recently visited, and the tree without icons with item counts.
 - **Folder header:** breadcrumb; name (30 px) with borderless icons: pencil (rename, task 22), star (favorite), ⋯ (open in Windows, update, recompute previews). Under the name one line of non-zero counts.
-- **Filter row:** Vše / Složky / Fotky / GIFy / Videa / Ostatní as underlined tabs; tabs with zero items are greyed out and disabled (not hidden), so the row never changes layout — `folder_detail` already returns per-type counts. On the right a compact pager "‹ 3 / 10 ›" (click the number → input to jump, Enter confirms, Esc cancels), hidden with a single page.
+- **Filter row:** All / Folders / Photos / GIFs / Videos / Other as underlined tabs; tabs with zero items are greyed out and disabled (not hidden), so the row never changes layout — `folder_detail` already returns per-type counts. On the right a compact pager "‹ 3 / 10 ›" (click the number → input to jump, Enter confirms, Esc cancels), hidden with a single page.
 
 ### Folder collage cards
 
@@ -576,23 +610,23 @@ Block 3. Decisions §2, §3, §6, §11; artboards "Stránka složky (interaktivn
 
 Principle: content never jumps. Space is reserved in advance; notices that appear while the user is browsing float over the content.
 
-- **Loading:** breadcrumb, name, counts, and filters render immediately from the API; tiles are skeletons with the final shape (folder cards 4:3, media rows with real widths from the database). A thin indeterminate bar under the header appears only after 300 ms. A loaded tile fades in over 150 ms; no animations with `prefers-reduced-motion`. A tile that fails to load shows a grey area with an icon and the file name, "Náhled není k dispozici"; the item still opens. An API error replaces the grid with "Obsah složky se nepodařilo načíst." and "Zkusit znovu". During a cold start the task area shows "Připravuji náhledy…" until the server reports readiness (requires the readiness signal of task 4).
+- **Loading:** breadcrumb, name, counts, and filters render immediately from the API; tiles are skeletons with the final shape (folder cards 4:3, media rows with real widths from the database). A thin indeterminate bar under the header appears only after 300 ms. A loaded tile fades in over 150 ms; no animations with `prefers-reduced-motion`. A tile that fails to load shows a grey area with an icon and the file name, "Preview not available"; the item still opens. An API error replaces the grid with "The folder content could not be loaded." and "Try again". During a cold start the task area shows "Preparing previews…" until the server reports readiness (requires the readiness signal of task 4).
 - **Empty states** (calm icon, one sentence, at most one action):
-  - folder without subfolders and media: "Složka je prázdná" + a link back to the parent folder;
-  - filter without results (only reachable from a URL or history, because zero tabs are disabled): "V této složce nejsou žádné GIFy" + "Zobrazit vše";
-  - empty catalog of a new instance: "Katalog je prázdný" + "Aktualizovat katalog";
-  - folder no longer in the catalog: the root opens with the message "Složka z adresy nebyla nalezena: …" (task 19, already implemented).
-- **Unavailable source** (not an empty state): `source_root_status` (checked on every load, nothing cached) reports that `data_root` does not exist, is not a folder, or cannot be opened. Causes vary, so none is guessed. One application-wide notice above the breadcrumb, shown on page load only: "Zdrojová složka **{path}** není dostupná. Zkontrolujte, že je disk nebo síťové umístění připojené." + "Obsah se zobrazuje z katalogu; originály teď nejde otevřít." Actions "Zkusit znovu" (reload) and "Změnit v Nastavení" (task 20). The folder shows a "Nedostupné" label.
-- **Folder missing on disk while the source is available** (`missing`, `not_directory`, `link_or_junction`): a notice for that folder only, "Složka už na disku neexistuje. Mohla být smazána nebo přesunuta mimo Catalog." + "Aktualizovat tuto složku"; label "Nedostupné"; catalog content stays.
+  - folder without subfolders and media: "The folder is empty" + a link back to the parent folder;
+  - filter without results (only reachable from a URL or history, because zero tabs are disabled): "There are no GIFs in this folder" + "Show all";
+  - empty catalog of a new instance: "The catalog is empty" + "Update catalog";
+  - folder no longer in the catalog: the root opens with the message "The folder from the address was not found: …" (task 19, already implemented).
+- **Unavailable source** (not an empty state): `source_root_status` (checked on every load, nothing cached) reports that `data_root` does not exist, is not a folder, or cannot be opened. Causes vary, so none is guessed. One application-wide notice above the breadcrumb, shown on page load only: "The source folder **{path}** is not available. Check that the drive or network location is connected." + "The content is shown from the catalog; originals cannot be opened now." Actions "Try again" (reload) and "Change in Settings" (task 20). The folder shows a "Unavailable" label.
+- **Folder missing on disk while the source is available** (`missing`, `not_directory`, `link_or_junction`): a notice for that folder only, "The folder no longer exists on disk. It may have been deleted or moved outside Catalog." + "Update this folder"; label "Unavailable"; catalog content stays.
 - **Running task (first version, no backend change):** data from `/api/jobs/status` (`current_job`: kind, scope, state, `started_at`, error, result), polled every second; only one job at a time (`_ensure_start_allowed`).
-  - Chip "Aktualizace katalogu běží 4:12" (elapsed time computed from `started_at`) between the search field and the buttons; clicking it opens a panel with scope, start time, and elapsed time.
-  - Conflicting actions are disabled with the explanation "Už běží jiná úloha: …" (the backend also refuses them with `JobBusyError`).
-  - When finished: "Aktualizace katalogu dokončena" for 4 s and a floating notice at the bottom center of the window, "Katalog se změnil. Obsah této složky může být jiný." with "Obnovit" and ✕. This replaces today's automatic `refreshCurrentViewAndTree` after an update; the page never rearranges itself under the user.
+  - Chip "Catalog update running 4:12" (elapsed time computed from `started_at`) between the search field and the buttons; clicking it opens a panel with scope, start time, and elapsed time.
+  - Conflicting actions are disabled with the explanation "Another job is already running: …" (the backend also refuses them with `JobBusyError`).
+  - When finished: "Catalog update finished" for 4 s and a floating notice at the bottom center of the window, "The catalog has changed. The content of this folder may be different." with "Refresh" and ✕. This replaces today's automatic `refreshCurrentViewAndTree` after an update; the page never rearranges itself under the user.
   - Error: the chip stays in the error color until the user opens it; the panel shows the backend error text translated through its message key.
   - Screen readers hear only the start and the end (`aria-live="polite"`).
-  - Optional in this step, without backend change: during the walk phase a file counter "Prochází soubory… 12 000" from `latest_scan.staged` (WAL mode, the scan commits in batches of 1000); poll it about every 5 s because the count scans the index. Percentages, estimates, and cancellation are task 38.
+  - Optional in this step, without backend change: during the walk phase a file counter "Scanning files… 12,000" from `latest_scan.staged` (WAL mode, the scan commits in batches of 1000); poll it about every 5 s because the count scans the index. Percentages, estimates, and cancellation are task 38.
 - **Narrow window** (the real case is a window snapped to half of a 1920 px monitor, 960 px):
-  - below 1280 px: Oblíbené and Nastavení become icons with tooltips; the search field narrows;
+  - below 1280 px: Favorites and Settings become icons with tooltips; the search field narrows;
   - below 900 px: search hides behind a magnifier icon and expands over the whole header (Esc or a back arrow closes it); the filter tabs scroll horizontally;
   - folder cards follow the grid rule above; media rows follow the row-height rule of task 32; in the modal the toolbar wraps and the arrow areas shrink to 56 px;
   - guaranteed support from 768 px; below that nothing may break.
@@ -619,10 +653,10 @@ Block 3. Decisions §4; interactive artboard (pin panel in the modal).
 
 ### Pinning
 
-- In the modal the pin icon "Připnout do náhledu složky" opens a drop-down panel anchored under the button: choose the level (the photo's own folder or one of its parents) and a plan of the nine places (main, 4 secondary, 4 in rotation). The rotation row (places 6–9) spans the full width of the collage; its tiles have the same shape as the small previews. Clicking a place pins the current item; clicking again releases it. A pinned place is marked everywhere with a dot in the accent color (also the main place). Text under the plan: "Kliknutím na místo fotku připnete, dalším kliknutím ji uvolníte. Tažením posunete výřez, dvojklikem ho vrátíte na střed."
+- In the modal the pin icon "Pin to folder preview" opens a drop-down panel anchored under the button: choose the level (the photo's own folder or one of its parents) and a plan of the nine places (main, 4 secondary, 4 in rotation). The rotation row (places 6–9) spans the full width of the collage; its tiles have the same shape as the small previews. Clicking a place pins the current item; clicking again releases it. A pinned place is marked everywhere with a dot in the accent color (also the main place). Text under the plan: "Click a place to pin the photo; click it again to release it. Drag to move the crop; double-click to center it again."
 - Rules:
   1. automatic recomputation (catalog update, new albums, preview preparation) never changes pinned places; it fills only unpinned places, without duplicates;
-  2. only the user releases pins: per place, or "Obnovit automatický výběr…" for a folder — an unobtrusive link with a confirmation in the panel ("Uvolnit připnutá místa (N) ve složce X? Nahradí je automatický výběr.");
+  2. only the user releases pins: per place, or "Restore automatic selection…" for a folder — an unobtrusive link with a confirmation in the panel ("Release the pinned places (N) in folder X? The automatic selection will replace them.");
   3. when a pinned item disappears, the place returns to automatic selection (a preview never stays empty);
   4. pinning or releasing recomputes that folder and its parents immediately; the user never starts recomputation manually.
 - The database already supports it (`folder_preview_items`, type `manual`, position). Verify: the link survives a file rename; manual places' tiles are protected in the protected cache (task 9); the final preview is composed from manual and automatic places.
@@ -647,43 +681,43 @@ Block 3. Decisions §7a; artboard "Výsledky hledání".
 ### Search
 
 - Same template as the folder page: header, filters, one pagination, collage cards for folders.
-- Instead of the breadcrumb: "Výsledky pro „{text}“" + a scope label ("v celém katalogu" / "ve složce {name} ✕" — the ✕ widens the search to the whole catalog) + a count line.
+- Instead of the breadcrumb: "Results for “{text}”" + a scope label ("in the whole catalog" / "in folder {name} ✕" — the ✕ widens the search to the whole catalog) + a count line.
 - **Found folders** as collage cards; the match in the name is underlined in the accent color; the parent path below the name.
-- **Found media grouped by folder:** each folder with a match is one group: a path line (link to the folder), the number of matches, "Zobrazit vše →", and **one row of sample items** (clipped to the width). **Pagination is by groups** (for example 20 groups per page), not by items — necessary for large collections (one search can find 100,000 photos).
-- **"Zobrazit vše →"** opens the search limited to that folder (existing scope) with normal pagination over all its matches.
+- **Found media grouped by folder:** each folder with a match is one group: a path line (link to the folder), the number of matches, "Show all →", and **one row of sample items** (clipped to the width). **Pagination is by groups** (for example 20 groups per page), not by items — necessary for large collections (one search can find 100,000 photos).
+- **"Show all →"** opens the search limited to that folder (existing scope) with normal pagination over all its matches.
 - **Match highlighting:** a match in the path is underlined in the path line; a match in a file name is underlined in the name shown on hover.
 - Order by path (predictable; no relevance ranking).
-- **The modal from results** navigates within the results; the info line shows the full path and "Ukázat ve složce" (anchors `/api/search/anchor` and `/api/favorites/anchor` exist).
-- **Empty result:** "Nic nenalezeno pro „{text}“"; with a folder scope also "Hledat v celém katalogu".
+- **The modal from results** navigates within the results; the info line shows the full path and "Show in folder" (anchors `/api/search/anchor` and `/api/favorites/anchor` exist).
+- **Empty result:** "Nothing found for “{text}”"; with a folder scope also "Search the whole catalog".
 - **Backend:** a new grouped query — folders with matches + counts + the first N samples per folder, paginated by groups (SQLite `GROUP BY` and window functions).
 
 ### Favorites
 
 - No grouping; one list of folders and media (Favorites are usually small).
-- Empty: "Zatím nemáte žádné oblíbené. Přidáte je hvězdičkou u složky nebo fotky."
-- An unavailable item stays in the list with the "Nedostupné" label and can be removed with the star.
+- Empty: "You have no favorites yet. Add them with the star on a folder or photo."
+- An unavailable item stays in the list with the "Unavailable" label and can be removed with the star.
 
 ### Done when
 
-A search with many matches shows every folder group within a few pages, "Zobrazit vše" lists all matches of one folder, and both work on the full collection with acceptable response times.
+A search with many matches shows every folder group within a few pages, "Show all" lists all matches of one folder, and both work on the full collection with acceptable response times.
 
 ## 37. Catalog resilience — PENDING
 
 Block 5. Decisions §7d. Situations caused outside Catalog.
 
-- **Catalog folder missing** (deleted or moved in Explorer): in the chooser (task 23) a dashed frame, the label "Nenalezen" / "Not found", the text "Složka katalogu byla přesunuta nebo smazána", the button "Najít…", and in the ⋯ menu only "Jen odebrat ze seznamu".
-- **Damaged database** (for example after a power failure): an understandable error and "Vytvořit katalog znovu" — the media are read again from the source. To keep Favorites, pins, crop focus, and settings, **back them up automatically** (for example at every start, keeping the last few copies) and restore them into the recreated catalog.
-- **Full disk with the catalog:** missing thumbnails appear as "Náhled není k dispozici" tiles; an update ends with the error "Na disku s katalogem došlo místo." **Verify** that the update's staging phase leaves the original catalog untouched in this case.
+- **Catalog folder missing** (deleted or moved in Explorer): in the chooser (task 23) a dashed frame, the label "Not found", the text "The catalog folder was moved or deleted", the button "Find…", and in the ⋯ menu only "Remove from list only".
+- **Damaged database** (for example after a power failure): an understandable error and "Recreate catalog" — the media are read again from the source. To keep Favorites, pins, crop focus, and settings, **back them up automatically** (for example at every start, keeping the last few copies) and restore them into the recreated catalog.
+- **Full disk with the catalog:** missing thumbnails appear as "Preview not available" tiles; an update ends with the error "The drive with the catalog is out of space." **Verify** that the update's staging phase leaves the original catalog untouched in this case.
 - Done when: each scenario is reproduced on Windows and behaves as described.
 
 ## 38. Enhancements — PENDING
 
 Block 6, after the core works. Each item is independent; if one stalls, it must not delay the others.
 
-1. **Job progress** (backend): extend `RuntimeJob` with phase, done / total, and the time of the last change; the job thread updates them and `snapshot()` reads them under the lock. Percentages only for phases with a known total (activation, previews); the file walk has only a counter. The frontend computes the remaining-time estimate from the rate and shows it only after the rate stabilizes (about 30 s of data). UI: chip "Aktualizace katalogu 45 %" with a thin progress line, "Procházím soubory… 12 400" for phases without a total, and a panel with phase, processed x / y, elapsed time, and remaining time. Design: artboard "Stavy – běžící úloha", right column.
+1. **Job progress** (backend): extend `RuntimeJob` with phase, done / total, and the time of the last change; the job thread updates them and `snapshot()` reads them under the lock. Percentages only for phases with a known total (activation, previews); the file walk has only a counter. The frontend computes the remaining-time estimate from the rate and shows it only after the rate stabilizes (about 30 s of data). UI: chip "Catalog update 45%" with a thin progress line, "Scanning files… 12,400" for phases without a total, and a panel with phase, processed x / y, elapsed time, and remaining time. Design: artboard "Stavy – běžící úloha", right column.
 2. **Safe cancellation of long jobs** ("Zastavit" button in the task panel): a job stops at a safe point and leaves the catalog consistent.
 3. **Smart crop for automatic preview places:** when a preview tile is created, determine the crop center with pyvips `smartcrop` (`interest="attention"`) and use it instead of the center (`object-position`). A few milliseconds per photo; nothing extra is read.
-4. **Custom color scheme** (draft; decide whether to keep it once task 14 step 2 is done; may be dropped): "Vlastní…" in Settings › Vzhled opens an editor of four base colors (background, surfaces, text, accent) with a live preview, a readability warning when text/background contrast is below 4.5:1 ("Text je na pozadí špatně čitelný."), and "Obnovit výchozí". The other tokens (borders, muted text, …) are derived; status colors (success, warning, error, info) stay fixed. Design: artboard "Nastavení (interaktivní)".
+4. **Custom color scheme** (draft; decide whether to keep it once task 14 step 2 is done; may be dropped): "Custom…" in Settings › Appearance opens an editor of four base colors (background, surfaces, text, accent) with a live preview, a readability warning when text/background contrast is below 4.5:1 ("The text is hard to read on this background."), and "Restore defaults". The other tokens (borders, muted text, …) are derived; status colors (success, warning, error, info) stay fixed. Design: artboard "Nastavení (interaktivní)".
 
 ## 39. UI texts — one voice, translation rules, human backend messages — PENDING
 
@@ -696,5 +730,5 @@ Block 2, together with task 14. Decisions §12.
   3. buttons and labels are designed to fit a longer translation.
 - Counts use the existing `count.*.one/few/other` forms.
 - Every key exists in `cs.json` and `en.json` (checked by `tools/check_i18n_translations.py`).
-- **Backend messages shown to users are human:** no internal terms such as "dynamic cache položky", "DB", "reference"; one sentence about what happened and, where useful, what to do.
+- **Backend messages shown to users are human:** no internal terms such as "dynamic cache items", "DB", "reference"; one sentence about what happened and, where useful, what to do.
 - Done when: the translation check passes, no informal Czech text remains, and no user-visible message contains internal terms.
