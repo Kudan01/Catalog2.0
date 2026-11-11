@@ -13,6 +13,8 @@ from .database import open_database, validate_database_runtime
 from .paths import normalize_catalog_relative_path
 from .sorting import catalog_path_key
 from .scan_lock import ScanProcessLock, scan_lock_path
+from .scan_store import recompute_catalog_summary
+from .thumbnail_cache import recompute_thumbnail_cache_totals
 
 
 class ScanActivationError(RuntimeError):
@@ -244,6 +246,12 @@ def activate_scan_by_id(
                         input_func=input_func,
                         output_func=output_func,
                     )
+
+                # Both running totals are recomputed exactly here, once per catalog
+                # update, while the changed tables are still in the page cache.
+                recompute_catalog_summary(connection)
+                recompute_thumbnail_cache_totals(connection)
+                timing.mark("scan.update.timing.stored_totals")
 
                 if (
                     favorites_json_path is not None

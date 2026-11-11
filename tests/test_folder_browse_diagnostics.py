@@ -109,6 +109,9 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 self.assertIn("preview_other_ms", metrics)
                 self.assertIn("other_ms", metrics)
                 self.assertIn("folder_fs_checks", metrics)
+                self.assertIn("favorites_read_ms", metrics)
+                self.assertIn("db_connect_ms", metrics)
+                self.assertNotIn("db_connect_sql_ms", metrics)
                 for field, value in metrics.items():
                     if field.endswith("_ms"):
                         self.assertGreaterEqual(value, 0.0)
@@ -160,6 +163,8 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
         self.assertIn("cache_file_checks:   0.500 ms (7 checks)", output)
         self.assertIn("other_preview:       0.050 ms", output)
         self.assertIn("other:               1.000 ms", output)
+        self.assertIn("db_connect:          0.400 ms", output)
+        self.assertIn("favorites_read:      0.200 ms", output)
 
     def test_folder_preview_readiness_summary_formats_navigation_and_scroll(self) -> None:
         events = [
@@ -365,6 +370,8 @@ class FolderBrowseDiagnosticsTests(unittest.TestCase):
                 "other_ms": 1.0,
                 "source_root_status_checks": 4,
                 "folder_fs_checks": 3,
+                "db_connect_ms": 0.4,
+                "favorites_read_ms": 0.2,
             },
         }
 

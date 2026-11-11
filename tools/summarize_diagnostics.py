@@ -184,6 +184,8 @@ def folder_browse_performance_lines(events: list[dict[str, Any]]) -> list[str]:
                 f"returned_folders:    {record.get('returned_folders', '-')}",
                 f"total:               {number(record.get('total_ms'))} ms",
                 f"SQL:                 {number(record.get('sql_ms'))} ms",
+                f"db_connect:          {number(record.get('db_connect_ms'))} ms",
+                f"favorites_read:      {number(record.get('favorites_read_ms'))} ms",
                 f"source_root_status:  {number(record.get('source_root_status_ms'))} ms",
                 f"folder_fs_status:    {number(record.get('folder_fs_status_ms'))} ms",
                 f"  batch_status:       {number(record.get('folder_fs_batch_ms'))} ms "

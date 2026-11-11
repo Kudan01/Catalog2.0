@@ -244,6 +244,7 @@
   "backendMessage.scan.update.timing.open_db_connection": "otevření DB spojení",
   "backendMessage.scan.update.timing.recalculate_folder_statistics": "přepočet statistik složek",
   "backendMessage.scan.update.timing.remove_or_mark_missing": "odstranění / označení chybějících",
+  "backendMessage.scan.update.timing.stored_totals": "přepočet uložených součtů",
   "backendMessage.scan.update.timing.unavailable_item_counts": "počty nedostupných položek",
   "backendMessage.scan.update.timing.unknown": "{label}",
   "backendMessage.scan.update.timing.update_branch_ancestors": "aktualizace ancestorů větve",

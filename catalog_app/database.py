@@ -11,6 +11,7 @@ from .schema import (
     APPLICATION_ID,
     EXPECTED_INDEXES,
     EXPECTED_TABLES,
+    EXPECTED_TRIGGERS,
     SCHEMA_STATEMENTS,
     SCHEMA_VERSION,
 )
@@ -180,7 +181,8 @@ def upgrade_database(db_path: Path) -> DatabaseUpgradeResult:
 
                 if current_version != SCHEMA_VERSION:
                     raise DatabaseError(
-                        f"Unsupported default schema version: {current_version}."
+                        f"Unsupported default schema version: {current_version}. "
+                        "Recreate the instance to use the current schema."
                     )
 
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -271,6 +273,17 @@ def check_database(db_path: Path) -> DatabaseStatus:
                 )
             )
 
+            triggers = frozenset(
+                row[0]
+                for row in connection.execute(
+                    """
+                    SELECT name
+                    FROM sqlite_schema
+                    WHERE type = 'trigger'
+                    """
+                )
+            )
+
             quick_check = str(
                 connection.execute("PRAGMA quick_check").fetchone()[0]
             )
@@ -297,6 +310,13 @@ def check_database(db_path: Path) -> DatabaseStatus:
         raise DatabaseError(
             "Database is missing expected indexes: "
             + ", ".join(sorted(missing_indexes))
+        )
+
+    missing_triggers = EXPECTED_TRIGGERS - triggers
+    if missing_triggers:
+        raise DatabaseError(
+            "Database is missing expected triggers: "
+            + ", ".join(sorted(missing_triggers))
         )
 
     if quick_check.lower() != "ok":

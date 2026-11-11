@@ -28,6 +28,9 @@ _MAX_FRONTEND_BATCH_BYTES = 512 * 1024
 _MAX_FRONTEND_EVENTS_PER_BATCH = 500
 _SQL_SPACE_RE = re.compile(r"\s+")
 _SQL_LITERAL_RE = re.compile(r"'(?:''|[^'])*'|\b\d+(?:\.\d+)?\b")
+# Keys the backend sets on every recorded event. A frontend field with one of
+# these names is stored with a "frontend_" prefix instead of replacing it.
+_RESERVED_EVENT_KEYS = frozenset({"event", "source", "session_id", "wall_time", "elapsed_ms"})
 
 
 @dataclass
@@ -54,6 +57,19 @@ _current_request_metrics: contextvars.ContextVar[RequestSqlMetrics | None] = con
 )
 _active_session: DiagnosticsSession | None = None
 _active_session_lock = threading.Lock()
+
+
+def _frontend_event_fields(event: Mapping[str, Any]) -> dict[str, Any]:
+    """Return frontend event fields that cannot collide with backend event keys."""
+    fields: dict[str, Any] = {}
+    for key, value in event.items():
+        name = str(key)
+        if name == "event":
+            continue
+        if name in _RESERVED_EVENT_KEYS:
+            name = f"frontend_{name}"
+        fields[name] = value
+    return fields
 
 
 def diagnostics_requested() -> bool:
@@ -384,6 +400,7 @@ class DiagnosticsSession:
         if isinstance(folder_browse, dict):
             folder_browse = dict(folder_browse)
             preview_sql_ms = max(0.0, float(folder_browse.pop("preview_sql_duration_ms", 0.0)))
+            connect_sql_ms = max(0.0, float(folder_browse.pop("db_connect_sql_ms", 0.0)))
             # Preview wall time already contains its SQL; subtract only SQL from
             # the remaining request phases to keep the "other" bucket disjoint.
             tracked_ms = sum(
@@ -393,9 +410,11 @@ class DiagnosticsSession:
                     "folder_fs_status_ms",
                     "root_enumeration_ms",
                     "preview_metadata_ms",
+                    "favorites_read_ms",
+                    "db_connect_ms",
                 )
             )
-            tracked_ms += max(0.0, sql_metrics.total_ms - preview_sql_ms)
+            tracked_ms += max(0.0, sql_metrics.total_ms - preview_sql_ms - connect_sql_ms)
             folder_browse["total_ms"] = round(elapsed_ms, 3)
             folder_browse["sql_ms"] = round(sql_metrics.total_ms, 3)
             folder_browse["other_ms"] = round(max(0.0, elapsed_ms - tracked_ms), 3)
@@ -539,7 +558,7 @@ class DiagnosticsSession:
             if not isinstance(event, dict):
                 continue
             name = str(event.get("event") or "frontend.unknown")[:160]
-            fields = {key: value for key, value in event.items() if key != "event"}
+            fields = _frontend_event_fields(event)
             self.record(name, source="frontend", **fields)
             with self.lock:
                 self.frontend_event_counts[name] += 1

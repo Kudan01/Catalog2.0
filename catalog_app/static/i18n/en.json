@@ -244,6 +244,7 @@
   "backendMessage.scan.update.timing.open_db_connection": "Open DB connection",
   "backendMessage.scan.update.timing.recalculate_folder_statistics": "Recalculate folder statistics",
   "backendMessage.scan.update.timing.remove_or_mark_missing": "Remove or mark missing",
+  "backendMessage.scan.update.timing.stored_totals": "Recompute stored totals",
   "backendMessage.scan.update.timing.unavailable_item_counts": "Unavailable item counts",
   "backendMessage.scan.update.timing.unknown": "{label}",
   "backendMessage.scan.update.timing.update_branch_ancestors": "Update branch ancestors",

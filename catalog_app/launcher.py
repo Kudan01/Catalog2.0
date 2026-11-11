@@ -25,7 +25,7 @@ from .instance_runtime import (
     runtime_info_path,
     write_runtime_info,
 )
-from .server import create_http_server, print_server_banner
+from .server import create_http_server, prepare_image_backend, print_server_banner
 
 
 DEFAULT_PORT_ATTEMPTS = 100
@@ -95,6 +95,8 @@ def launch_catalog(
 
     finish_reason = "launcher_finished"
     try:
+        # Before binding: the browser opens only after the image library is ready.
+        prepare_image_backend()
         bind_started = time.perf_counter()
         server, selected_port = _bind_available_server(
             config=config,

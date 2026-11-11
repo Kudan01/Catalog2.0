@@ -432,14 +432,12 @@ def read_scan_status(db_path: Path) -> ScanStatus:
             """
         ).fetchone()
 
-        active_folder_count, available_folder_count = active_table_counts(
-            connection,
-            "folders",
-        )
-        active_media_count, available_media_count = active_table_counts(
-            connection,
-            "media_files",
-        )
+        (
+            active_folder_count,
+            available_folder_count,
+            active_media_count,
+            available_media_count,
+        ) = catalog_summary_counts(connection)
         unavailable_folder_count = active_folder_count - available_folder_count
         unavailable_media_count = active_media_count - available_media_count
         active_scan_row = connection.execute(
@@ -968,6 +966,42 @@ def active_table_counts(
         """
     ).fetchone()
     return int(row[0]), int(row[1])
+
+
+def catalog_summary_counts(connection: sqlite3.Connection) -> tuple[int, int, int, int]:
+    """Return stored folder and media totals: total, available, total, available."""
+    row = connection.execute(
+        """
+        SELECT folder_count, available_folder_count,
+               media_count, available_media_count
+        FROM catalog_summary
+        WHERE id = 1
+        """
+    ).fetchone()
+    if row is None:
+        return 0, 0, 0, 0
+    return int(row[0]), int(row[1]), int(row[2]), int(row[3])
+
+
+def recompute_catalog_summary(connection: sqlite3.Connection) -> tuple[int, int, int, int]:
+    """Recompute stored catalog totals exactly; the caller owns the transaction."""
+    folder_count, available_folder_count = active_table_counts(connection, "folders")
+    media_count, available_media_count = active_table_counts(connection, "media_files")
+    connection.execute(
+        """
+        INSERT INTO catalog_summary (
+            id, folder_count, available_folder_count,
+            media_count, available_media_count
+        ) VALUES (1, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET
+            folder_count = excluded.folder_count,
+            available_folder_count = excluded.available_folder_count,
+            media_count = excluded.media_count,
+            available_media_count = excluded.available_media_count
+        """,
+        (folder_count, available_folder_count, media_count, available_media_count),
+    )
+    return folder_count, available_folder_count, media_count, available_media_count
 
 def _count_for_scan(
     connection: sqlite3.Connection,

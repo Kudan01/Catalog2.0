@@ -414,6 +414,16 @@ function readStartupRuntimeSettingsFromHtml() {
 
 const STARTUP_RUNTIME_SETTINGS = readStartupRuntimeSettingsFromHtml();
 
+// Instance and preview-contract part of every thumbnail URL fingerprint. The
+// server lets the browser keep a thumbnail only when its URL carries the
+// current fingerprint; without the key, thumbnails are simply not kept.
+const THUMBNAIL_CACHE_KEY = String(STARTUP_RUNTIME_SETTINGS?.thumbnail_cache_key || "");
+
+function mediaThumbnailVersion(media) {
+  if (!THUMBNAIL_CACHE_KEY || !media || !media.thumbnail_version) return undefined;
+  return `${THUMBNAIL_CACHE_KEY}.${media.thumbnail_version}`;
+}
+
 let localeRegistry = {
   default: EMERGENCY_LOCALE,
   fallback: EMERGENCY_LOCALE,
@@ -6191,6 +6201,7 @@ function mediaPreviewMarkup(media, isAvailable) {
     const thumbnailUrl = apiUrl("/media/thumbnail", {
       path: media.rel_path,
       variant: "photo_tile",
+      v: mediaThumbnailVersion(media),
     });
     return `
       <div class="media-preview media-preview--photo-tile" data-thumbnail-preview>
@@ -6210,6 +6221,7 @@ function mediaPreviewMarkup(media, isAvailable) {
     const thumbnailUrl = apiUrl("/media/thumbnail", {
       path: media.rel_path,
       variant: "gif_preview",
+      v: mediaThumbnailVersion(media),
     });
     return `
       <div class="media-preview media-preview--gif-preview" data-thumbnail-preview>
@@ -6230,6 +6242,7 @@ function mediaPreviewMarkup(media, isAvailable) {
       path: media.rel_path,
       variant: "video_poster",
       existing_only: "1",
+      v: mediaThumbnailVersion(media),
     });
     const frameUrls = videoFramePreviewUrls(media);
     const frameAttrs = frameUrls
@@ -6275,6 +6288,7 @@ function videoFramePreviewUrls(media) {
     variant: "video_frame",
     frame: String(frameIndex),
     existing_only: "1",
+    v: mediaThumbnailVersion(media),
   }));
 }
 
@@ -8204,6 +8218,7 @@ function countLine(label, lineText) {
 function folderPreviewUrl(preview) {
   return apiUrl("/media/folder-preview", {
     path: preview.thumbnail_cache_path,
+    v: THUMBNAIL_CACHE_KEY || undefined,
   });
 }
 
@@ -10110,10 +10125,19 @@ async function openInitialFolderView() {
     syncLocaleSelect();
     initializeTheme();
     updateViewButtons();
-    await loadStatus();
-    const jobStatus = await loadJobStatus();
-    ensureJobPollingForStatus(jobStatus);
+    // The status line and job state load next to the folder view instead of
+    // before it; the status line keeps its reserved space with the loading
+    // text until /api/status answers.
+    const statusLoad = loadStatus().catch((error) => {
+      setMessage(error.message, true);
+    });
+    const jobStatusLoad = loadJobStatus()
+      .then((jobStatus) => ensureJobPollingForStatus(jobStatus))
+      .catch((error) => {
+        setMessage(error.message, true);
+      });
     await openInitialFolderView();
+    await Promise.all([statusLoad, jobStatusLoad]);
     diagnosticOperationEnd("frontend.app.main", operation, {
       result: "ok",
       active_locale: activeLocale,

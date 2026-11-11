@@ -3,7 +3,7 @@ from __future__ import annotations
 
 # ASCII "CAT2" stored as a 32-bit SQLite application identifier.
 APPLICATION_ID = 0x43415432
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 EXPECTED_TABLES = frozenset({
     "scan_sessions",
@@ -15,6 +15,14 @@ EXPECTED_TABLES = frozenset({
     "thumbnails",
     "video_previews",
     "folder_preview_items",
+    "thumbnail_cache_totals",
+    "catalog_summary",
+})
+
+EXPECTED_TRIGGERS = frozenset({
+    "trg_thumbnails_cache_totals_insert",
+    "trg_thumbnails_cache_totals_delete",
+    "trg_thumbnails_cache_totals_update",
 })
 
 EXPECTED_INDEXES = frozenset({
@@ -311,5 +319,75 @@ SCHEMA_STATEMENTS = (
     """
     CREATE INDEX idx_folder_preview_media
         ON folder_preview_items(media_id)
+    """,
+    # Running thumbnail cache size per cache class. Summing
+    # thumbnails.file_size_bytes reads the whole table, which is too slow to do
+    # after every generated preview. The three triggers below keep one row per
+    # cache class in step with every INSERT, DELETE (including foreign-key
+    # cascades from media_files), and UPDATE that changes file_size_bytes or
+    # cache_class, inside the same transaction as the thumbnails change. Explicit
+    # cache cleanup and scan activation recompute the rows exactly with
+    # recompute_thumbnail_cache_totals(); nothing else writes this table.
+    """
+    CREATE TABLE thumbnail_cache_totals (
+        cache_class TEXT PRIMARY KEY
+            CHECK (cache_class IN ('dynamic', 'protected')),
+        size_bytes INTEGER NOT NULL DEFAULT 0
+    ) WITHOUT ROWID
+    """,
+    """
+    INSERT INTO thumbnail_cache_totals (cache_class, size_bytes)
+    VALUES ('dynamic', 0), ('protected', 0)
+    """,
+    """
+    CREATE TRIGGER trg_thumbnails_cache_totals_insert
+    AFTER INSERT ON thumbnails
+    BEGIN
+        UPDATE thumbnail_cache_totals
+        SET size_bytes = size_bytes + NEW.file_size_bytes
+        WHERE cache_class = NEW.cache_class;
+    END
+    """,
+    """
+    CREATE TRIGGER trg_thumbnails_cache_totals_delete
+    AFTER DELETE ON thumbnails
+    BEGIN
+        UPDATE thumbnail_cache_totals
+        SET size_bytes = size_bytes - OLD.file_size_bytes
+        WHERE cache_class = OLD.cache_class;
+    END
+    """,
+    """
+    CREATE TRIGGER trg_thumbnails_cache_totals_update
+    AFTER UPDATE OF file_size_bytes, cache_class ON thumbnails
+    WHEN OLD.file_size_bytes IS NOT NEW.file_size_bytes
+      OR OLD.cache_class IS NOT NEW.cache_class
+    BEGIN
+        UPDATE thumbnail_cache_totals
+        SET size_bytes = size_bytes - OLD.file_size_bytes
+        WHERE cache_class = OLD.cache_class;
+        UPDATE thumbnail_cache_totals
+        SET size_bytes = size_bytes + NEW.file_size_bytes
+        WHERE cache_class = NEW.cache_class;
+    END
+    """,
+    # Active catalog totals for /api/status and the job status. Counting
+    # folders and media_files reads both tables completely, so the counts are
+    # stored here instead. Scan activation recomputes them exactly at the end
+    # of its transaction (recompute_catalog_summary()); deleting a missing
+    # branch subtracts its rows in the same transaction. Rename changes only
+    # paths, not counts, and does not write this table.
+    """
+    CREATE TABLE catalog_summary (
+        id INTEGER PRIMARY KEY
+            CHECK (id = 1),
+        folder_count INTEGER NOT NULL DEFAULT 0,
+        available_folder_count INTEGER NOT NULL DEFAULT 0,
+        media_count INTEGER NOT NULL DEFAULT 0,
+        available_media_count INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    INSERT INTO catalog_summary (id) VALUES (1)
     """,
 )

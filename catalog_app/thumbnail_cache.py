@@ -124,6 +124,17 @@ def _unique_thumbnail_frame_path(destination: Path) -> Path:
 # libvips WebP effort; the same encoder effort as the former method=4 setting.
 THUMBNAIL_WEBP_EFFORT = 4
 
+# Dynamic cache cleanup starts when the dynamic size exceeds the limit and then
+# removes least recently used entries until the size is at or below this share
+# of the limit. Cleaning only to the limit itself would repeat the full LRU
+# selection after almost every new preview once the cache is full.
+DYNAMIC_CACHE_CLEANUP_TARGET_RATIO = 0.9
+
+
+def dynamic_cache_cleanup_target_bytes(limit_bytes: int) -> int:
+    """Return the dynamic cache size that one cleanup pass cleans down to."""
+    return int(max(0, int(limit_bytes)) * DYNAMIC_CACHE_CLEANUP_TARGET_RATIO)
+
 
 def _require_pyvips():
     """Import pyvips, turning a missing package or libvips binary into a cache error."""
@@ -134,6 +145,19 @@ def _require_pyvips():
             "pyvips is not available. Install dependencies with: python -m pip install -r requirements.txt"
         ) from exc
     return pyvips
+
+
+def warm_up_image_backend() -> None:
+    """Load pyvips/libvips and run one tiny encode and thumbnail in memory.
+
+    Loading the libvips binaries takes a noticeable time on a cold Windows
+    start. Doing it once at server start keeps that cost away from the first
+    thumbnail request. Nothing is read from or written to disk.
+    """
+    pyvips = _require_pyvips()
+    probe = pyvips.Image.black(8, 8, bands=3)
+    encoded = probe.webpsave_buffer(Q=PHOTO_TILE_QUALITY, effort=THUMBNAIL_WEBP_EFFORT)
+    pyvips.Image.thumbnail_buffer(encoded, 4, height=4, size="down")
 
 
 def _webp_compatible_image(image):
@@ -386,6 +410,48 @@ class ThumbnailResource:
     width: int
     height: int
     generated: bool
+    # Algorithm version of the served file; an outdated GIF/video preview is
+    # still served until preview preparation regenerates it.
+    algorithm_version: str = ""
+    # True only when the request URL carries the current fingerprint of this
+    # content, so the browser may keep the response (set by the API layer).
+    browser_cacheable: bool = False
+
+
+CURRENT_THUMBNAIL_ALGORITHM_VERSIONS: dict[str, str] = {
+    "photo_tile": PHOTO_TILE_ALGORITHM_VERSION,
+    "gif_preview": GIF_PREVIEW_ALGORITHM_VERSION,
+    "video_poster": VIDEO_POSTER_ALGORITHM_VERSION,
+    "video_frame": VIDEO_FRAME_ALGORITHM_VERSION,
+}
+
+
+def thumbnail_browser_cache_key(config: Config, instance_id: str) -> str:
+    """Return the instance part of every thumbnail URL fingerprint.
+
+    It changes with the catalog instance, the cache layout version, any
+    thumbnail algorithm version, and the configured preview sizes, so the
+    browser never reuses a thumbnail across catalogs or generation contracts.
+    """
+    parts = (
+        THUMBNAIL_CACHE_VERSION,
+        str(instance_id),
+        *CURRENT_THUMBNAIL_ALGORITHM_VERSIONS.values(),
+        f"q{PHOTO_TILE_QUALITY}.{GIF_PREVIEW_QUALITY}.{VIDEO_POSTER_QUALITY}.{VIDEO_FRAME_QUALITY}",
+        f"image{int(config.image_thumb_size[0])}x{int(config.image_thumb_size[1])}",
+        f"gif{int(config.gif_thumb_size[0])}x{int(config.gif_thumb_size[1])}",
+        f"video{int(config.video_preview_width)}",
+    )
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def media_thumbnail_version(media_id: int, size_bytes: int, modified_time: float) -> str:
+    """Return the media part of a thumbnail URL fingerprint from catalog data.
+
+    A source change recorded by a catalog update changes size or time and
+    therefore the URL.
+    """
+    return f"{int(media_id)}-{int(size_bytes)}-{float(modified_time):.6f}"
 
 
 @dataclass(frozen=True)
@@ -738,6 +804,7 @@ def ready_cached_thumbnail_resource(
         width=int(row["width"]),
         height=int(row["height"]),
         generated=False,
+        algorithm_version=str(row["algorithm_version"]),
     )
 
 def photo_tile_resource(
@@ -1407,6 +1474,7 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
     """Return a read-only cleanup plan for cache_class=dynamic rows only."""
     totals = _cache_size_totals(connection)
     limit = max(0, int(limit_bytes))
+    target = dynamic_cache_cleanup_target_bytes(limit)
     dynamic_size_before = int(totals["dynamic"])
     protected_size_before = int(totals["protected"])
     total_size_before = int(totals["total"])
@@ -1419,6 +1487,7 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
         "protection_model": "cache_class",
         "needed": bytes_over_dynamic_limit > 0,
         "limit_bytes": limit,
+        "target_bytes": target,
         "dynamic_size_before_bytes": dynamic_size_before,
         "protected_size_before_bytes": protected_size_before,
         "total_size_before_bytes": total_size_before,
@@ -1473,7 +1542,7 @@ def thumbnail_cache_cleanup_plan(connection, *, limit_bytes: int, sample_limit: 
     by_type: dict[str, dict[str, int]] = {}
 
     for row in rows:
-        if current_dynamic <= limit:
+        if current_dynamic <= target:
             break
 
         status = str(row["status"])
@@ -1520,9 +1589,14 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
     """Delete only cache_class=dynamic thumbnail cache candidates."""
     started = time.monotonic()
     limit_bytes = int(config.thumbnail_cache_limit_gb * 1024 * 1024 * 1024)
+    target_bytes = dynamic_cache_cleanup_target_bytes(limit_bytes)
     sample_cap = max(0, int(sample_limit))
 
     with open_database(config.db_path, read_only=False) as connection:
+        # Explicit cleanup is one of the two places that recompute the running
+        # cache totals exactly, so any drift is corrected before planning.
+        recompute_thumbnail_cache_totals(connection)
+        connection.commit()
         plan = thumbnail_cache_cleanup_plan(
             connection,
             limit_bytes=limit_bytes,
@@ -1590,7 +1664,7 @@ def execute_dynamic_thumbnail_cache_cleanup(config: Config, *, sample_limit: int
         sample_errors: list[dict[str, object]] = []
 
         for row in rows:
-            if current_dynamic <= limit_bytes:
+            if current_dynamic <= target_bytes:
                 break
 
             row_id = int(row["id"])
@@ -2883,6 +2957,7 @@ def _ready_existing_photo_tile(
                 width=int(row["width"]),
                 height=int(row["height"]),
                 generated=False,
+                algorithm_version=str(row["algorithm_version"]),
             )
 
         # Stale/missing cache evidence is kept for later cleanup/regeneration logic.
@@ -3023,6 +3098,7 @@ def _generate_photo_tile(
             width=int(width),
             height=int(height),
             generated=True,
+            algorithm_version=PHOTO_TILE_ALGORITHM_VERSION,
         )
 
     except Exception as exc:
@@ -3123,6 +3199,7 @@ def _ready_existing_gif_preview(
                 width=int(row["width"]),
                 height=int(row["height"]),
                 generated=False,
+                algorithm_version=str(row["algorithm_version"]),
             )
 
         if not source_matches and str(row["status"]) != "stale":
@@ -3248,6 +3325,7 @@ def _generate_gif_preview(
             width=int(width),
             height=int(height),
             generated=True,
+            algorithm_version=GIF_PREVIEW_ALGORITHM_VERSION,
         )
 
     except Exception as exc:
@@ -3348,6 +3426,7 @@ def _ready_existing_video_poster(
                 width=int(row["width"]),
                 height=int(row["height"]),
                 generated=False,
+                algorithm_version=str(row["algorithm_version"]),
             )
 
         if mark_stale and not source_matches and str(row["status"]) != "stale":
@@ -3447,6 +3526,7 @@ def _ready_existing_video_frame(
                 width=int(row["width"]),
                 height=int(row["height"]),
                 generated=False,
+                algorithm_version=str(row["algorithm_version"]),
             )
 
         if mark_stale and not source_matches and str(row["status"]) != "stale":
@@ -3707,6 +3787,7 @@ def _store_video_image(
         width=int(width),
         height=int(height),
         generated=True,
+        algorithm_version=algorithm_version,
     )
 
 
@@ -3899,8 +3980,13 @@ def cleanup_dynamic_thumbnail_cache(
     the request that created it does not delete its own response when the limit is
     very small. Dynamic thumbnails used by current folder previews are protected
     while referenced.
+
+    The size check reads the running totals kept by triggers, so it costs one
+    primary-key lookup. Once the limit is exceeded, one pass removes least
+    recently used entries down to dynamic_cache_cleanup_target_bytes().
     """
     limit_bytes = int(config.thumbnail_cache_limit_gb * 1024 * 1024 * 1024)
+    target_bytes = dynamic_cache_cleanup_target_bytes(limit_bytes)
 
     with open_database(config.db_path, read_only=False) as connection:
         total_before = _cache_size_totals(connection)
@@ -3959,7 +4045,7 @@ def cleanup_dynamic_thumbnail_cache(
         error_count = 0
 
         for row in rows:
-            if current_dynamic <= limit_bytes:
+            if current_dynamic <= target_bytes:
                 break
 
             output_rel_path = str(row["output_rel_path"])
@@ -4010,14 +4096,26 @@ def cleanup_dynamic_thumbnail_cache(
 
 
 def _cache_size_totals(connection) -> dict[str, int]:
-    row = connection.execute(
-        """
-        SELECT COALESCE(SUM(file_size_bytes), 0) AS size_bytes
-        FROM thumbnails
-        """
-    ).fetchone()
-    total = int(row["size_bytes"]) if row is not None else 0
+    """Return the running cache size per class kept by the thumbnails triggers."""
+    by_class = {"dynamic": 0, "protected": 0}
+    for class_row in connection.execute(
+        "SELECT cache_class, size_bytes FROM thumbnail_cache_totals"
+    ):
+        by_class[str(class_row[0])] = int(class_row[1])
 
+    return {
+        "total": by_class["dynamic"] + by_class["protected"],
+        "dynamic": by_class["dynamic"],
+        "protected": by_class["protected"],
+    }
+
+
+def recompute_thumbnail_cache_totals(connection) -> dict[str, int]:
+    """Recompute the running cache totals exactly from the thumbnails table.
+
+    This reads the whole thumbnails table, so it runs only in explicit dynamic
+    cache cleanup and at scan activation. The caller owns the transaction.
+    """
     by_class = {"dynamic": 0, "protected": 0}
     for class_row in connection.execute(
         """
@@ -4027,10 +4125,18 @@ def _cache_size_totals(connection) -> dict[str, int]:
         GROUP BY cache_class
         """
     ):
-        by_class[str(class_row["cache_class"])] = int(class_row["size_bytes"])
+        by_class[str(class_row[0])] = int(class_row[1])
 
+    connection.executemany(
+        """
+        INSERT INTO thumbnail_cache_totals (cache_class, size_bytes)
+        VALUES (?, ?)
+        ON CONFLICT (cache_class) DO UPDATE SET size_bytes = excluded.size_bytes
+        """,
+        tuple(by_class.items()),
+    )
     return {
-        "total": total,
+        "total": by_class["dynamic"] + by_class["protected"],
         "dynamic": by_class["dynamic"],
         "protected": by_class["protected"],
     }

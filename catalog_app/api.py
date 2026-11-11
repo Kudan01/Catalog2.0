@@ -7,7 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -26,21 +26,22 @@ from .folder_preview_candidates import (
     FOLDER_PREVIEW_SELECTION_VARIANT,
     build_folder_preview_tree_plan,
     effective_folder_preview_rows,
-    folder_preview_visual_media_count_maps,
     FolderPreviewTreePlan,
 )
 from .media_types import MediaType, classify_media, is_html_playable_video, normalize_extension
 from .paths import PathValidationError, is_path_within, normalize_catalog_relative_path, safe_join_catalog_path, same_path
 from .scan_lock import scan_lock_path
 from .scan_activate import _calculate_folder_statistics
-from .scan_store import active_table_counts, read_scan_status
+from .scan_store import catalog_summary_counts, read_scan_status
 from .scanner import IGNORED_DIRECTORY_NAMES, source_root_status
 from .sorting import catalog_path_key, natural_sort_key
 from .thumbnail_cache import (
     ThumbnailCacheError,
     ThumbnailResource,
+    CURRENT_THUMBNAIL_ALGORITHM_VERSIONS,
     gif_preview_existing_resource,
     photo_tile_resource,
+    media_thumbnail_version,
     ready_cached_thumbnail_resource,
     thumbnail_cache_cleanup_plan,
     thumbnail_cache_database_summary,
@@ -2377,6 +2378,8 @@ def _delete_folder_branch_from_catalog_db(
 
     media_to_delete = _count_all_media_in_branch(connection, branch_path_key)
     folders_to_delete = _count_all_folders_in_branch(connection, branch_path_key)
+    available_media_to_delete = _count_media_in_branch(connection, branch_path_key)
+    available_folders_to_delete = _count_folders_in_branch(connection, branch_path_key)
 
     connection.execute(
         """
@@ -2391,6 +2394,23 @@ def _delete_folder_branch_from_catalog_db(
         WHERE path_key = ? OR substr(path_key, 1, ?) = ?
         """,
         (branch_path_key, len(prefix), prefix),
+    )
+    # Stored catalog totals change in the same transaction as the deleted rows.
+    connection.execute(
+        """
+        UPDATE catalog_summary
+        SET folder_count = folder_count - ?,
+            available_folder_count = available_folder_count - ?,
+            media_count = media_count - ?,
+            available_media_count = available_media_count - ?
+        WHERE id = 1
+        """,
+        (
+            folders_to_delete,
+            available_folders_to_delete,
+            media_to_delete,
+            available_media_to_delete,
+        ),
     )
 
     return media_to_delete, folders_to_delete
@@ -2561,14 +2581,12 @@ def catalog_status(config: Config) -> dict[str, Any]:
         ).fetchone()
 
         source_status = source_root_status(config)
-        folder_count, available_folder_count = active_table_counts(
-            connection,
-            "folders",
-        )
-        media_count, available_media_count = active_table_counts(
-            connection,
-            "media_files",
-        )
+        (
+            folder_count,
+            available_folder_count,
+            media_count,
+            available_media_count,
+        ) = catalog_summary_counts(connection)
 
         return {
             "ok": True,
@@ -2731,10 +2749,33 @@ class _FolderBrowseDiagnostics:
     folder_fs_batch_enumerations: int = 0
     folder_fs_fallback_checks: int = 0
     folder_fs_batch_ms: float = 0.0
+    favorites_read_ms: float = 0.0
+    db_connect_ms: float = 0.0
+    db_connect_sql_ms: float = 0.0
 
     @classmethod
     def create(cls) -> _FolderBrowseDiagnostics | None:
         return cls() if diagnostic_request_active() else None
+
+    def favorite_path_key_set(self, config: Config, *, kind: str) -> set[str]:
+        started = time.perf_counter()
+        try:
+            return _favorite_path_key_set(config, kind=kind)
+        finally:
+            self.favorites_read_ms += (time.perf_counter() - started) * 1000.0
+
+    def begin_db_connect(self) -> tuple[float, float]:
+        return time.perf_counter(), diagnostic_request_sql_snapshot()[1]
+
+    def end_db_connect(self, started: tuple[float, float]) -> None:
+        clock_started, sql_started_ms = started
+        self.db_connect_ms += (time.perf_counter() - clock_started) * 1000.0
+        # Connection validation runs PRAGMA statements; their SQL time is
+        # reported so the request breakdown does not count it twice.
+        self.db_connect_sql_ms += max(
+            0.0,
+            diagnostic_request_sql_snapshot()[1] - sql_started_ms,
+        )
 
     def source_root_status(self, config: Config) -> Any:
         started = time.perf_counter()
@@ -2779,6 +2820,9 @@ class _FolderBrowseDiagnostics:
                 "page_size": params.page_size,
                 "include_previews": include_previews,
                 "returned_folders": len(result.get("folders", [])),
+                "favorites_read_ms": round(self.favorites_read_ms, 3),
+                "db_connect_ms": round(self.db_connect_ms, 3),
+                "db_connect_sql_ms": round(self.db_connect_sql_ms, 3),
                 "source_root_status_ms": round(self.source_root_status_ms, 3),
                 "source_root_status_checks": self.source_root_status_checks,
                 "folder_fs_status_ms": round(self.folder_fs_status_ms, 3),
@@ -2823,9 +2867,15 @@ def child_folders(
     )
     parent_key = catalog_path_key(params.parent_rel_path)
     include_previews = _folder_previews_requested(raw_include_previews)
-    folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder")
+    if diagnostics is not None:
+        folder_favorite_path_keys = diagnostics.favorite_path_key_set(config, kind="folder")
+        connect_started = diagnostics.begin_db_connect()
+    else:
+        folder_favorite_path_keys = _favorite_path_key_set(config, kind="folder")
 
     with open_database(config.db_path, read_only=True) as connection:
+        if diagnostics is not None:
+            diagnostics.end_db_connect(connect_started)
         parent = _available_folder_by_key(connection, parent_key)
 
         if params.parent_rel_path == "":
@@ -2890,12 +2940,14 @@ def child_folders(
         ).fetchall()
 
         pages = math.ceil(total / params.page_size) if total else 0
+        folders = [_folder_dict(row) for row in rows]
         if include_previews and diagnostics is not None:
             preview_started = diagnostics.begin_preview()
             previews_by_folder = _folder_preview_items_by_folder(
                 config,
                 connection,
                 [int(row["id"]) for row in rows],
+                visual_counts=_folder_visual_counts(folders),
                 diagnostics=diagnostics,
             )
             diagnostics.end_preview(preview_started)
@@ -2904,10 +2956,10 @@ def child_folders(
                 config,
                 connection,
                 [int(row["id"]) for row in rows],
+                visual_counts=_folder_visual_counts(folders),
             )
         else:
             previews_by_folder = {}
-        folders = [_folder_dict(row) for row in rows]
         for row, folder in zip(rows, folders, strict=True):
             folder["is_favorite"] = str(row["path_key"]) in folder_favorite_path_keys
             if include_previews:
@@ -3092,17 +3144,26 @@ def _root_child_folders_with_disk_candidates(
     page_items = items[params.offset : params.offset + params.page_size]
 
     active_ids = [folder_id for _kind, _folder, folder_id in page_items if folder_id is not None]
+    active_visual_counts = _folder_visual_counts(
+        [folder for kind, folder, folder_id in page_items if kind == "active" and folder_id is not None]
+    )
     if include_previews and diagnostics is not None:
         preview_started = diagnostics.begin_preview()
         previews_by_folder = _folder_preview_items_by_folder(
             config,
             connection,
             active_ids,
+            visual_counts=active_visual_counts,
             diagnostics=diagnostics,
         )
         diagnostics.end_preview(preview_started)
     elif include_previews:
-        previews_by_folder = _folder_preview_items_by_folder(config, connection, active_ids)
+        previews_by_folder = _folder_preview_items_by_folder(
+            config,
+            connection,
+            active_ids,
+            visual_counts=active_visual_counts,
+        )
     else:
         previews_by_folder = {}
 
@@ -3608,6 +3669,7 @@ def _folder_preview_items_by_folder(
     connection: sqlite3.Connection,
     folder_ids: list[int],
     *,
+    visual_counts: dict[int, tuple[int, int]] | None = None,
     diagnostics: _FolderBrowseDiagnostics | None = None,
 ) -> dict[int, list[dict[str, Any]]]:
     """Return stored automatic folder preview items for child folder cards.
@@ -3615,6 +3677,10 @@ def _folder_preview_items_by_folder(
     This read-only UI helper combines direct auto previews with parent-derived
     auto_parent previews into one deterministic representation. It does not
     generate thumbnails and only returns items whose thumbnail is ready.
+
+    ``visual_counts`` maps folder id to (direct, recursive) visual media counts
+    taken from the folder rows the caller already loaded (see
+    _folder_visual_counts). Without it, only the requested folders are read.
     """
     if not folder_ids:
         return {}
@@ -3666,7 +3732,8 @@ def _folder_preview_items_by_folder(
         diagnostics.preview_composition_ms += (time.perf_counter() - grouping_started) * 1000.0
 
     count_maps_started = time.perf_counter() if diagnostics is not None else 0.0
-    direct_visual_counts, recursive_visual_counts = folder_preview_visual_media_count_maps(connection)
+    if visual_counts is None:
+        visual_counts = _requested_folder_visual_counts(connection, list(grouped))
     if diagnostics is not None:
         diagnostics.preview_count_maps_ms += (time.perf_counter() - count_maps_started) * 1000.0
 
@@ -3675,8 +3742,7 @@ def _folder_preview_items_by_folder(
     for folder_id, by_type in grouped.items():
         auto_rows = sorted(by_type["auto"], key=lambda item: int(item["position"]))
         parent_rows = sorted(by_type["auto_parent"], key=lambda item: int(item["position"]))
-        direct_count = int(direct_visual_counts.get(folder_id, 0))
-        recursive_count = int(recursive_visual_counts.get(folder_id, direct_count))
+        direct_count, recursive_count = visual_counts.get(folder_id, (0, 0))
         selected = effective_folder_preview_rows(
             auto_rows,
             parent_rows,
@@ -3691,6 +3757,41 @@ def _folder_preview_items_by_folder(
         diagnostics.preview_composition_ms += (time.perf_counter() - composition_started) * 1000.0
 
     return result
+
+def _folder_visual_counts(folders: list[dict[str, Any]]) -> dict[int, tuple[int, int]]:
+    """Return (direct, recursive) visual media counts from _folder_dict items."""
+    counts: dict[int, tuple[int, int]] = {}
+    for folder in folders:
+        direct = folder["direct"]
+        recursive = folder["recursive"]
+        counts[int(folder["id"])] = (
+            int(direct["images"]) + int(direct["gifs"]) + int(direct["videos"]),
+            int(recursive["images"]) + int(recursive["gifs"]) + int(recursive["videos"]),
+        )
+    return counts
+
+
+def _requested_folder_visual_counts(
+    connection: sqlite3.Connection,
+    folder_ids: list[int],
+) -> dict[int, tuple[int, int]]:
+    """Read (direct, recursive) visual media counts for the given folders only."""
+    if not folder_ids:
+        return {}
+    placeholders = ",".join("?" for _ in folder_ids)
+    rows = connection.execute(
+        f"""
+        SELECT
+            id,
+            direct_image_count + direct_gif_count + direct_video_count,
+            recursive_image_count + recursive_gif_count + recursive_video_count
+        FROM folders
+        WHERE id IN ({placeholders})
+        """,
+        folder_ids,
+    ).fetchall()
+    return {int(row[0]): (int(row[1]), int(row[2])) for row in rows}
+
 
 def _folder_previews_requested(raw_value: str | None) -> bool:
     """Return whether child-folder cards should include stored previews.
@@ -4019,6 +4120,9 @@ def favorites_page(
                 config,
                 connection,
                 active_folder_ids,
+                visual_counts=_folder_visual_counts(
+                    [item for item in folder_items if item.get("is_available") is not False]
+                ),
             ) if active_folder_ids else {}
             for item in folder_items:
                 if item.get("is_available") is not False:
@@ -4268,6 +4372,7 @@ def search_page(
                 config,
                 connection,
                 [int(item["id"]) for item in folder_results],
+                visual_counts=_folder_visual_counts(folder_results),
             )
             for item in folder_results:
                 item["folder_previews"] = previews_by_folder.get(int(item["id"]), [])
@@ -4736,8 +4841,15 @@ def thumbnail_media_resource(
     *,
     existing_only: bool = False,
     frame_index: int | None = None,
+    browser_cache_key: str = "",
+    requested_version: str = "",
 ) -> ThumbnailResource:
-    """Resolve a thumbnail and publish phase timings for an active HTTP trace."""
+    """Resolve a thumbnail and publish phase timings for an active HTTP trace.
+
+    The returned resource is browser-cacheable only when `requested_version`
+    equals `<browser_cache_key>.<media thumbnail version>` for the current
+    catalog row and the served file has the current algorithm version.
+    """
     if not diagnostic_request_active():
         return _thumbnail_media_resource_impl(
             config,
@@ -4745,6 +4857,8 @@ def thumbnail_media_resource(
             raw_variant,
             existing_only=existing_only,
             frame_index=frame_index,
+            browser_cache_key=browser_cache_key,
+            requested_version=requested_version,
         )
 
     timings = {
@@ -4760,6 +4874,8 @@ def thumbnail_media_resource(
             raw_variant,
             existing_only=existing_only,
             frame_index=frame_index,
+            browser_cache_key=browser_cache_key,
+            requested_version=requested_version,
             diagnostic_timings=timings,
         )
         result = "generated" if resource.generated else "existing"
@@ -4786,6 +4902,8 @@ def _thumbnail_media_resource_impl(
     *,
     existing_only: bool = False,
     frame_index: int | None = None,
+    browser_cache_key: str = "",
+    requested_version: str = "",
     diagnostic_timings: dict[str, float] | None = None,
 ) -> ThumbnailResource:
     """Resolve a supported thumbnail resource for a catalog media file."""
@@ -4810,7 +4928,9 @@ def _thumbnail_media_resource_impl(
                     rel_path,
                     file_name,
                     extension,
-                    media_type
+                    media_type,
+                    size_bytes,
+                    modified_time
                 FROM media_files
                 WHERE path_key = ?
                   AND is_available = 1
@@ -4864,6 +4984,40 @@ def _thumbnail_media_resource_impl(
             params={"min": 1, "max": 4},
         )
 
+    resource = _thumbnail_resource_for_media_row(
+        config,
+        row,
+        rel_path=rel_path,
+        variant=variant,
+        existing_only=existing_only,
+        frame_index=frame_index,
+        diagnostic_timings=diagnostic_timings,
+    )
+    expected_version = ""
+    if browser_cache_key:
+        expected_version = (
+            f"{browser_cache_key}."
+            f"{media_thumbnail_version(int(row['id']), int(row['size_bytes']), float(row['modified_time']))}"
+        )
+    cacheable = (
+        bool(expected_version)
+        and requested_version == expected_version
+        and resource.algorithm_version == CURRENT_THUMBNAIL_ALGORITHM_VERSIONS.get(variant)
+    )
+    return dataclass_replace(resource, browser_cacheable=cacheable)
+
+
+def _thumbnail_resource_for_media_row(
+    config: Config,
+    row: sqlite3.Row,
+    *,
+    rel_path: str,
+    variant: str,
+    existing_only: bool,
+    frame_index: int | None,
+    diagnostic_timings: dict[str, float] | None,
+) -> ThumbnailResource:
+    """Return the cached or generated thumbnail for one available media row."""
     fast_variant_key = "default"
     if variant == "video_frame":
         fast_variant_key = f"frame_{frame_index}"
@@ -5652,6 +5806,12 @@ def _media_dict(row: sqlite3.Row) -> dict[str, Any]:
         ),
         "size_bytes": int(row["size_bytes"]),
         "modified_time": float(row["modified_time"]),
+        # Media part of the thumbnail URL fingerprint (see media_thumbnail_version).
+        "thumbnail_version": media_thumbnail_version(
+            int(row["id"]),
+            int(row["size_bytes"]),
+            float(row["modified_time"]),
+        ),
         "last_successful_scan_id": int(row["last_successful_scan_id"]),
         "is_available": bool(row["is_available"]) if "is_available" in keys else True,
         "is_favorite": False,

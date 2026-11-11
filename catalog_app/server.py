@@ -86,6 +86,7 @@ from .instance_runtime import (
 from .jobs import JobBusyError, JobManager
 from .message_contract import build_backend_message
 from .scanner import ScannerError
+from .thumbnail_cache import thumbnail_browser_cache_key, warm_up_image_backend
 
 
 @dataclass(frozen=True)
@@ -169,6 +170,10 @@ def api_message_payload(
     return payload
 
 
+# Thumbnail URLs carry a fingerprint of their content, so a matching response
+# never changes and the browser may keep it.
+THUMBNAIL_BROWSER_CACHE_CONTROL = "private, max-age=31536000, immutable"
+
 INDEX_TEMPLATE_REPLACEMENTS = {
     "__CATALOG2_UI_LOCALE__": 1,
     "__CATALOG2_UI_THEME__": 1,
@@ -178,9 +183,10 @@ INDEX_TEMPLATE_REPLACEMENTS = {
 }
 
 
-def startup_runtime_settings(config: Config) -> dict[str, Any]:
+def startup_runtime_settings(config: Config, *, instance_id: str = "") -> dict[str, Any]:
     """Return the trusted runtime UI values embedded in the first HTML response."""
     return {
+        "thumbnail_cache_key": thumbnail_browser_cache_key(config, instance_id) if instance_id else "",
         "ui_locale": config.ui_locale,
         "ui_locale_source": config.ui_locale_source,
         "ui_theme": config.ui_theme,
@@ -192,7 +198,7 @@ def startup_runtime_settings(config: Config) -> dict[str, Any]:
     }
 
 
-def render_index_html(template: str, config: Config) -> str:
+def render_index_html(template: str, config: Config, *, instance_id: str = "") -> str:
     """Render index.html with runtime UI settings before the browser first paints it."""
     for token, expected_count in INDEX_TEMPLATE_REPLACEMENTS.items():
         actual_count = template.count(token)
@@ -202,7 +208,7 @@ def render_index_html(template: str, config: Config) -> str:
                 f"expected {expected_count}."
             )
 
-    runtime = startup_runtime_settings(config)
+    runtime = startup_runtime_settings(config, instance_id=instance_id)
     bootstrap_json = json.dumps(
         runtime,
         ensure_ascii=False,
@@ -276,13 +282,15 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
                     variant,
                     existing_only=_query_flag_value(query, "existing_only"),
                     frame_index=_optional_int_query_value(query, "frame"),
+                    requested_version=_single_query_value(query, "v", default=""),
                 )
                 return
 
             if path == "/media/folder-preview":
                 query = parse_qs(parsed.query, keep_blank_values=True)
                 self._send_folder_preview_media(
-                    _single_query_value(query, "path", default="")
+                    _single_query_value(query, "path", default=""),
+                    requested_version=_single_query_value(query, "v", default=""),
                 )
                 return
 
@@ -1385,8 +1393,9 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         static_root = Path(__file__).resolve().parent / "static"
         template_path = static_root / "index.html"
         template = template_path.read_text(encoding="utf-8")
-        runtime = startup_runtime_settings(self.config)
-        body = render_index_html(template, self.config).encode("utf-8")
+        instance_id = str(getattr(self.server, "instance_id", ""))
+        runtime = startup_runtime_settings(self.config, instance_id=instance_id)
+        body = render_index_html(template, self.config, instance_id=instance_id).encode("utf-8")
 
         diagnostic_record(
             "backend.startup.runtime_settings_embedded",
@@ -1450,6 +1459,7 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         *,
         existing_only: bool = False,
         frame_index: int | None = None,
+        requested_version: str = "",
     ) -> None:
         resource = thumbnail_media_resource(
             self.config,
@@ -1457,6 +1467,8 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
             raw_variant,
             existing_only=existing_only,
             frame_index=frame_index,
+            browser_cache_key=self._thumbnail_browser_cache_key(),
+            requested_version=requested_version,
         )
         safe_name = quote(resource.file_name)
 
@@ -1464,7 +1476,10 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", resource.mime_type)
         self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{safe_name}")
         self.send_header("Content-Length", str(resource.size_bytes))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Cache-Control",
+            THUMBNAIL_BROWSER_CACHE_CONTROL if resource.browser_cacheable else "no-store",
+        )
         self.send_header("X-Catalog-Thumbnail-Type", resource.thumbnail_type)
         self.send_header("X-Catalog-Thumbnail-Variant", resource.variant_key)
         self.send_header("X-Catalog-Thumbnail-Cache-Class", resource.cache_class)
@@ -1474,15 +1489,26 @@ class CatalogRequestHandler(BaseHTTPRequestHandler):
         with resource.filesystem_path.open("rb") as file_handle:
             shutil.copyfileobj(file_handle, self.wfile, length=256 * 1024)
 
-    def _send_folder_preview_media(self, raw_cache_path: str) -> None:
+    def _thumbnail_browser_cache_key(self) -> str:
+        instance_id = str(getattr(self.server, "instance_id", ""))
+        return thumbnail_browser_cache_key(self.config, instance_id) if instance_id else ""
+
+    def _send_folder_preview_media(self, raw_cache_path: str, *, requested_version: str = "") -> None:
         resource = folder_preview_cache_resource(self.config, raw_cache_path)
+        # The cache path already names the content (source, algorithm version);
+        # the key adds the instance and the configured preview sizes.
+        browser_cache_key = self._thumbnail_browser_cache_key()
+        cacheable = bool(browser_cache_key) and requested_version == browser_cache_key
         safe_name = quote(resource.file_name)
 
         self.send_response(int(HTTPStatus.OK))
         self.send_header("Content-Type", "image/webp")
         self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{safe_name}")
         self.send_header("Content-Length", str(resource.size_bytes))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Cache-Control",
+            THUMBNAIL_BROWSER_CACHE_CONTROL if cacheable else "no-store",
+        )
         self.end_headers()
 
         with resource.filesystem_path.open("rb") as file_handle:
@@ -1644,6 +1670,33 @@ def print_server_banner(
         print(line)
 
 
+def prepare_image_backend() -> bool:
+    """Load the thumbnail image library before the server reports readiness.
+
+    A missing or broken library does not stop the server; thumbnail requests
+    keep reporting it as before. Returns True when the library is ready.
+    """
+    print("Preparing the image library for previews...")
+    started = time.perf_counter()
+    try:
+        warm_up_image_backend()
+    except Exception as exc:  # noqa: BLE001 - startup must continue without previews
+        duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
+        diagnostic_record(
+            "backend.startup.image_backend",
+            result="error",
+            duration_ms=duration_ms,
+            error=f"{exc.__class__.__name__}: {exc}",
+        )
+        print(f"Image library is not available; previews cannot be generated: {exc}")
+        return False
+
+    duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
+    diagnostic_record("backend.startup.image_backend", result="ok", duration_ms=duration_ms)
+    print(f"Image library ready in {duration_ms / 1000.0:.1f} s.")
+    return True
+
+
 def run_server(config: Config, *, host: str = "127.0.0.1") -> None:
     """Start the strict service command on the configured port."""
     instance_id = instance_id_for_config(config.config_path)
@@ -1655,6 +1708,7 @@ def run_server(config: Config, *, host: str = "127.0.0.1") -> None:
     runtime_info = None
     finish_reason = "strict_serve_finished"
     try:
+        prepare_image_backend()
         try:
             server = create_http_server(
                 config,

@@ -149,6 +149,43 @@ class FolderPreviewQueryTests(unittest.TestCase):
         ]
         self.assertEqual(1, len(preview_queries))
         self.assertNotIn("media_files", preview_queries[0])
+        # Visual media counts are read only for the requested folders, never for
+        # every available folder in the catalog.
+        folder_count_queries = [
+            statement
+            for statement in statements
+            if "FROM folders" in statement
+        ]
+        self.assertEqual(1, len(folder_count_queries))
+        self.assertIn("WHERE id IN", folder_count_queries[0])
+
+    def test_folder_preview_items_use_counts_from_loaded_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output_root = Path(temp)
+            connection = sqlite3.connect(":memory:")
+            connection.row_factory = sqlite3.Row
+            try:
+                for statement in SCHEMA_STATEMENTS:
+                    connection.execute(statement)
+                scan_id = self._insert_scan(connection)
+                root_id = self._insert_folder(connection, scan_id, "", None, 0, 0, 0)
+                folder_id = self._insert_folder(connection, scan_id, "First", root_id, 1, 2, 4)
+                self._add_preview(connection, output_root, scan_id, folder_id, "auto", 1, "auto-1.jpg")
+                connection.commit()
+
+                statements: list[str] = []
+                connection.set_trace_callback(statements.append)
+                result = _folder_preview_items_by_folder(
+                    SimpleNamespace(output_root=output_root),
+                    connection,
+                    [folder_id],
+                    visual_counts={folder_id: (2, 4)},
+                )
+            finally:
+                connection.close()
+
+        self.assertEqual(["auto-1.jpg.webp"], [Path(item["thumbnail_cache_path"]).name for item in result[folder_id]])
+        self.assertFalse([statement for statement in statements if "FROM folders" in statement])
 
     def test_folder_preview_cache_resource_serves_only_safe_existing_webp(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

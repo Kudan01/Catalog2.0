@@ -1053,3 +1053,75 @@ Licenses:
 - Validated manually on Windows in Firefox: the one-row card header; the preview count following the width at 1920 px and higher resolutions; recalculation on window resize without repeated downloads (checked in the network panel); a narrow window; the summary tooltip; click, middle-click, and anchors; cards in Search and Favorites; the hidden breadcrumb on the root page; and all five themes.
 - After "Prepare all previews", folders show up to 12 previews, and browsing large folders with media on an HDD stays smooth.
 - Chrome and Edge were not validated.
+
+## 2026-11-11 — Image backend at startup and browser-cacheable thumbnails
+
+### Changes
+
+- Task 4 step A: `prepare_image_backend()` loads pyvips/libvips and runs one tiny encode and thumbnail operation (`warm_up_image_backend()`) during server startup, before the HTTP server is created, both in `run_server` and in the launcher. A failure is reported and recorded as a diagnostic event but never stops the server.
+- Task 25 step A: thumbnail URLs carry a fingerprint in the `v` query parameter. The instance part (`thumbnail_browser_cache_key`) hashes the cache version, the instance id, the current algorithm versions, qualities, and preview sizes; the startup bootstrap passes it to the frontend. The media part (`media_thumbnail_version`, returned as `thumbnail_version` in media items) is the media id, size, and modification time.
+- `/media/thumbnail` and `/media/folder-preview` respond with `Cache-Control: private, max-age=31536000, immutable` only when the requested fingerprint matches the current one and the served thumbnail has the current algorithm version; every other response stays `no-store`, so an outdated preview served until it is regenerated is never cached.
+
+### Reason
+
+- Task 4: the first tiles after a start appeared to wait for pyvips to load.
+- Task 25: every return to a visited folder downloaded all its thumbnails again.
+
+### Files
+
+- `catalog_app/thumbnail_cache.py`
+- `catalog_app/server.py`
+- `catalog_app/launcher.py`
+- `catalog_app/api.py`
+- `catalog_app/static/app.js`
+- `tests/test_image_backend_startup.py`
+- `tests/test_thumbnail_browser_cache.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- Validated on Windows in Firefox: returning to a visited folder loads its tiles from the browser cache with no data transferred.
+- pyvips loads at startup in under a second. This step alone did not shorten the slow start; the real causes are recorded in the next entry.
+
+## 2026-11-11 — Stored cache size and catalog counts
+
+### Changes
+
+- Cause of the slow start and browsing: after every generated photo tile, the automatic dynamic-cache check summed `thumbnails.file_size_bytes` over the whole table twice; with a cold database this cost seconds per tile and concurrent thumbnail requests queued on the disk. `/api/status` and the job status counted all rows of `folders` and `media_files` on every call, and the frontend waited for `/api/status` before opening the folder view.
+- Schema version 6 (no migration; instances are recreated). New table `thumbnail_cache_totals` holds the size per cache class; three triggers on `thumbnails` (insert, delete including foreign-key cascades, and updates that change `file_size_bytes` or `cache_class`) keep it in step inside the same transaction. `recompute_thumbnail_cache_totals()` recomputes it exactly, only in explicit dynamic cache cleanup and at scan activation. `check_database` also checks the triggers.
+- The automatic check after a new tile reads the stored totals. When the dynamic cache exceeds its limit, cleanup removes least recently used entries down to 90 % of the limit (`DYNAMIC_CACHE_CLEANUP_TARGET_RATIO`) instead of to the limit itself, which had repeated the full selection after almost every new tile once the cache was full. The cleanup plan and explicit cleanup use the same target.
+- New table `catalog_summary` with total and available folder and media counts, recomputed exactly at the end of scan activation and reduced in the same transaction when a missing branch is deleted; rename changes only paths and does not write it. `/api/status` and `read_scan_status` read it.
+- The frontend loads the catalog status and the job status alongside the initial folder view instead of before it; the status line keeps its reserved loading text until the answer arrives.
+- Folder preview composition takes visual media counts from the folder rows already loaded for the page instead of reading every available folder on each request.
+- Frontend diagnostic events whose fields collide with backend event keys (`source`, `elapsed_ms`, …) are stored with a `frontend_` prefix; before, such a batch failed with HTTP 500 and was lost.
+- `/api/folders` diagnostics report the connection open time (`db_connect_ms`) and the favorites read time (`favorites_read_ms`) separately from "other"; the summary tool prints them.
+
+### Reason
+
+- Tasks 4 and 25: find and remove the real cause of the slow start and of slow thumbnail loading.
+
+### Files
+
+- `catalog_app/schema.py`
+- `catalog_app/database.py`
+- `catalog_app/thumbnail_cache.py`
+- `catalog_app/scan_store.py`
+- `catalog_app/scan_activate.py`
+- `catalog_app/api.py`
+- `catalog_app/diagnostics.py`
+- `catalog_app/static/app.js`
+- `catalog_app/static/i18n/cs.json`
+- `catalog_app/static/i18n/en.json`
+- `tools/summarize_diagnostics.py`
+- `tests/test_stored_totals.py`
+- `tests/test_folder_preview_query.py`
+- `tests/test_folder_browse_diagnostics.py`
+- `docs/WORK_PLAN.md`
+- `docs/DEVELOPMENT_LOG.md`
+
+### Validation
+
+- The full automated test suite, `tools/check_i18n_translations.py`, and `tools/check_backend_message_contract.py` passed on Windows.
+- Diagnostic measurement on Windows on an existing instance converted to schema 6 by a one-off script outside the repository, with its thumbnail cache kept; the start was not fully cold. Compared with the measurement before the change: `/api/status` 13 s → 21 ms; frontend initial load 14.2 s → 117 ms; `/media/thumbnail` average 4.2 s → 306 ms and maximum 31 s → 980 ms, with generation starting immediately; folder-preview query 0.4–1.4 s → under 5 ms. No whole-table size sums appear in the SQL, and no diagnostic batch failed.
+- Remaining finding, planned as task 25 step B: two `/api/folders` requests spent 0.5–0.8 s opening the database connection while their SQL took about 10 ms; the cost lies in the first statement of a new connection. A covering index on `thumbnails` is not needed.
